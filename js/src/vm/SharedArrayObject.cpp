@@ -254,8 +254,7 @@ SharedArrayBufferObject::class_constructor(JSContext* cx, unsigned argc, Value* 
     }
 
     RootedObject proto(cx);
-    RootedObject newTarget(cx, &args.newTarget().toObject());
-    if (!GetPrototypeFromConstructor(cx, newTarget, &proto))
+    if (!GetPrototypeFromBuiltinConstructor(cx, args, &proto))
         return false;
 
     JSObject* bufobj = New(cx, length, proto);

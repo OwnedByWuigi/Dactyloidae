@@ -86,7 +86,7 @@ Collator(JSContext* cx, const CallArgs& args)
 
     // Steps 2-5 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
     RootedObject proto(cx);
-    if (args.isConstructing() && !GetPrototypeFromCallableConstructor(cx, args, &proto))
+    if (!GetPrototypeFromBuiltinConstructor(cx, args, &proto))
         return false;
 
     if (!proto) {
@@ -133,7 +133,7 @@ js::intl_Collator(JSContext* cx, unsigned argc, Value* vp)
 void
 js::CollatorObject::finalize(FreeOp* fop, JSObject* obj)
 {
-    MOZ_ASSERT(fop->onMainThread());
+    MOZ_ASSERT(fop->onActiveCooperatingThread());
 
     const Value& slot = obj->as<CollatorObject>().getReservedSlot(CollatorObject::UCOLLATOR_SLOT);
     if (UCollator* coll = static_cast<UCollator*>(slot.toPrivate()))
@@ -460,7 +460,7 @@ js::intl_isUpperCaseFirst(JSContext* cx, unsigned argc, Value* vp)
     MOZ_ASSERT(args.length() == 1);
     MOZ_ASSERT(args[0].isString());
 
-    SharedIntlData& sharedIntlData = cx->sharedIntlData;
+    SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
 
     RootedString locale(cx, args[0].toString());
     bool isUpperFirst;

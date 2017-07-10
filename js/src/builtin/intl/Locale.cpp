@@ -481,7 +481,7 @@ static bool Locale(JSContext* cx, unsigned argc, Value* vp) {
 
   // Steps 2-6 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
   RootedObject proto(cx);
-  if (!GetPrototypeFromCallableConstructor(cx, args, &proto)) {
+  if (!GetPrototypeFromBuiltinConstructor(cx, args, &proto)) {
     return false;
   }
 

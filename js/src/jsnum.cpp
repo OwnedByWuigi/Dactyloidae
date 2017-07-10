@@ -520,19 +520,17 @@ Number(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    /* Sample JS_CALLEE before clobbering. */
-    bool isConstructing = args.isConstructing();
-
     if (args.length() > 0) {
         // BigInt proposal section 6.2, steps 2a-c.
         if (!ToNumeric(cx, args[0]))
             return false;
+
         if (args[0].isBigInt())
             args[0].setNumber(BigInt::numberValue(args[0].toBigInt()));
         MOZ_ASSERT(args[0].isNumber());
     }
 
-    if (!isConstructing) {
+    if (!args.isConstructing()) {
         if (args.length() > 0) {
             args.rval().set(args[0]);
         } else {
@@ -541,9 +539,8 @@ Number(JSContext* cx, unsigned argc, Value* vp)
         return true;
     }
 
-    RootedObject newTarget(cx, &args.newTarget().toObject());
     RootedObject proto(cx);
-    if (!GetPrototypeFromConstructor(cx, newTarget, &proto))
+    if (!GetPrototypeFromBuiltinConstructor(cx, args, &proto))
         return false;
 
     double d = args.length() > 0 ? args[0].toNumber() : 0;

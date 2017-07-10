@@ -97,7 +97,7 @@ DateTimeFormat(JSContext* cx, const CallArgs& args, bool construct, DateTimeForm
 
     // Step 2 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
     RootedObject proto(cx);
-    if (args.isConstructing() && !GetPrototypeFromCallableConstructor(cx, args, &proto))
+    if (!GetPrototypeFromBuiltinConstructor(cx, args, &proto))
         return false;
 
     if (!proto) {
@@ -160,7 +160,7 @@ js::intl_DateTimeFormat(JSContext* cx, unsigned argc, Value* vp)
 void
 js::DateTimeFormatObject::finalize(FreeOp* fop, JSObject* obj)
 {
-    MOZ_ASSERT(fop->onMainThread());
+    MOZ_ASSERT(fop->onActiveCooperatingThread());
 
     const Value& slot = obj->as<DateTimeFormatObject>().getReservedSlot(DateTimeFormatObject::UDATE_FORMAT_SLOT);
     if (UDateFormat* df = static_cast<UDateFormat*>(slot.toPrivate()))
@@ -358,17 +358,19 @@ js::intl_IsValidTimeZoneName(JSContext* cx, unsigned argc, Value* vp)
     MOZ_ASSERT(args.length() == 1);
     MOZ_ASSERT(args[0].isString());
 
-    SharedIntlData& sharedIntlData = cx->sharedIntlData;
+    SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
 
     RootedString timeZone(cx, args[0].toString());
-    RootedString validatedTimeZone(cx);
+    RootedAtom validatedTimeZone(cx);
     if (!sharedIntlData.validateTimeZoneName(cx, timeZone, &validatedTimeZone))
         return false;
 
-    if (validatedTimeZone)
+    if (validatedTimeZone) {
+        cx->markAtom(validatedTimeZone);
         args.rval().setString(validatedTimeZone);
-    else
+    } else {
         args.rval().setNull();
+    }
 
     return true;
 }
@@ -380,16 +382,17 @@ js::intl_canonicalizeTimeZone(JSContext* cx, unsigned argc, Value* vp)
     MOZ_ASSERT(args.length() == 1);
     MOZ_ASSERT(args[0].isString());
 
-    SharedIntlData& sharedIntlData = cx->sharedIntlData;
+    SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
 
     // Some time zone names are canonicalized differently by ICU -- handle
     // those first:
     RootedString timeZone(cx, args[0].toString());
-    RootedString ianaTimeZone(cx);
+    RootedAtom ianaTimeZone(cx);
     if (!sharedIntlData.tryCanonicalizeTimeZoneConsistentWithIANA(cx, timeZone, &ianaTimeZone))
         return false;
 
     if (ianaTimeZone) {
+        cx->markAtom(ianaTimeZone);
         args.rval().setString(ianaTimeZone);
         return true;
     }
