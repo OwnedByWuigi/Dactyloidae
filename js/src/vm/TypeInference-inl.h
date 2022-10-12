@@ -367,10 +367,10 @@ TypeMonitorCall(JSContext* cx, const js::CallArgs& args, bool constructing)
 inline bool
 TrackPropertyTypes(ExclusiveContext* cx, JSObject* obj, jsid id)
 {
-    if (obj->hasLazyGroup() || obj->group()->unknownProperties())
+    if (obj->hasLazyGroup() || obj->group()->unknownPropertiesDontCheckGeneration())
         return false;
 
-    if (obj->isSingleton() && !obj->group()->maybeGetProperty(id))
+    if (obj->isSingleton() && !obj->group()->maybeGetPropertyDontCheckGeneration(id))
         return false;
 
     return true;
@@ -405,7 +405,15 @@ PropertyHasBeenMarkedNonConstant(JSObject* obj, jsid id)
 inline bool
 HasTypePropertyId(JSObject* obj, jsid id, TypeSet::Type type)
 {
-    if (obj->hasLazyGroup())
+    MOZ_ASSERT(id == IdToTypeId(id));
+    MOZ_ASSERT(TrackPropertyTypes(obj, id));
+
+    if (HeapTypeSet* types = obj->group()->maybeGetPropertyDontCheckGeneration(id)) {
+        if (!types->hasType(type))
+            return false;
+        // Non-constant properties are only relevant for singleton objects.
+        if (obj->isSingleton() && !types->nonConstantProperty())
+            return false;
         return true;
 
     if (obj->group()->unknownProperties())
@@ -655,6 +663,21 @@ TypeScript::SetArgument(JSContext* cx, JSScript* script, unsigned arg, TypeSet::
 TypeScript::SetArgument(JSContext* cx, JSScript* script, unsigned arg, const js::Value& value)
 {
     SetArgument(cx, script, arg, TypeSet::GetValueType(value));
+}
+
+inline
+AutoKeepTypeScripts::AutoKeepTypeScripts(JSContext* cx)
+  : zone_(cx->zone()->types),
+    prev_(zone_.keepTypeScripts)
+{
+    zone_.keepTypeScripts = true;
+}
+
+inline
+AutoKeepTypeScripts::~AutoKeepTypeScripts()
+{
+    MOZ_ASSERT(zone_.keepTypeScripts);
+    zone_.keepTypeScripts = prev_;
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -1025,9 +1048,17 @@ TypeSet::getObjectClass(unsigned i) const
 /////////////////////////////////////////////////////////////////////
 
 inline uint32_t
+ObjectGroup::basePropertyCountDontCheckGeneration()
+{
+    uint32_t flags = flagsDontCheckGeneration();
+    return (flags & OBJECT_FLAG_PROPERTY_COUNT_MASK) >> OBJECT_FLAG_PROPERTY_COUNT_SHIFT;
+}
+
+inline uint32_t
 ObjectGroup::basePropertyCount()
 {
-    return (flags() & OBJECT_FLAG_PROPERTY_COUNT_MASK) >> OBJECT_FLAG_PROPERTY_COUNT_SHIFT;
+    maybeSweep(nullptr);
+    return basePropertyCountDontCheckGeneration();
 }
 
 inline void
@@ -1083,16 +1114,23 @@ ObjectGroup::getProperty(ExclusiveContext* cx, JSObject* obj, jsid id)
 }
 
 inline HeapTypeSet*
-ObjectGroup::maybeGetProperty(jsid id)
+ObjectGroup::maybeGetPropertyDontCheckGeneration(jsid id)
 {
     MOZ_ASSERT(JSID_IS_VOID(id) || JSID_IS_EMPTY(id) || JSID_IS_STRING(id) || JSID_IS_SYMBOL(id));
     MOZ_ASSERT_IF(!JSID_IS_EMPTY(id), id == IdToTypeId(id));
-    MOZ_ASSERT(!unknownProperties());
+    MOZ_ASSERT(!unknownPropertiesDontCheckGeneration());
 
     Property* prop = TypeHashSet::Lookup<jsid, Property, Property>
-                         (propertySet, basePropertyCount(), id);
+                         (propertySet, basePropertyCountDontCheckGeneration(), id);
 
     return prop ? &prop->types : nullptr;
+}
+
+inline HeapTypeSet*
+ObjectGroup::maybeGetProperty(jsid id)
+{
+    maybeSweep(nullptr);
+    return maybeGetPropertyDontCheckGeneration(id);
 }
 
 inline unsigned
@@ -1125,7 +1163,7 @@ JSScript::types()
 }
 
 inline bool
-JSScript::ensureHasTypes(JSContext* cx)
+JSScript::ensureHasTypes(JSContext* cx, js::AutoKeepTypeScripts&)
 {
     return types() || makeTypes(cx);
 }

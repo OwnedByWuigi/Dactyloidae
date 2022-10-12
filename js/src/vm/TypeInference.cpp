@@ -4436,6 +4436,7 @@ JSScript::maybeSweepTypes(AutoClearTypeInferenceStateOnOOM* oom)
     // only do this if nothing has been compiled for the script, which will be
     // the case unless the script has been compiled since we started sweeping.
     if (types.sweepReleaseTypes &&
+        !types.keepTypeScripts &&
         !hasBaselineScript() &&
         !hasIonScript())
     {
@@ -4492,20 +4493,24 @@ Zone::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
 
 TypeZone::TypeZone(Zone* zone)
   : zone_(zone),
-    typeLifoAlloc(TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
-    generation(0),
-    compilerOutputs(nullptr),
-    sweepTypeLifoAlloc(TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
-    sweepCompilerOutputs(nullptr),
-    sweepReleaseTypes(false),
-    activeAnalysis(nullptr)
+    typeLifoAlloc(zone->group(), (size_t) TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
+    generation(zone->group(), 0),
+    compilerOutputs(zone->group(), nullptr),
+    sweepTypeLifoAlloc(zone->group(), (size_t) TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
+    sweepCompilerOutputs(zone->group(), nullptr),
+    sweepReleaseTypes(zone->group(), false),
+    sweepingTypes(zone->group(), false),
+    keepTypeScripts(zone->group(), false),
+    activeAnalysis(zone->group(), nullptr)
 {
 }
 
 TypeZone::~TypeZone()
 {
-    js_delete(compilerOutputs);
-    js_delete(sweepCompilerOutputs);
+    js_delete(compilerOutputs.ref());
+    js_delete(sweepCompilerOutputs.ref());
+    MOZ_RELEASE_ASSERT(!sweepingTypes);
+    MOZ_ASSERT(!keepTypeScripts);
 }
 
 void
