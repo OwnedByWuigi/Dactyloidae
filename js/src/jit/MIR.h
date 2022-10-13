@@ -3756,9 +3756,10 @@ class MCreateThisWithTemplate
         return initialHeap_;
     }
 
-    // Although creation of |this| modifies global state, it is safely repeatable.
+    // Performs a property read from |newTarget| if |newTarget| is a JSFunction
+    // with an own |.prototype| property.
     AliasSet getAliasSet() const override {
-        return AliasSet::None();
+        return AliasSet::Load(AliasSet::Any);
     }
 
     MOZ_MUST_USE bool writeRecoverData(CompactBufferWriter& writer) const override;
