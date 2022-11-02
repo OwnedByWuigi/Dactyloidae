@@ -124,15 +124,18 @@ struct DagChildEdge {
  * empty. Timings for these phases are thus exclusive of any other phase.
  */
 
-static const PhaseInfo phases[] = {
-    { PHASE_MUTATOR, "Mutator Running", PHASE_NO_PARENT },
-    { PHASE_GC_BEGIN, "Begin Callback", PHASE_NO_PARENT },
-    { PHASE_WAIT_BACKGROUND_THREAD, "Wait Background Thread", PHASE_NO_PARENT },
-    { PHASE_MARK_DISCARD_CODE, "Mark Discard Code", PHASE_NO_PARENT },
-    { PHASE_RELAZIFY_FUNCTIONS, "Relazify Functions", PHASE_NO_PARENT },
-    { PHASE_PURGE, "Purge", PHASE_NO_PARENT },
-    { PHASE_MARK, "Mark", PHASE_NO_PARENT },
-        { PHASE_UNMARK, "Unmark", PHASE_MARK },
+    static const PhaseInfo phases[] = {
+    { PHASE_MUTATOR, "Mutator Running", PHASE_NO_PARENT},
+    { PHASE_GC_BEGIN, "Begin Callback", PHASE_NO_PARENT},
+    { PHASE_WAIT_BACKGROUND_THREAD, "Wait Background Thread", PHASE_NO_PARENT},
+    { PHASE_PREPARE, "Prepare For Collection", PHASE_NO_PARENT},  
+        { PHASE_UNMARK, "Unmark", PHASE_PREPARE},	
+		{ PHASE_BUFFER_GRAY_ROOTS, "Buffer Gray Roots", PHASE_PREPARE},
+        { PHASE_MARK_DISCARD_CODE, "Mark Discard Code", PHASE_PREPARE},
+        { PHASE_RELAZIFY_FUNCTIONS, "Relazify Functions", PHASE_PREPARE},
+        { PHASE_PURGE, "Purge", PHASE_PREPARE},
+        { PHASE_PURGE_SHAPE_TABLES, "Purge ShapeTables", PHASE_PREPARE},
+    { PHASE_MARK, "Mark", PHASE_NO_PARENT},
         /* PHASE_MARK_ROOTS */
         { PHASE_MARK_DELAYED, "Mark Delayed", PHASE_MARK },
     { PHASE_SWEEP, "Sweep", PHASE_NO_PARENT },
@@ -182,18 +185,15 @@ static const PhaseInfo phases[] = {
         /* PHASE_MARK_ROOTS */
     { PHASE_TRACE_HEAP, "Trace Heap", PHASE_NO_PARENT },
         /* PHASE_MARK_ROOTS */
-    { PHASE_BARRIER, "Barriers", PHASE_NO_PARENT },
-        { PHASE_UNMARK_GRAY, "Unmark gray", PHASE_BARRIER },
-    { PHASE_MARK_ROOTS, "Mark Roots", PHASE_MULTI_PARENTS },
-        { PHASE_BUFFER_GRAY_ROOTS, "Buffer Gray Roots", PHASE_MARK_ROOTS },
-        { PHASE_MARK_CCWS, "Mark Cross Compartment Wrappers", PHASE_MARK_ROOTS },
-        { PHASE_MARK_STACK, "Mark C and JS stacks", PHASE_MARK_ROOTS },
-        { PHASE_MARK_RUNTIME_DATA, "Mark Runtime-wide Data", PHASE_MARK_ROOTS },
-        { PHASE_MARK_EMBEDDING, "Mark Embedding", PHASE_MARK_ROOTS },
-        { PHASE_MARK_COMPARTMENTS, "Mark Compartments", PHASE_MARK_ROOTS },
-    { PHASE_PURGE_SHAPE_TABLES, "Purge ShapeTables", PHASE_NO_PARENT },
-
-    { PHASE_LIMIT, nullptr, PHASE_NO_PARENT }
+    { PHASE_BARRIER, "Barriers", PHASE_NO_PARENT},
+        { PHASE_UNMARK_GRAY, "Unmark gray", PHASE_BARRIER},
+    { PHASE_MARK_ROOTS, "Mark Roots", PHASE_MULTI_PARENTS},
+        { PHASE_MARK_CCWS, "Mark Cross Compartment Wrappers", PHASE_MARK_ROOTS},
+        { PHASE_MARK_STACK, "Mark C and JS stacks", PHASE_MARK_ROOTS},
+        { PHASE_MARK_RUNTIME_DATA, "Mark Runtime-wide Data", PHASE_MARK_ROOTS},
+        { PHASE_MARK_EMBEDDING, "Mark Embedding", PHASE_MARK_ROOTS},
+        { PHASE_MARK_COMPARTMENTS, "Mark compartments", PHASE_MARK_ROOTS,},
+    { PHASE_LIMIT, nullptr, PHASE_NO_PARENT}
 };
 
 static ExtraPhaseInfo phaseExtra[PHASE_LIMIT] = { { 0, 0 } };

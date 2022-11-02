@@ -866,7 +866,6 @@ GCRuntime::GCRuntime(JSRuntime* rt) :
     majorGCNumber(0),
     jitReleaseNumber(0),
     number(0),
-    startNumber(0),
     isFull(false),
 #ifdef DEBUG
     disableStrictProxyCheckingCount(0),
@@ -3418,10 +3417,38 @@ ArenaLists::checkEmptyArenaList(AllocKind kind)
     return num_live == 0;
 }
 
+class MOZ_RAII js::gc::AutoRunParallelTask : public GCParallelTask
+{
+    using Func = void (*)(JSRuntime*);
+
+    Func func_;
+    gcstats::Phase phase_;
+    AutoLockHelperThreadState& lock_;
+
+  public:
+    AutoRunParallelTask(JSRuntime* rt, Func func, gcstats::Phase phase,
+                        AutoLockHelperThreadState& lock)
+      : GCParallelTask(rt),
+        func_(func),
+        phase_(phase),
+        lock_(lock)
+    {
+        runtime()->gc.startTask(*this, phase_, lock_);
+    }
+
+    ~AutoRunParallelTask() {
+        runtime()->gc.joinTask(*this, phase_, lock_);
+    }
+
+    void run() override {
+        func_(runtime());
+    }
+};
+
 void
 GCRuntime::purgeRuntime(AutoLockForExclusiveAccess& lock)
 {
-    gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::PURGE);
+    gcstats::AutoPhase ap(stats(), gcstats::PHASE_PURGE);
 
     for (GCCompartmentsIter comp(rt); !comp.done(); comp.next())
         comp->purge();
@@ -3676,7 +3703,7 @@ DiscardJITCodeForIncrementalGC(JSRuntime* rt)
 {
     js::CancelOffThreadIonCompile(rt, JS::Zone::Mark);
     for (GCZonesIter zone(rt); !zone.done(); zone.next()) {
-        gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PhaseKind::MARK_DISCARD_CODE);
+        gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PHASE_MARK_DISCARD_CODE);
         zone->discardJitCode(rt->defaultFreeOp());
     }
 }
@@ -3684,7 +3711,7 @@ DiscardJITCodeForIncrementalGC(JSRuntime* rt)
 static void
 RelazifyFunctionsForShrinkingGC(JSRuntime* rt)
 {
-    gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PhaseKind::RELAZIFY_FUNCTIONS);
+    gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PHASE_RELAZIFY_FUNCTIONS);
     for (GCZonesIter zone(rt); !zone.done(); zone.next()) {
         if (zone->isSelfHostingZone())
             continue;
@@ -3696,7 +3723,7 @@ RelazifyFunctionsForShrinkingGC(JSRuntime* rt)
 static void
 PurgeShapeTablesForShrinkingGC(JSRuntime* rt)
 {
-    gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PhaseKind::PURGE_SHAPE_TABLES);
+    gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PHASE_PURGE_SHAPE_TABLES);
     for (GCZonesIter zone(rt); !zone.done(); zone.next()) {
         if (zone->keepShapeTables() || zone->isSelfHostingZone())
             continue;
@@ -3708,8 +3735,6 @@ PurgeShapeTablesForShrinkingGC(JSRuntime* rt)
 static void
 UnmarkCollectedZones(JSRuntime* rt)
 {
-    gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PhaseKind::UNMARK);
-
     for (GCZonesIter zone(rt); !zone.done(); zone.next()) {
         /* Unmark everything in the zones being collected. */
         zone->arenas.unmarkAll();
@@ -3719,6 +3744,12 @@ UnmarkCollectedZones(JSRuntime* rt)
         /* Unmark all weak maps in the zones being collected. */
         WeakMapBase::unmarkZone(zone);
     }
+}
+
+static void
+BufferGrayRoots(JSRuntime* rt)
+{
+    rt->gc.bufferGrayRoots();
 }
 
 bool
@@ -3745,55 +3776,78 @@ GCRuntime::beginMarkPhase(JS::gcreason::Reason reason, AutoLockForExclusiveAcces
     marker.start();
     GCMarker* gcmarker = &marker;
 
-    /* For non-incremental GC the following sweep discards the jit code. */
-    if (isIncremental)
-        DiscardJITCodeForIncrementalGC(rt);
-
-    /*
-     * Relazify functions after discarding JIT code (we can't relazify functions
-     * with JIT code) and before the actual mark phase, so that the current GC
-     * can collect the JSScripts we're unlinking here.  We do this only when
-     * we're performing a shrinking GC, as too much relazification can cause
-     * performance issues when we have to reparse the same functions over and
-     * over.
-     */
-    if (invocationKind == GC_SHRINK) {
-        RelazifyFunctionsForShrinkingGC(rt);
-        PurgeShapeTablesForShrinkingGC(rt);
-    }
-
-     updateMallocCountersOnGCStart();
-
-    /* Process any queued source compressions during the start of a major GC. */
     {
+        gcstats::AutoPhase ap1(stats(), gcstats::PHASE_PREPARE);
         AutoLockHelperThreadState helperLock;
-        HelperThreadState().startHandlingCompressionTasks(helperLock);
-    }
 
-    /*
-     * We must purge the runtime at the beginning of an incremental GC. The
-     * danger if we purge later is that the snapshot invariant of incremental GC
-     * will be broken, as follows. If some object is reachable only through some
-     * cache (say the dtoaCache) then it will not be part of the snapshot.  If
-     * we purge after root marking, then the mutator could obtain a pointer to
-     * the object and start using it. This object might never be marked, so a GC
-     * hazard would exist.
-     */
-    purgeRuntime(lock);
+        /*
+         * Clear all mark state for the zones we are collecting. This is linear
+         * in the size of the heap we are collecting and so can be slow. Do this
+         * in parallel with the rest of this block.
+         */
+        AutoRunParallelTask
+            unmarkCollectedZones(rt, UnmarkCollectedZones, gcstats::PHASE_UNMARK, helperLock);
+
+        /*
+         * Buffer gray roots for incremental collections. This is linear in the
+         * number of roots which can be in the tens of thousands. Do this in
+         * parallel with the rest of this block.
+         */
+        Maybe<AutoRunParallelTask> bufferGrayRoots;
+        if (isIncremental)
+            bufferGrayRoots.emplace(rt, BufferGrayRoots, gcstats::PHASE_BUFFER_GRAY_ROOTS, helperLock);
+        AutoUnlockHelperThreadState unlock(helperLock);
+
+        /*
+         * Discard JIT code for incremental collections (for non-incremental
+         * collections the following sweep discards the jit code).
+         */
+        if (isIncremental)
+            DiscardJITCodeForIncrementalGC(rt);
+
+        /*
+         * Relazify functions after discarding JIT code (we can't relazify
+         * functions with JIT code) and before the actual mark phase, so that
+         * the current GC can collect the JSScripts we're unlinking here.  We do
+         * this only when we're performing a shrinking GC, as too much
+         * relazification can cause performance issues when we have to reparse
+         * the same functions over and over.
+         */
+        if (invocationKind == GC_SHRINK) {
+            RelazifyFunctionsForShrinkingGC(rt);
+            PurgeShapeTablesForShrinkingGC(rt);
+        }
+
+        /*
+         * We must purge the runtime at the beginning of an incremental GC. The
+         * danger if we purge later is that the snapshot invariant of
+         * incremental GC will be broken, as follows. If some object is
+         * reachable only through some cache (say the dtoaCache) then it will
+         * not be part of the snapshot.  If we purge after root marking, then
+         * the mutator could obtain a pointer to the object and start using
+         * it. This object might never be marked, so a GC hazard would exist.
+         */
+        purgeRuntime(lock);
+    }
 
     /*
      * Mark phase.
      */
-    gcstats::AutoPhase ap1(stats, gcstats::PHASE_MARK);
-
-    UnmarkCollectedZones(rt);
+    gcstats::AutoPhase ap(stats(), gcstats::PHASE_MARK);
     traceRuntimeForMajorGC(gcmarker, lock);
 
-    gcstats::AutoPhase ap2(stats, gcstats::PHASE_MARK_ROOTS);
-
-    if (isIncremental) {
-        bufferGrayRoots();
+    if (isIncremental)
         markCompartments();
+	
+	updateMallocCountersOnGCStart();
+
+    /*
+     * Process any queued source compressions during the start of a major
+     * GC.
+     */
+    {
+        AutoLockHelperThreadState helperLock;
+        HelperThreadState().startHandlingCompressionTasks(helperLock);
     }
      
     return true;
@@ -3802,7 +3856,8 @@ GCRuntime::beginMarkPhase(JS::gcreason::Reason reason, AutoLockForExclusiveAcces
 void
 GCRuntime::markCompartments()
 {
-    gcstats::AutoPhase ap(stats, gcstats::PHASE_MARK_COMPARTMENTS);
+    gcstats::AutoPhase ap1(stats(), gcstats::PHASE_MARK_ROOTS);
+    gcstats::AutoPhase ap2(stats(), gcstats::PHASE_MARK_COMPARTMENTS);
 
     /*
      * This code ensures that if a compartment is "dead", then it will be
@@ -4068,7 +4123,7 @@ js::gc::MarkingValidator::nonIncrementalMark(AutoLockForExclusiveAccess& lock)
     gc->incrementalState = State::MarkRoots;
 
     {
-        gcstats::AutoPhase ap(gc->stats(), gcstats::PHASE_MARK);
+        gcstats::AutoPhase ap(gc->stats(), gcstats::PHASE_PREPARE);
         {
             gcstats::AutoPhase ap(gc->stats(), gcstats::PHASE_UNMARK);
 
@@ -4082,6 +4137,10 @@ js::gc::MarkingValidator::nonIncrementalMark(AutoLockForExclusiveAccess& lock)
             for (auto chunk = gc->allNonEmptyChunks(lock); !chunk.done(); chunk.next())
                 chunk->bitmap.clear();
         }
+    }
+
+    {
+        gcstats::AutoPhase ap(gc->stats(), gcstats::PHASE_MARK);
 
         gc->traceRuntimeForMajorGC(gcmarker, lock);
 
@@ -5001,30 +5060,6 @@ SweepWeakCachesFromMainThread(JSRuntime* rt)
         }
     }
 }
-
-static WeakCacheTaskVector
-PrepareWeakCacheTasks(JSRuntime* rt)
-{
-    WeakCacheTaskVector out;
-    for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
-        for (JS::WeakCache<void*>* cache : zone->weakCaches_) {
-            if (!out.append(SweepWeakCacheTask(rt, *cache))) {
-                SweepWeakCachesFromMainThread(rt);
-                return WeakCacheTaskVector();
-            }
-        }
-    }
-    return out;
-}
-
-    ~AutoRunParallelTask() {
-        runtime()->gc.joinTask(*this, phase_, lock_);
-    }
-
-    void run() override {
-        func_(runtime());
-    }
-};
 
 IncrementalProgress
 GCRuntime::beginSweepingSweepGroup(FreeOp* fop, SliceBudget& budget)
