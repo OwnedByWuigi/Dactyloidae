@@ -11829,27 +11829,22 @@ class MNewNamedLambdaObject : public MNullaryInstruction
     }
 };
 
-class MNewCallObjectBase : public MNullaryInstruction
+class MNewCallObjectBase : public MUnaryInstruction
+                         , public SingleObjectPolicy::Data
 {
-    CompilerGCPointer<CallObject*> templateObj_;
-
   protected:
-    explicit MNewCallObjectBase(CallObject* templateObj)
-      : MNullaryInstruction(),
-        templateObj_(templateObj)
+    MNewCallObjectBase(Opcode op, MConstant* templateObj)
+      : MUnaryInstruction(op, templateObj)
     {
         setResultType(MIRType::Object);
     }
 
   public:
-    CallObject* templateObject() {
-        return templateObj_;
+    CallObject* templateObject() const {
+        return &getOperand(0)->toConstant()->toObject().as<CallObject>();
     }
     AliasSet getAliasSet() const override {
         return AliasSet::None();
-    }
-    bool appendRoots(MRootList& roots) const override {
-        return roots.append(templateObj_);
     }
 };
 
@@ -11858,16 +11853,17 @@ class MNewCallObject : public MNewCallObjectBase
   public:
     INSTRUCTION_HEADER(NewCallObject)
 
-    explicit MNewCallObject(CallObject* templateObj)
-      : MNewCallObjectBase(templateObj)
+    TRIVIAL_NEW_WRAPPERS
+
+    explicit MNewCallObject(MConstant* templateObj)
+      : MNewCallObjectBase(classOpcode, templateObj)
     {
-        MOZ_ASSERT(!templateObj->isSingleton());
+        MOZ_ASSERT(!templateObject()->isSingleton());
     }
 
-    static MNewCallObject*
-    New(TempAllocator& alloc, CallObject* templateObj)
-    {
-        return new(alloc) MNewCallObject(templateObj);
+    [[nodiscard]] bool writeRecoverData(CompactBufferWriter& writer) const override;
+    bool canRecoverOnBailout() const override {
+        return true;
     }
 };
 
@@ -11876,15 +11872,11 @@ class MNewSingletonCallObject : public MNewCallObjectBase
   public:
     INSTRUCTION_HEADER(NewSingletonCallObject)
 
-    explicit MNewSingletonCallObject(CallObject* templateObj)
-      : MNewCallObjectBase(templateObj)
-    {}
+    TRIVIAL_NEW_WRAPPERS
 
-    static MNewSingletonCallObject*
-    New(TempAllocator& alloc, CallObject* templateObj)
-    {
-        return new(alloc) MNewSingletonCallObject(templateObj);
-    }
+    explicit MNewSingletonCallObject(MConstant* templateObj)
+      : MNewCallObjectBase(classOpcode, templateObj)
+    {}
 };
 
 class MNewStringObject :
