@@ -1028,7 +1028,9 @@ class GCRuntime
     static JSObject* tryNewTenuredObject(ExclusiveContext* cx, AllocKind kind, size_t thingSize,
                                          size_t nDynamicSlots);
     template <typename T, AllowGC allowGC>
-    static T* tryNewTenuredThing(ExclusiveContext* cx, AllocKind kind, size_t thingSize);
+    static T* tryNewTenuredThing(JSContext* cx, AllocKind kind, size_t thingSize);
+    template <AllowGC allowGC>
+    JSString* tryNewNurseryString(JSContext* cx, size_t thingSize, AllocKind kind);
     static TenuredCell* refillFreeListInGC(Zone* zone, AllocKind thingKind);
 
     void bufferGrayRoots();

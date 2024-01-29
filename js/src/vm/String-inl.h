@@ -121,7 +121,7 @@ JSRope::new_(js::ExclusiveContext* cx,
 {
     if (!validateLength(cx, length))
         return nullptr;
-    JSRope* str = static_cast<JSRope*>(js::Allocate<JSString, allowGC>(cx));
+    JSRope* str = js::Allocate<JSRope, allowGC>(cx, js::gc::TenuredHeap);
     if (!str)
         return nullptr;
     str->init(cx, left, right, length);
@@ -181,7 +181,7 @@ JSDependentString::new_(js::ExclusiveContext* cx, JSLinearString* baseArg, size_
     if (baseArg->isExternal() && !baseArg->ensureFlat(cx->asJSContext()))
         return nullptr;
 
-    JSDependentString* str = static_cast<JSDependentString*>(js::Allocate<JSString, js::NoGC>(cx));
+    JSDependentString* str = js::Allocate<JSDependentString, js::NoGC>(cx, js::gc::TenuredHeap);
     if (str) {
         str->init(cx, baseArg, start, length);
         return str;
@@ -189,7 +189,7 @@ JSDependentString::new_(js::ExclusiveContext* cx, JSLinearString* baseArg, size_
 
     js::RootedLinearString base(cx, baseArg);
 
-    str = static_cast<JSDependentString*>(js::Allocate<JSString>(cx));
+    str = js::Allocate<JSDependentString>(cx, js::gc::TenuredHeap);
     if (!str)
         return nullptr;
     str->init(cx, base, start, length);
@@ -200,7 +200,7 @@ MOZ_ALWAYS_INLINE void
 JSFlatString::init(const char16_t* chars, size_t length)
 {
     d.u1.length = length;
-    d.u1.flags = FLAT_BIT;
+    d.u1.flags = INIT_FLAT_FLAGS;
     d.s.u2.nonInlineCharsTwoByte = chars;
 }
 
@@ -208,7 +208,7 @@ MOZ_ALWAYS_INLINE void
 JSFlatString::init(const JS::Latin1Char* chars, size_t length)
 {
     d.u1.length = length;
-    d.u1.flags = FLAT_BIT | LATIN1_CHARS_BIT;
+    d.u1.flags = INIT_FLAT_FLAGS | LATIN1_CHARS_BIT;
     d.s.u2.nonInlineCharsLatin1 = chars;
 }
 
@@ -225,7 +225,7 @@ JSFlatString::new_(js::ExclusiveContext* cx, const CharT* chars, size_t length)
     if (cx->compartment()->isAtomsCompartment())
         str = js::Allocate<js::NormalAtom, allowGC>(cx);
     else
-        str = static_cast<JSFlatString*>(js::Allocate<JSString, allowGC>(cx));
+        str = js::Allocate<JSFlatString, allowGC>(cx, js::gc::TenuredHeap);
     if (!str)
         return nullptr;
 
@@ -269,7 +269,7 @@ JSThinInlineString::new_(js::ExclusiveContext* cx)
     if (cx->compartment()->isAtomsCompartment())
         return (JSThinInlineString*)(js::Allocate<js::NormalAtom, allowGC>(cx));
 
-    return static_cast<JSThinInlineString*>(js::Allocate<JSString, allowGC>(cx));
+    return js::Allocate<JSThinInlineString, allowGC>(cx, js::gc::TenuredHeap);
 }
 
 template <js::AllowGC allowGC>
@@ -279,7 +279,7 @@ JSFatInlineString::new_(js::ExclusiveContext* cx)
     if (cx->compartment()->isAtomsCompartment())
         return (JSFatInlineString*)(js::Allocate<js::FatInlineAtom, allowGC>(cx));
 
-    return js::Allocate<JSFatInlineString, allowGC>(cx);
+    return js::Allocate<JSFatInlineString, allowGC>(cx, js::gc::TenuredHeap);
 }
 
 template<>

@@ -225,7 +225,7 @@ AtomMarkingRuntime::atomIsMarked(Zone* zone, T* thing)
             return true;
     }
 
-    size_t bit = GetAtomBit(thing);
+    size_t bit = GetAtomBit(&thing->asTenured());
     return zone->markedAtoms().getBit(bit);
 }
 
