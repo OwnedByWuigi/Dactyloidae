@@ -2708,7 +2708,7 @@ BaselineCompiler::emit_JSOP_SETALIASEDVAR()
 
     Label skipBarrier;
     masm.branchPtrInNurseryChunk(Assembler::Equal, objReg, temp, &skipBarrier);
-    masm.branchValueIsNurseryObject(Assembler::NotEqual, R0, temp, &skipBarrier);
+    masm.branchValueIsNurseryCell(Assembler::NotEqual, R0, temp, &skipBarrier);
 
     masm.call(&postBarrierSlot_); // Won't clobber R0
 
@@ -3127,7 +3127,7 @@ BaselineCompiler::emitFormalArgAccess(uint32_t arg, bool get)
         Label skipBarrier;
 
         masm.branchPtrInNurseryChunk(Assembler::Equal, reg, temp, &skipBarrier);
-        masm.branchValueIsNurseryObject(Assembler::NotEqual, R0, temp, &skipBarrier);
+        masm.branchValueIsNurseryCell(Assembler::NotEqual, R0, temp, &skipBarrier);
 
         masm.call(&postBarrierSlot_);
 

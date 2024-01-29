@@ -81,13 +81,9 @@ NewInlineString(ExclusiveContext* cx, HandleLinearString base, size_t start, siz
 }
 
 static inline void
-StringWriteBarrierPost(js::ExclusiveContext* maybecx, JSString** strp)
+StringWriteBarrierPost(JSContext* maybecx, JSString** strp, JSString* prev, JSString* next)
 {
-}
-
-static inline void
-StringWriteBarrierPostRemove(js::ExclusiveContext* maybecx, JSString** strp)
-{
+    js::BarrierMethods<JSString*>::postBarrier(strp, prev, next);
 }
 
 } /* namespace js */
@@ -112,8 +108,8 @@ JSRope::init(js::ExclusiveContext* cx, JSString* left, JSString* right, size_t l
         d.u1.flags |= LATIN1_CHARS_BIT;
     d.s.u2.left = left;
     d.s.u3.right = right;
-    js::StringWriteBarrierPost(cx, &d.s.u2.left);
-    js::StringWriteBarrierPost(cx, &d.s.u3.right);
+    js::BarrierMethods<JSString*>::postBarrier(&d.s.u2.left, nullptr, left);
+    js::BarrierMethods<JSString*>::postBarrier(&d.s.u3.right, nullptr, right);
 }
 
 template <js::AllowGC allowGC>
@@ -147,7 +143,7 @@ JSDependentString::init(js::ExclusiveContext* cx, JSLinearString* base, size_t s
         d.s.u2.nonInlineCharsTwoByte = base->twoByteChars(nogc) + start;
     }
     d.s.u3.base = base;
-    js::StringWriteBarrierPost(cx, reinterpret_cast<JSString**>(&d.s.u3.base));
+    js::BarrierMethods<JSString*>::postBarrier(reinterpret_cast<JSString**>(&d.s.u3.base), nullptr, base);
 }
 
 MOZ_ALWAYS_INLINE JSLinearString*
@@ -232,6 +228,20 @@ JSFlatString::new_(js::ExclusiveContext* cx, const CharT* chars, size_t length)
         str = static_cast<JSFlatString*>(js::Allocate<JSString, allowGC>(cx));
     if (!str)
         return nullptr;
+
+    if (!str->isTenured()) {
+        // The chars pointer is only considered to be handed over to this
+        // function on a successful return. If the following registration
+        // fails, the string is partially initialized and must be made valid,
+        // or its finalizer may attempt to free uninitialized memory.
+        void* ptr = const_cast<void*>(static_cast<const void*>(chars));
+        if (!cx->runtime()->gc.nursery().registerMallocedBuffer(ptr)) {
+            str->init((JS::Latin1Char*)nullptr, 0);
+            if (allowGC)
+                ReportOutOfMemory(cx);
+            return nullptr;
+        }
+    }
 
     str->init(chars, length);
     return str;

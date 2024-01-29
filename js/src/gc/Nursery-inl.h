@@ -26,15 +26,15 @@ js::Nursery::isInside(const SharedMem<T>& p) const
     return isInside(p.unwrap(/*safe - used for value in comparison above*/));
 }
 
-MOZ_ALWAYS_INLINE bool
-js::Nursery::getForwardedPointer(JSObject** ref) const
+MOZ_ALWAYS_INLINE /* static */ bool
+js::Nursery::getForwardedPointer(js::gc::Cell** ref)
 {
     MOZ_ASSERT(ref);
     MOZ_ASSERT(isInside((void*)*ref));
     const gc::RelocationOverlay* overlay = reinterpret_cast<const gc::RelocationOverlay*>(*ref);
     if (!overlay->isForwarded())
         return false;
-    *ref = static_cast<JSObject*>(overlay->forwardingAddress());
+    *ref = overlay->forwardingAddress();
     return true;
 }
 

@@ -23,6 +23,12 @@ namespace gc {
 
 struct Cell;
 
+/*
+ * The low bit is set so this should never equal a normal pointer, and the high
+ * bit is set so this should never equal the upper 32 bits of a 64-bit pointer.
+ */
+const uint32_t Relocated = uintptr_t(0xbad0bad1);
+
 const size_t ArenaShift = 12;
 const size_t ArenaSize = size_t(1) << ArenaShift;
 const size_t ArenaMask = ArenaSize - 1;
@@ -411,10 +417,15 @@ GetTenuredGCThingZone(GCCellPtr thing)
     return js::gc::detail::GetGCThingZone(thing.unsafeAsUIntPtr());
 }
 
+extern JS_PUBLIC_API(Zone*)
+GetNurseryStringZone(JSString* str);
+
 static MOZ_ALWAYS_INLINE Zone*
 GetStringZone(JSString* str)
 {
-    return js::gc::detail::GetGCThingZone(uintptr_t(str));
+    if (!js::gc::IsInsideNursery(reinterpret_cast<js::gc::Cell*>(str)))
+        return js::gc::detail::GetGCThingZone(reinterpret_cast<uintptr_t>(str));
+    return GetNurseryStringZone(str);
 }
 
 extern JS_PUBLIC_API(Zone*)
@@ -430,6 +441,12 @@ GCThingIsMarkedGray(GCCellPtr thing)
 
 extern JS_PUBLIC_API(JS::TraceKind)
 GCThingTraceKind(void* thing);
+
+extern JS_PUBLIC_API(void)
+EnableNurseryStrings(JSContext* cx);
+
+extern JS_PUBLIC_API(void)
+DisableNurseryStrings(JSContext* cx);
 
 /*
  * Returns true when writes to GC thing pointers (and reads from weak pointers)

@@ -3647,6 +3647,19 @@ class MOZ_RAII js::gc::AutoRunParallelTask : public GCParallelTask
 };
 
 void
+GCRuntime::purgeRuntimeForMinorGC(AutoLockForExclusiveAccess& lock)
+{ 
+    // If external strings become nursery allocable, remember to call
+    // zone->externalStringCache().purge() (and delete this assert.)
+    MOZ_ASSERT(!IsNurseryAllocable(AllocKind::EXTERNAL_STRING));
+
+    for (ZonesIter zone(rt, SkipAtoms); !zone.done(); zone.next())
+        zone->functionToStringCache().purge();
+
+    rt->caches().purgeForMinorGC(rt);
+}
+
+void
 GCRuntime::purgeRuntime()
 {
     gcstats::AutoPhase ap(stats(), gcstats::PHASE_PURGE);
@@ -3658,16 +3671,7 @@ GCRuntime::purgeRuntime()
 
     rt->interpreterStack().purge(rt);
 
-    JSContext* cx = rt->contextFromMainThread();
-    cx->caches.gsnCache.purge();
-    cx->caches.envCoordinateNameCache.purge();
-    cx->caches.newObjectCache.purge();
-    cx->caches.nativeIterCache.purge();
-    cx->caches.uncompressedSourceCache.purge();
-    if (cx->caches.evalCache.initialized())
-        cx->caches.evalCache.clear();
-
-    rt->mainThread.frontendCollectionPool.purge();
+    rt->caches().purge();
 
     if (auto cache = rt->maybeThisRuntimeSharedImmutableStrings())
         cache->purge();
@@ -6398,11 +6402,7 @@ GCRuntime::compactPhase(JS::gcreason::Reason reason, SliceBudget& sliceBudget,
         releaseRelocatedArenas(relocatedArenas);
 
     // Clear caches that can contain cell pointers.
-    JSContext* cx = rt->contextFromMainThread();
-    cx->caches.newObjectCache.purge();
-    cx->caches.nativeIterCache.purge();
-    if (cx->caches.evalCache.initialized())
-        cx->caches.evalCache.clear();
+    rt->caches().purgeForCompaction();
 
 #ifdef DEBUG
     CheckHashTablesAfterMovingGC(rt);
@@ -7790,10 +7790,10 @@ JS::AssertGCThingMustBeTenured(JSObject* obj)
 }
 
 JS_FRIEND_API(void)
-JS::AssertGCThingIsNotAnObjectSubclass(Cell* cell)
+JS::AssertGCThingIsNotNurseryAllocable(Cell* cell)
 {
     MOZ_ASSERT(cell);
-    MOZ_ASSERT(cell->getTraceKind() != JS::TraceKind::Object);
+    MOZ_ASSERT(!cell->is<JSObject>() && !cell->is<JSString>());
 }
 
 JS_FRIEND_API(void)
@@ -7801,10 +7801,18 @@ js::gc::AssertGCThingHasType(js::gc::Cell* cell, JS::TraceKind kind)
 {
     if (!cell)
         MOZ_ASSERT(kind == JS::TraceKind::Null);
-    else if (IsInsideNursery(cell))
-        MOZ_ASSERT(kind == JS::TraceKind::Object);
-    else
-        MOZ_ASSERT(MapAllocToTraceKind(cell->asTenured().getAllocKind()) == kind);
+        return;
+    }
+
+    MOZ_ASSERT(IsCellPointerValid(cell));
+
+    if (IsInsideNursery(cell)) {
+        MOZ_ASSERT(kind == (JSString::nurseryCellIsString(cell) ? JS::TraceKind::String
+                                                                : JS::TraceKind::Object));
+        return;
+    }
+
+    MOZ_ASSERT(MapAllocToTraceKind(cell->asTenured().getAllocKind()) == kind);
 }
 
 JS_PUBLIC_API(size_t)

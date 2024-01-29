@@ -65,6 +65,15 @@ struct EvalCacheEntry
     JSScript* script;
     JSScript* callerScript;
     jsbytecode* pc;
+
+    // We sweep this cache before a nursery collection to remove entries with
+    // string keys in the nursery.
+    //
+    // The entire cache is purged on a major GC, so we don't need to sweep it
+    // then.
+    bool needsSweep() {
+        return !str->isTenured();
+    }
 };
 
 struct EvalCacheLookup

@@ -7618,6 +7618,13 @@ JS::GetObjectZone(JSObject* obj)
     return obj->zone();
 }
 
+JS_PUBLIC_API(Zone*)
+JS::GetNurseryStringZone(JSString* str)
+{
+    MOZ_ASSERT(!str->isTenured());
+    return str->zone();
+}
+
 JS_PUBLIC_API(JS::TraceKind)
 JS::GCThingTraceKind(void* thing)
 {

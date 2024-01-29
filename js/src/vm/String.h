@@ -15,6 +15,7 @@
 
 #include "gc/Barrier.h"
 #include "gc/Heap.h"
+#include "gc/Nursery.h"
 #include "gc/Marking.h"
 #include "gc/Rooting.h"
 #include "js/CharacterEncoding.h"
@@ -460,6 +461,14 @@ class JSString : public js::gc::TenuredCell
         return *(JSAtom*)this;
     }
 
+    // Used for distinguishing strings from objects in the nursery. The caller
+    // must ensure that cell is in the nursery (and not forwarded).
+    MOZ_ALWAYS_INLINE
+    static bool nurseryCellIsString(js::gc::Cell* cell) {
+        MOZ_ASSERT(!cell->isTenured());
+        return !static_cast<JSString*>(cell)->isAtom();
+    }
+
     /* Only called by the GC for dependent or undepended strings. */
 
     inline bool hasBase() const {
@@ -496,6 +505,53 @@ class JSString : public js::gc::TenuredCell
 
     static const JS::TraceKind TraceKind = JS::TraceKind::String;
 
+    JS::Zone* zone() const {
+        if (isTenured()) {
+            // Allow permanent atoms to be accessed across zones and runtimes.
+            if (isPermanentAtom())
+                return zoneFromAnyThread();
+            return asTenured().zone();
+        return js::Nursery::getStringZone(this);
+    }
+
+    // Implement TenuredZone members needed for template instantiations.
+
+    JS::Zone* zoneFromAnyThread() const {
+        if (isTenured())
+            return asTenured().zoneFromAnyThread();
+        return js::Nursery::getStringZone(this);
+    }
+
+    void fixupAfterMovingGC() {}
+
+   js::gc::AllocKind getAllocKind() const {
+        using js::gc::AllocKind;
+        AllocKind kind;
+        if (isAtom())
+            if (isFatInline())
+                kind = AllocKind::FAT_INLINE_ATOM;
+            else
+                kind = AllocKind::ATOM;
+        else if (isFatInline())
+            kind = AllocKind::FAT_INLINE_STRING;
+        else if (isExternal())
+            kind = AllocKind::EXTERNAL_STRING;
+        else
+            kind = AllocKind::STRING;
+
+#if DEBUG
+        if (isTenured()) {
+            // Normally, the kinds should match, but an EXTERNAL_STRING arena
+            // may contain strings that have been flattened (see
+            // JSExternalString::ensureFlat).
+            AllocKind tenuredKind = asTenured().getAllocKind();
+            MOZ_ASSERT(kind == tenuredKind ||
+                       (tenuredKind == AllocKind::EXTERNAL_STRING && kind == AllocKind::STRING));
+        }
+#endif
+        return kind;
+    }
+
 #ifdef DEBUG
     void dump(FILE* fp);
     void dumpCharsNoNewline(FILE* fp);
@@ -513,17 +569,33 @@ class JSString : public js::gc::TenuredCell
     void traceChildren(JSTracer* trc);
 
     static MOZ_ALWAYS_INLINE void readBarrier(JSString* thing) {
-        if (thing->isPermanentAtom())
+        if (thing->isPermanentAtom() || js::gc::IsInsideNursery(thing))
             return;
 
         TenuredCell::readBarrier(thing);
     }
 
     static MOZ_ALWAYS_INLINE void writeBarrierPre(JSString* thing) {
-        if (!thing || thing->isPermanentAtom())
+        if (!thing || thing->isPermanentAtom() || js::gc::IsInsideNursery(thing))
             return;
 
         TenuredCell::writeBarrierPre(thing);
+    }
+
+    static void writeBarrierPost(void* cellp, JSString* prev, JSString* next) {
+        // See JSObject::writeBarrierPost for a description of the logic here.
+        MOZ_ASSERT(cellp);
+
+        js::gc::StoreBuffer* buffer;
+        if (next && (buffer = next->storeBuffer())) {
+            if (prev && prev->storeBuffer())
+                return;
+            buffer->putCell(static_cast<js::gc::Cell**>(cellp));
+            return;
+        }
+
+        if (prev && (buffer = prev->storeBuffer()))
+            buffer->unputCell(static_cast<js::gc::Cell**>(cellp));
     }
 
   private:
@@ -600,6 +672,7 @@ class JSLinearString : public JSString
 {
     friend class JSString;
     friend class js::AutoStableStringChars;
+    friend class js::TenuringTracer;
 
     /* Vacuous and therefore unimplemented. */
     JSLinearString* ensureLinear(js::ExclusiveContext* cx) = delete;
