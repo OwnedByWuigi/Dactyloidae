@@ -1002,6 +1002,83 @@ CodeGenerator::visitValueToObjectOrNull(LValueToObjectOrNull* lir)
     masm.bind(ool->rejoin());
 }
 
+static void
+EmitStoreBufferMutation(MacroAssembler& masm, Register strbase, int32_t strofs,
+                        Register buffer,
+                        LiveGeneralRegisterSet& liveVolatiles,
+                        void (*fun)(js::gc::StoreBuffer*, js::gc::Cell**))
+{
+    Label callVM;
+    Label exit;
+
+    // Call into the VM to barrier the write. The only registers that need to
+    // be preserved are those in liveVolatiles, so once they are saved on the
+    // stack all volatile registers are available for use.
+    masm.bind(&callVM);
+    masm.PushRegsInMask(liveVolatiles);
+
+    AllocatableGeneralRegisterSet regs(GeneralRegisterSet::Volatile());
+    regs.takeUnchecked(buffer);
+    regs.takeUnchecked(strbase);
+    Register addrReg = regs.takeAny();
+    masm.computeEffectiveAddress(Address(strbase, strofs), addrReg);
+
+    bool needExtraReg = !regs.hasAny<GeneralRegisterSet::DefaultType>();
+    if (needExtraReg) {
+        masm.push(strbase);
+        masm.setupUnalignedABICall(strbase);
+    } else {
+        masm.setupUnalignedABICall(regs.takeAny());
+    }
+    masm.passABIArg(buffer);
+    masm.passABIArg(addrReg);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, fun), MoveOp::GENERAL,
+                     CheckUnsafeCallWithABI::DontCheckOther);
+
+    if (needExtraReg)
+        masm.pop(strbase);
+    masm.PopRegsInMask(liveVolatiles);
+    masm.bind(&exit);
+}
+
+// Warning: this function modifies prev and next.
+static void
+EmitPostWriteBarrierS(MacroAssembler& masm,
+                      Register strbase, int32_t strofs,
+                      Register prev, Register next,
+                      LiveGeneralRegisterSet& liveVolatiles)
+{
+    Label exit;
+    Label checkRemove, putCell;
+
+    // if (next && (buffer = next->storeBuffer()))
+    // but we never pass in nullptr for next.
+    Register storebuffer = next;
+    masm.loadStoreBuffer(next, storebuffer);
+    masm.branchPtr(Assembler::Equal, storebuffer, ImmWord(0), &checkRemove);
+
+    // if (prev && prev->storeBuffer())
+    masm.branchPtr(Assembler::Equal, prev, ImmWord(0), &putCell);
+    masm.loadStoreBuffer(prev, prev);
+    masm.branchPtr(Assembler::NotEqual, prev, ImmWord(0), &exit);
+
+    // buffer->putCell(cellp)
+    masm.bind(&putCell);
+    EmitStoreBufferMutation(masm, strbase, strofs, storebuffer, liveVolatiles,
+                            JSString::addCellAddressToStoreBuffer);
+    masm.jump(&exit);
+
+    // if (prev && (buffer = prev->storeBuffer()))
+    masm.bind(&checkRemove);
+    masm.branchPtr(Assembler::Equal, prev, ImmWord(0), &exit);
+    masm.loadStoreBuffer(prev, storebuffer);
+    masm.branchPtr(Assembler::Equal, storebuffer, ImmWord(0), &exit);
+    EmitStoreBufferMutation(masm, strbase, strofs, storebuffer, liveVolatiles,
+                            JSString::removeCellAddressFromStoreBuffer);
+
+    masm.bind(&exit);
+}
+
 enum class FieldToBarrier {
     REGEXP_PENDING_INPUT,
     REGEXP_MATCHES_INPUT,
@@ -1332,6 +1409,7 @@ PrepareAndExecuteRegExp(JSContext* cx, MacroAssembler& masm, Register regexp, Re
     masm.movePtr(input, temp3);
     EmitPostWriteBarrierS(masm, temp1, FieldToBarrier::REGEXP_MATCHES_INPUT,
                           temp2 /* prev */, temp3 /* next */, volatileRegs);
+
     masm.storePtr(lastIndex, Address(temp1, RegExpStatics::offsetOfLazyIndex()));
     masm.store32(Imm32(1), Address(temp1, RegExpStatics::offsetOfPendingLazyEvaluation()));
 
@@ -3811,7 +3889,14 @@ void
 CodeGenerator::visitPostWriteBarrierO(LPostWriteBarrierO* lir)
 {
     auto ool = new(alloc()) OutOfLineCallPostWriteBarrier(lir, lir->object());
-    visitPostWriteBarrierCommonO(lir, ool);
+    visitPostWriteBarrierCommon<LPostWriteBarrierO, MIRType::Object>(lir, ool);
+}
+
+void
+CodeGenerator::visitPostWriteBarrierS(LPostWriteBarrierS* lir)
+{
+    auto ool = new(alloc()) OutOfLineCallPostWriteBarrier(lir, lir->object());
+    visitPostWriteBarrierCommon<LPostWriteBarrierS, MIRType::String>(lir, ool);
 }
 
 void
@@ -3891,7 +3976,7 @@ void
 CodeGenerator::visitPostWriteElementBarrierO(LPostWriteElementBarrierO* lir)
 {
     auto ool = new(alloc()) OutOfLineCallPostWriteElementBarrier(lir, lir->object(), lir->index());
-    visitPostWriteBarrierCommonO(lir, ool);
+    visitPostWriteBarrierCommon<LPostWriteElementBarrierO, MIRType::Object>(lir, ool);
 }
 
 void
@@ -6444,20 +6529,16 @@ CodeGenerator::emitLoadIteratorValues<ValueMap>(Register result, Register temp, 
     masm.storeValue(keyAddress, keyElemAddress, temp);
     masm.storeValue(valueAddress, valueElemAddress, temp);
 
-    Label keyIsNotObject, valueIsNotNurseryObject, emitBarrier;
-    masm.branchTestObject(Assembler::NotEqual, keyAddress, &keyIsNotObject);
-    masm.branchValueIsNurseryObject(Assembler::Equal, keyAddress, temp, &emitBarrier);
-    masm.bind(&keyIsNotObject);
-    masm.branchTestObject(Assembler::NotEqual, valueAddress, &valueIsNotNurseryObject);
-    masm.branchValueIsNurseryObject(Assembler::NotEqual, valueAddress, temp,
-                                    &valueIsNotNurseryObject);
+    Label emitBarrier, skipBarrier;
+    masm.branchValueIsNurseryCell(Assembler::Equal, keyAddress, temp, &emitBarrier);
+    masm.branchValueIsNurseryCell(Assembler::NotEqual, valueAddress, temp, &skipBarrier);
     {
         masm.bind(&emitBarrier);
         saveVolatile(temp);
         emitPostWriteBarrier(result);
         restoreVolatile(temp);
     }
-    masm.bind(&valueIsNotNurseryObject);
+    masm.bind(&skipBarrier);
 }
 
 template <>
@@ -6471,15 +6552,14 @@ CodeGenerator::emitLoadIteratorValues<ValueSet>(Register result, Register temp, 
     masm.patchableCallPreBarrier(keyElemAddress, MIRType::Value);
     masm.storeValue(keyAddress, keyElemAddress, temp);
 
-    Label keyIsNotObject;
-    masm.branchTestObject(Assembler::NotEqual, keyAddress, &keyIsNotObject);
-    masm.branchValueIsNurseryObject(Assembler::NotEqual, keyAddress, temp, &keyIsNotObject);
+    Label skipBarrier;
+    masm.branchValueIsNurseryCell(Assembler::NotEqual, keyAddress, temp, &skipBarrier);
     {
         saveVolatile(temp);
         emitPostWriteBarrier(result);
         restoreVolatile(temp);
     }
-    masm.bind(&keyIsNotObject);
+    masm.bind(&skipBarrier);
 }
 
 template <class IteratorObject, class OrderedHashTable>
@@ -7377,6 +7457,7 @@ CopyStringCharsMaybeInflate(MacroAssembler& masm, Register input, Register destC
 static void
 ConcatInlineString(MacroAssembler& masm, Register lhs, Register rhs, Register output,
                    Register temp1, Register temp2, Register temp3,
+                   bool stringsCanBeInNursery,
                    Label* failure, Label* failurePopTemps, bool isTwoByte)
 {
     // State: result length in temp2.
@@ -7398,7 +7479,7 @@ ConcatInlineString(MacroAssembler& masm, Register lhs, Register rhs, Register ou
         uint32_t flags = JSString::INIT_THIN_INLINE_FLAGS;
         if (!isTwoByte)
             flags |= JSString::LATIN1_CHARS_BIT;
-        masm.newGCString(output, temp1, failure);
+        masm.newGCString(output, temp1, failure, stringsCanBeInNursery);
         masm.store32(Imm32(flags), Address(output, JSString::offsetOfFlags()));
         masm.jump(&allocDone);
     }
@@ -7407,7 +7488,7 @@ ConcatInlineString(MacroAssembler& masm, Register lhs, Register rhs, Register ou
         uint32_t flags = JSString::INIT_FAT_INLINE_FLAGS;
         if (!isTwoByte)
             flags |= JSString::LATIN1_CHARS_BIT;
-        masm.newGCFatInlineString(output, temp1, failure);
+        masm.newGCFatInlineString(output, temp1, failure, stringsCanBeInNursery);
         masm.store32(Imm32(flags), Address(output, JSString::offsetOfFlags()));
     }
     masm.bind(&allocDone);
@@ -7493,7 +7574,7 @@ CodeGenerator::visitSubstr(LSubstr* lir)
 
     // Handle inlined strings by creating a FatInlineString.
     masm.branchTest32(Assembler::Zero, stringFlags, Imm32(JSString::INLINE_CHARS_BIT), &notInline);
-    masm.newGCFatInlineString(output, temp, slowPath);
+    masm.newGCFatInlineString(output, temp, slowPath, stringsCanBeInNursery());
     masm.store32(length, Address(output, JSString::offsetOfLength()));
     Address stringStorage(string, JSInlineString::offsetOfInlineStorage());
     Address outputStorage(output, JSInlineString::offsetOfInlineStorage());
@@ -7535,7 +7616,7 @@ CodeGenerator::visitSubstr(LSubstr* lir)
 
     // Handle other cases with a DependentString.
     masm.bind(&notInline);
-    masm.newGCString(output, temp, slowPath);
+    masm.newGCString(output, temp, slowPath, gen->stringsCanBeInNursery());
     masm.store32(length, Address(output, JSString::offsetOfLength()));
     masm.storePtr(string, Address(output, JSDependentString::offsetOfBase()));
 
@@ -7615,8 +7696,8 @@ JitCompartment::generateStringConcatStub(JSContext* cx)
     // Ensure result length <= JSString::MAX_LENGTH.
     masm.branch32(Assembler::Above, temp2, Imm32(JSString::MAX_LENGTH), &failure);
 
-    // Allocate a new rope.
-    masm.newGCString(output, temp3, &failure);
+    // Allocate a new rope, guaranteed to be in the nursery.
+    masm.newGCString(output, temp3, &failure, stringsCanBeInNursery);
 
     // Store rope length and flags. temp1 still holds the result of AND'ing the
     // lhs and rhs flags, so we just have to clear the other flags to get our
@@ -7641,11 +7722,11 @@ JitCompartment::generateStringConcatStub(JSContext* cx)
 
     masm.bind(&isFatInlineTwoByte);
     ConcatInlineString(masm, lhs, rhs, output, temp1, temp2, temp3,
-                       &failure, &failurePopTemps, true);
+                       stringsCanBeInNursery, &failure, &failurePopTemps, true);
 
     masm.bind(&isFatInlineLatin1);
     ConcatInlineString(masm, lhs, rhs, output, temp1, temp2, temp3,
-                       &failure, &failurePopTemps, false);
+                       stringsCanBeInNursery, &failure, &failurePopTemps, false);
 
     masm.bind(&failurePopTemps);
     masm.pop(temp2);
@@ -9856,8 +9937,8 @@ CodeGenerator::link(JSContext* cx, CompilerConstraintList* constraints)
         ionScript->copyConstants(vp);
         for (size_t i = 0; i < graph.numConstants(); i++) {
             const Value& v = vp[i];
-            if (v.isObject() && IsInsideNursery(&v.toObject())) {
-                cx->runtime()->gc.storeBuffer.putWholeCell(script);
+            if ((v.isObject() || v.isString()) && IsInsideNursery(v.toGCThing())) {
+                cx->zone()->group()->storeBuffer().putWholeCell(script);
                 break;
             }
         }
