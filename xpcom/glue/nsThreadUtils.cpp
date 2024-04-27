@@ -60,11 +60,11 @@ CancelableRunnable::Cancel()
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(IncrementalRunnable, CancelableRunnable,
-                            nsIIncrementalRunnable)
+NS_IMPL_ISUPPORTS_INHERITED(IdleRunnable, CancelableRunnable,
+                            nsIIdleRunnable)
 
 void
-IncrementalRunnable::SetDeadline(TimeStamp aDeadline)
+IdleRunnable::SetDeadline(TimeStamp aDeadline)
 {
   // Do nothing
 }

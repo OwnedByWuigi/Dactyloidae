@@ -34,7 +34,7 @@
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "nsIIdlePeriod.h"
-#include "nsIIncrementalRunnable.h"
+#include "nsIIdleRunnable.h"
 #include "nsThreadSyncDispatch.h"
 #include "LeakRefPtr.h"
 
@@ -1035,7 +1035,7 @@ nsThread::GetIdleEvent(nsIRunnable** aEvent, MutexAutoLock& aProofOfLock)
   mIdleEvents.GetEvent(false, aEvent, aProofOfLock);
 
   if (*aEvent) {
-    nsCOMPtr<nsIIncrementalRunnable> incrementalEvent(do_QueryInterface(*aEvent));
+    nsCOMPtr<nsIIdleRunnable> incrementalEvent(do_QueryInterface(*aEvent));
     if (incrementalEvent) {
       incrementalEvent->SetDeadline(idleDeadline);
     }

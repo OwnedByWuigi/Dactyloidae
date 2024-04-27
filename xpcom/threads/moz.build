@@ -22,7 +22,7 @@ XPIDL_MODULE = 'xpcom_threads'
 EXPORTS += [
     'nsEventQueue.h',
     'nsICancelableRunnable.h',
-    'nsIIncrementalRunnable.h',
+    'nsIIdleRunnable.h',
     'nsMemoryPressure.h',
     'nsProcess.h',
     'nsThread.h',
