@@ -1053,7 +1053,9 @@ public:
     for (; !iter.Done(); iter.Next()) {
       nsPurpleBufferEntry& e = iter.Get();
       if (e.mObject) {
-        aVisitor.Visit(*this, &e);
+        if (!aVisitor.Visit(*this, &e)) {
+          return;
+        }
       }
 
       // Visit call above may have cleared the entry, or the entry was empty
@@ -1066,7 +1068,9 @@ public:
             break;
           }
           if (otherEntry.mObject) {
-            aVisitor.Visit(*this, &otherEntry);
+            if (!aVisitor.Visit(*this, &otherEntry)) {
+              return;
+            }
             // Visit may have cleared otherEntry.
             if (otherEntry.mObject) {
               e.Swap(otherEntry);
@@ -1127,6 +1131,7 @@ public:
   //     that will have no children in the cycle collector graph will also be
   //     removed. CanSkip() may be run on these children.
   void RemoveSkippable(nsCycleCollector* aCollector,
+                       js::SliceBudget& aBudget,
                        bool aRemoveChildlessNodes,
                        bool aAsyncSnowWhiteFreeing,
                        CC_ForgetSkippableCallback aCb);
@@ -1166,7 +1171,7 @@ struct SelectPointersVisitor
   {
   }
 
-  void
+  bool
   Visit(nsPurpleBuffer& aBuffer, nsPurpleBufferEntry* aEntry)
   {
     MOZ_ASSERT(aEntry->mObject, "Null object in purple buffer");
@@ -1176,6 +1181,7 @@ struct SelectPointersVisitor
         AddPurpleRoot(mBuilder, aEntry->mObject, aEntry->mParticipant)) {
       aBuffer.Remove(aEntry);
     }
+    return true;
   }
 
 private:
@@ -1279,7 +1285,8 @@ public:
   void Suspect(void* aPtr, nsCycleCollectionParticipant* aCp,
                nsCycleCollectingAutoRefCnt* aRefCnt);
   uint32_t SuspectedCount();
-  void ForgetSkippable(bool aRemoveChildlessNodes, bool aAsyncSnowWhiteFreeing);
+  void ForgetSkippable(js::SliceBudget& aBudget, bool aRemoveChildlessNodes,
+                       bool aAsyncSnowWhiteFreeing);
   bool FreeSnowWhite(bool aUntilNoSWInPurpleBuffer);
 
   // This method assumes its argument is already canonicalized.
@@ -2646,7 +2653,7 @@ public:
     }
   }
 
-  void
+  bool
   Visit(nsPurpleBuffer& aBuffer, nsPurpleBufferEntry* aEntry)
   {
     MOZ_ASSERT(aEntry->mObject, "Null object in purple buffer");
@@ -2658,6 +2665,7 @@ public:
       mObjects.InfallibleAppend(swo);
       aBuffer.Remove(aEntry);
     }
+    return true;
   }
 
   bool HasSnowWhiteObjects() const
@@ -2730,10 +2738,12 @@ class RemoveSkippableVisitor : public SnowWhiteKiller
 {
 public:
   RemoveSkippableVisitor(nsCycleCollector* aCollector,
+                         js::SliceBudget& aBudget,
                          bool aRemoveChildlessNodes,
                          bool aAsyncSnowWhiteFreeing,
                          CC_ForgetSkippableCallback aCb)
     : SnowWhiteKiller(aCollector)
+    , mBudget(aBudget)
     , mRemoveChildlessNodes(aRemoveChildlessNodes)
     , mAsyncSnowWhiteFreeing(aAsyncSnowWhiteFreeing)
     , mDispatchedDeferredDeletion(false)
@@ -2754,9 +2764,17 @@ public:
     }
   }
 
-  void
+  bool
   Visit(nsPurpleBuffer& aBuffer, nsPurpleBufferEntry* aEntry)
   {
+    if (mBudget.isOverBudget()) {
+      return false;
+    }
+
+    // CanSkip calls can be a bit slow, so increase the likelihood that
+    // isOverBudget actually checks whether we're over the time budget.
+    mBudget.step(5);
+
     MOZ_ASSERT(aEntry->mObject, "null mObject in purple buffer");
     if (!aEntry->mRefCnt->get()) {
       if (!mAsyncSnowWhiteFreeing) {
@@ -2765,19 +2783,21 @@ public:
         mDispatchedDeferredDeletion = true;
         nsCycleCollector_dispatchDeferredDeletion(false);
       }
-      return;
+      return true;
     }
     void* o = aEntry->mObject;
     nsCycleCollectionParticipant* cp = aEntry->mParticipant;
     ToParticipant(o, &cp);
     if (aEntry->mRefCnt->IsPurple() && !cp->CanSkip(o, false) &&
         (!mRemoveChildlessNodes || MayHaveChild(o, cp))) {
-      return;
+      return true;
     }
     aBuffer.Remove(aEntry);
+    return true;
   }
 
 private:
+  js::SliceBudget& mBudget;
   bool mRemoveChildlessNodes;
   bool mAsyncSnowWhiteFreeing;
   bool mDispatchedDeferredDeletion;
@@ -2786,11 +2806,12 @@ private:
 
 void
 nsPurpleBuffer::RemoveSkippable(nsCycleCollector* aCollector,
+                                js::SliceBudget& aBudget,
                                 bool aRemoveChildlessNodes,
                                 bool aAsyncSnowWhiteFreeing,
                                 CC_ForgetSkippableCallback aCb)
 {
-  RemoveSkippableVisitor visitor(aCollector, aRemoveChildlessNodes,
+  RemoveSkippableVisitor visitor(aCollector, aBudget, aRemoveChildlessNodes,
                                  aAsyncSnowWhiteFreeing, aCb);
   VisitEntries(visitor);
 }
@@ -2821,7 +2842,8 @@ nsCycleCollector::FreeSnowWhite(bool aUntilNoSWInPurpleBuffer)
 }
 
 void
-nsCycleCollector::ForgetSkippable(bool aRemoveChildlessNodes,
+nsCycleCollector::ForgetSkippable(js::SliceBudget& aBudget,
+                                  bool aRemoveChildlessNodes,
                                   bool aAsyncSnowWhiteFreeing)
 {
   CheckThreadSafety();
@@ -2845,7 +2867,7 @@ nsCycleCollector::ForgetSkippable(bool aRemoveChildlessNodes,
   }
   MOZ_ASSERT(!mScanInProgress,
              "Don't forget skippable or free snow-white while scan is in progress.");
-  mPurpleBuf.RemoveSkippable(this, aRemoveChildlessNodes,
+  mPurpleBuf.RemoveSkippable(this, aBudget, aRemoveChildlessNodes,
                              aAsyncSnowWhiteFreeing, mForgetSkippableCB);
 }
 
@@ -2967,7 +2989,7 @@ public:
   {
   }
 
-  void
+  bool
   Visit(nsPurpleBuffer& aBuffer, nsPurpleBufferEntry* aEntry)
   {
     MOZ_ASSERT(aEntry->mObject,
@@ -2981,16 +3003,17 @@ public:
 
     PtrInfo* pi = mGraph.FindNode(obj);
     if (!pi) {
-      return;
+      return true;
     }
     MOZ_ASSERT(pi->mParticipant, "No dead objects should be in the purple buffer.");
     if (MOZ_UNLIKELY(mLogger)) {
       mLogger->NoteIncrementalRoot((uint64_t)pi->mPointer);
     }
     if (pi->mColor == black) {
-      return;
+      return true;
     }
     FloodBlackNode(mCount, mFailed, pi);
+    return true;
   }
 
 private:
@@ -4046,7 +4069,8 @@ nsCycleCollector_setForgetSkippableCallback(CC_ForgetSkippableCallback aCB)
 }
 
 void
-nsCycleCollector_forgetSkippable(bool aRemoveChildlessNodes,
+nsCycleCollector_forgetSkippable(js::SliceBudget& aBudget,
+                                 bool aRemoveChildlessNodes,
                                  bool aAsyncSnowWhiteFreeing)
 {
   CollectorData* data = sCollectorData.get();
@@ -4059,7 +4083,8 @@ nsCycleCollector_forgetSkippable(bool aRemoveChildlessNodes,
                  js::ProfileEntry::Category::CC);
 
   TimeLog timeLog;
-  data->mCollector->ForgetSkippable(aRemoveChildlessNodes,
+  data->mCollector->ForgetSkippable(aBudget,
+                                    aRemoveChildlessNodes,
                                     aAsyncSnowWhiteFreeing);
   timeLog.Checkpoint("ForgetSkippable()");
 }
