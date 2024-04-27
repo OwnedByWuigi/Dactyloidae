@@ -32,6 +32,7 @@ class nsIDocument;
 class imgIRequest;
 class nsIDOMEvent;
 class nsINode;
+class nsIRunnable;
 
 namespace mozilla {
 class RefreshDriverTimer;
@@ -363,6 +364,10 @@ public:
    * without skipping paints.
    */
   static mozilla::Maybe<mozilla::TimeStamp> GetIdleDeadlineHint();
+
+  static void DispatchIdleRunnableAfterTick(nsIRunnable* aRunnable,
+                                            uint32_t aDelay);
+  static void CancelIdleRunnable(nsIRunnable* aRunnable);
 
   bool SkippedPaints() const
   {
