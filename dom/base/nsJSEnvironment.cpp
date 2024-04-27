@@ -2108,6 +2108,12 @@ nsJSContext::MaybePokeCC()
     return;
   }
 
+  uint32_t sinceLastCCEnd = TimeUntilNow(sLastCCEndTime);
+  if (sinceLastCCEnd && sinceLastCCEnd < NS_CC_DELAY) {
+    return;
+  }
+
+
   if (ShouldTriggerCC(nsCycleCollector_suspectedCount())) {
     sCCRunnerFireCount = 0;
 
