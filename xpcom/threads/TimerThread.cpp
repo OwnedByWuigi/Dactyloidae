@@ -335,7 +335,7 @@ TimerThread::Shutdown()
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  nsTArray<UniquePtr<Entry>> timers;
+  nsTArray<Entry> timers;
   {
     // lock scope
     MonitorAutoLock lock(mMonitor);
@@ -359,7 +359,7 @@ TimerThread::Shutdown()
 
   uint32_t timersCount = timers.Length();
   for (uint32_t i = 0; i < timersCount; i++) {
-    RefPtr<nsTimerImpl> timer = timers[i]->Take();
+    RefPtr<nsTimerImpl> timer = timers[i].Take();
     if (timer) {
       timer->Cancel();
     }
@@ -437,7 +437,7 @@ TimerThread::Run()
       RemoveLeadingCanceledTimersInternal();
 
       if (!mTimers.IsEmpty()) {
-        if (now >= mTimers[0]->Value()->mTimeout || forceRunThisTimer) {
+        if (now >= mTimers[0].Value()->mTimeout || forceRunThisTimer) {
     next:
           // NB: AddRef before the Release under RemoveTimerInternal to avoid
           // mRefCnt passing through zero, in case all other refs than the one
@@ -445,7 +445,7 @@ TimerThread::Run()
           // must be racing with us, blocked in gThread->RemoveTimer waiting
           // for TimerThread::mMonitor, under nsTimerImpl::Release.
 
-          RefPtr<nsTimerImpl> timerRef(mTimers[0]->Take());
+          RefPtr<nsTimerImpl> timerRef(mTimers[0].Take());
           RemoveFirstTimerInternal();
 
           MOZ_LOG(GetTimerLog(), LogLevel::Debug,
@@ -491,7 +491,7 @@ TimerThread::Run()
       RemoveLeadingCanceledTimersInternal();
 
       if (!mTimers.IsEmpty()) {
-        TimeStamp timeout = mTimers[0]->Value()->mTimeout;
+        TimeStamp timeout = mTimers[0].Value()->mTimeout;
 
         // Don't wait at all (even for PR_INTERVAL_NO_WAIT) if the next timer
         // is due now or overdue.
@@ -562,7 +562,7 @@ TimerThread::AddTimer(nsTimerImpl* aTimer)
   }
 
   // Awaken the timer thread.
-  if (mWaiting && mTimers[0]->Value() == aTimer) {
+  if (mWaiting && mTimers[0].Value() == aTimer) {
     mNotified = true;
     mMonitor.Notify();
   }
@@ -599,7 +599,7 @@ TimerThread::FindNextFireTimeForCurrentThread(TimeStamp aDefault, uint32_t aSear
   uint32_t index = 0;
 
   for (auto timers = mTimers.begin(); timers != mTimers.end(); ++timers) {
-    nsTimerImpl* timer = (*timers)->mTimerImpl();
+    nsTimerImpl* timer = (*timers).Value();
 
     if (!timer) {
       continue;
@@ -648,13 +648,13 @@ TimerThread::AddTimerInternal(nsTimerImpl* aTimer)
 
   TimeStamp now = TimeStamp::Now();
 
-  UniquePtr<Entry>* entry = mTimers.AppendElement(
-    MakeUnique<Entry>(now, aTimer->mTimeout, aTimer), mozilla::fallible);
+  Entry* entry = mTimers.AppendElement(Entry(now, aTimer->mTimeout, aTimer),
+                                       mozilla::fallible);
   if (!entry) {
     return false;
   }
 
-  std::push_heap(mTimers.begin(), mTimers.end(), Entry::UniquePtrLessThan);
+  std::push_heap(mTimers.begin(), mTimers.end());
 
 #ifdef MOZ_TASK_TRACER
   // Caller of AddTimer is the parent task of its timer event, so we store the
@@ -686,8 +686,8 @@ TimerThread::RemoveLeadingCanceledTimersInternal()
   // without actually removing them from the list so we can
   // modify the nsTArray in a single bulk operation.
   auto sortedEnd = mTimers.end();
-  while (sortedEnd != mTimers.begin() && !mTimers[0]->Value()) {
-    std::pop_heap(mTimers.begin(), sortedEnd, Entry::UniquePtrLessThan);
+  while (sortedEnd != mTimers.begin() && !mTimers[0].Value()) {
+    std::pop_heap(mTimers.begin(), sortedEnd);
     --sortedEnd;
   }
 
@@ -709,7 +709,7 @@ TimerThread::RemoveFirstTimerInternal()
 {
   mMonitor.AssertCurrentThreadOwns();
   MOZ_ASSERT(!mTimers.IsEmpty());
-  std::pop_heap(mTimers.begin(), mTimers.end(), Entry::UniquePtrLessThan);
+  std::pop_heap(mTimers.begin(), mTimers.end());
   mTimers.RemoveElementAt(mTimers.Length() - 1);
 }
 
