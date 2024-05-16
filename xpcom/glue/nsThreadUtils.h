@@ -34,6 +34,24 @@
 // for convenience.
 
 /**
+ * Set name of the target thread.  This operation is asynchronous.
+ */
+extern void NS_SetThreadName(nsIThread* aThread, const nsACString& aName);
+
+/**
+ * Static length version of the above function checking length of the
+ * name at compile time.
+ */
+template<size_t LEN>
+inline void
+NS_SetThreadName(nsIThread* aThread, const char (&aName)[LEN])
+{
+  static_assert(LEN <= 16,
+                "Thread name must be no more than 16 characters");
+  NS_SetThreadName(aThread, nsDependentCString(aName));
+}
+
+/**
  * Create a new thread, and optionally provide an initial event for the thread.
  *
  * @param aResult
@@ -51,15 +69,6 @@ NS_NewThread(nsIThread** aResult,
              nsIRunnable* aInitialEvent = nullptr,
              uint32_t aStackSize = nsIThreadManager::DEFAULT_STACK_SIZE);
 
-/**
- * Creates a named thread, otherwise the same as NS_NewThread
- */
-extern nsresult
-NS_NewNamedThread(const nsACString& aName,
-                  nsIThread** aResult,
-                  nsIRunnable* aInitialEvent = nullptr,
-                  uint32_t aStackSize = nsIThreadManager::DEFAULT_STACK_SIZE);
-
 template<size_t LEN>
 inline nsresult
 NS_NewNamedThread(const char (&aName)[LEN],
@@ -67,10 +76,21 @@ NS_NewNamedThread(const char (&aName)[LEN],
                   nsIRunnable* aInitialEvent = nullptr,
                   uint32_t aStackSize = nsIThreadManager::DEFAULT_STACK_SIZE)
 {
-  static_assert(LEN <= 16,
-                "Thread name must be no more than 16 characters");
-  return NS_NewNamedThread(nsDependentCString(aName, LEN - 1),
-                           aResult, aInitialEvent, aStackSize);
+  // Hold a ref while dispatching the initial event to match NS_NewThread()
+  nsCOMPtr<nsIThread> thread;
+  nsresult rv = NS_NewThread(getter_AddRefs(thread), nullptr, aStackSize);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+  NS_SetThreadName<LEN>(thread, aName);
+  if (aInitialEvent) {
+    rv = thread->Dispatch(aInitialEvent, NS_DISPATCH_NORMAL);
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Initial event dispatch failed");
+  }
+
+  *aResult = nullptr;
+  thread.swap(*aResult);
+  return rv;
 }
 
 /**
@@ -889,17 +909,17 @@ struct IsParameterStorageClass<StoreConstRefPassByConstLRef<S>>
   : public mozilla::TrueType {};
 
 template<typename T>
-struct StoreRefPtrPassByPtr
+struct StorensRefPtrPassByPtr
 {
   typedef RefPtr<T> stored_type;
   typedef T* passed_type;
   stored_type m;
   template <typename A>
-  MOZ_IMPLICIT StoreRefPtrPassByPtr(A&& a) : m(mozilla::Forward<A>(a)) {}
+  MOZ_IMPLICIT StorensRefPtrPassByPtr(A&& a) : m(mozilla::Forward<A>(a)) {}
   passed_type PassAsParameter() { return m.get(); }
 };
 template<typename S>
-struct IsParameterStorageClass<StoreRefPtrPassByPtr<S>>
+struct IsParameterStorageClass<StorensRefPtrPassByPtr<S>>
   : public mozilla::TrueType {};
 
 template<typename T>
@@ -986,7 +1006,7 @@ struct NonnsISupportsPointerStorageClass
 template<typename TWithoutPointer>
 struct PointerStorageClass
   : mozilla::Conditional<HasRefCountMethods<TWithoutPointer>::value,
-                         StoreRefPtrPassByPtr<TWithoutPointer>,
+                         StorensRefPtrPassByPtr<TWithoutPointer>,
                          typename NonnsISupportsPointerStorageClass<
                            TWithoutPointer
                          >::Type>
@@ -1003,7 +1023,7 @@ struct LValueReferenceStorageClass
 template<typename T>
 struct SmartPointerStorageClass
   : mozilla::Conditional<mozilla::IsRefcountedSmartPointer<T>::value,
-                         StoreRefPtrPassByPtr<
+                         StorensRefPtrPassByPtr<
                            typename mozilla::RemoveSmartPointer<T>::Type>,
                          StoreCopyPassByConstLRef<T>>
 {};
@@ -1036,7 +1056,7 @@ struct NonParameterStorageClass
 
 // Choose storage&passing strategy based on preferred storage type:
 // - If IsParameterStorageClass<T>::value is true, use as-is.
-// - RC*       -> StoreRefPtrPassByPtr<RC>       : Store RefPtr<RC>, pass RC*
+// - RC*       -> StorensRefPtrPassByPtr<RC>     : Store RefPtr<RC>, pass RC*
 //   ^^ RC quacks like a ref-counted type (i.e., has AddRef and Release methods)
 // - const T*  -> StoreConstPtrPassByConstPtr<T> : Store const T*, pass const T*
 // - T*        -> StorePtrPassByPtr<T>           : Store T*, pass T*.
@@ -1044,7 +1064,7 @@ struct NonParameterStorageClass
 // - T&        -> StoreRefPassByLRef<T>          : Store T&, pass T&.
 // - T&&       -> StoreCopyPassByRRef<T>         : Store T, pass Move(T).
 // - RefPtr<T>, nsCOMPtr<T>
-//             -> StoreRefPtrPassByPtr<T>        : Store RefPtr<T>, pass T*
+//             -> StorensRefPtrPassByPtr<T>      : Store RefPtr<T>, pass T*
 // - Other T   -> StoreCopyPassByConstLRef<T>    : Store T, pass const T&.
 // Other available explicit options:
 // -              StoreCopyPassByValue<T>        : Store T, pass T.
