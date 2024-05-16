@@ -190,7 +190,7 @@ static bool sNeedsFullCC = false;
 static bool sNeedsFullGC = false;
 static bool sNeedsGCAfterCC = false;
 static bool sIncrementalCC = false;
-
+static int32_t sActiveIntersliceGCBudget = 5; // ms;
 static nsScriptNameSpaceManager *gNameSpaceManager;
 
 static PRTime sFirstCollectionTime;
@@ -1320,7 +1320,8 @@ FinishAnyIncrementalGC()
 }
 
 static void
-FireForgetSkippable(uint32_t aSuspected, bool aRemoveChildless)
+FireForgetSkippable(uint32_t aSuspected, bool aRemoveChildless,
+                    TimeStamp aDeadline)
 {
   PRTime startTime = PR_Now();
   FinishAnyIncrementalGC();
@@ -1500,12 +1501,12 @@ CycleCollectorStats::RunForgetSkippable()
     TimeStamp beginForgetSkippable = TimeStamp::Now();
     bool ranSyncForgetSkippable = false;
     while (sCleanupsSinceLastGC < NS_MAJOR_FORGET_SKIPPABLE_CALLS) {
-      FireForgetSkippable(nsCycleCollector_suspectedCount(), false);
+      FireForgetSkippable(nsCycleCollector_suspectedCount(), false, TimeStamp());
       ranSyncForgetSkippable = true;
     }
 
     for (int32_t i = 0; i < mExtraForgetSkippableCalls; ++i) {
-      FireForgetSkippable(nsCycleCollector_suspectedCount(), false);
+      FireForgetSkippable(nsCycleCollector_suspectedCount(), false, TimeStamp());
       ranSyncForgetSkippable = true;
     }
 
@@ -1840,7 +1841,7 @@ InterSliceGCRunnerFired(TimeStamp aDeadline, void* aData)
                                    JS::gcreason::INTER_SLICE_GC,
                                  nsJSContext::IncrementalGC,
                                  nsJSContext::NonShrinkingGC,
-                                 NS_INTERSLICE_GC_BUDGET);
+                                 budget);
 
     return true;
 }
@@ -1918,7 +1919,7 @@ CCRunnerFired(TimeStamp aDeadline, void* aData)
   uint32_t suspected = nsCycleCollector_suspectedCount();
   if (isLateTimerFire && ShouldTriggerCC(suspected)) {
     if (sCCRunnerFireCount == numEarlyTimerFires + 1) {
-      FireForgetSkippable(suspected, true);
+      FireForgetSkippable(suspected, true, aDeadline);
       didDoWork = true;
       if (ShouldTriggerCC(nsCycleCollector_suspectedCount())) {
         // Our efforts to avoid a CC have failed, so we return to let the
@@ -1941,7 +1942,7 @@ CCRunnerFired(TimeStamp aDeadline, void* aData)
              (sCleanupsSinceLastGC < NS_MAJOR_FORGET_SKIPPABLE_CALLS)) {
       // Only do a forget skippable if there are more than a few new objects
       // or we're doing the initial forget skippables.
-      FireForgetSkippable(suspected, false);
+      FireForgetSkippable(suspected, false, aDeadline);
       didDoWork = true;
   }
 
@@ -2189,24 +2190,24 @@ nsJSContext::KillShrinkingGCTimer()
 
 //static
 void
-nsJSContext::KillICCRunner()
+nsJSContext::KillCCRunner()
 {
   sCCLockedOutTime = 0;
-  if (sICCRunner) {
-    sICCRunner->Cancel();
-    sICCRunner = nullptr;
+  if (sCCRunner) {
+    sCCRunner->Cancel();
+    sCCRunner = nullptr;
   }
 }
 
 //static
 void
-nsJSContext::KillICCTimer()
+nsJSContext::KillICCRunner()
 {
   sCCLockedOutTime = 0;
 
-  if (sICCTimer) {
-    sICCTimer->Cancel();
-    NS_RELEASE(sICCTimer);
+  if (sICCRunner) {
+    sICCRunner->Cancel();
+    sICCRunner = nullptr;
   }
 }
 
