@@ -282,7 +282,7 @@ public:
     mDeadline = aDeadline;
   };
 
-  void SetTimer(uint32_t aDelay, nsIEventTarget* aTarget) override
+  void SetTimer(uint32_t aDelay, nsIThread* aTarget) override
   {
     if (mTimerActive) {
       return;
@@ -391,7 +391,7 @@ private:
 
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsITimer> mScheduleTimer;
-  nsCOMPtr<nsIEventTarget> mTarget;
+  nsCOMPtr<nsIThread> mTarget;
   CollectorRunnerCallback mCallback;
   uint32_t mDelay;
   TimeStamp mDeadline;
