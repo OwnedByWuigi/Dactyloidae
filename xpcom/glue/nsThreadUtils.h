@@ -403,11 +403,7 @@ public:
 
   Runnable() {}
 
-#ifdef RELEASE_OR_BETA
   explicit Runnable(const char* aName) {}
-#else
-  explicit Runnable(const char* aName) : mName(aName) {}
-#endif
 
 protected:
   virtual ~Runnable() {}
@@ -416,9 +412,7 @@ private:
   Runnable& operator=(const Runnable&) = delete;
   Runnable& operator=(const Runnable&&) = delete;
 
-#ifndef RELEASE_OR_BETA
   const char* mName = nullptr;
-#endif
 };
 
 // This class is designed to be subclassed.
