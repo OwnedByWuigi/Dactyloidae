@@ -154,7 +154,9 @@ IonBuilder::IonBuilder(JSContext* analysisContext, CompileCompartment* comp,
     failedShapeGuard_(info->script()->failedShapeGuard()),
     failedLexicalCheck_(info->script()->failedLexicalCheck()),
     nonStringIteration_(false),
-    lazyArguments_(nullptr),
+#ifdef DEBUG
+    hasLazyArguments_(false),
+#endif
     inlineCallInfo_(nullptr),
     maybeFallbackFunctionGetter_(nullptr)
 {
@@ -915,11 +917,11 @@ IonBuilder::build()
         ins->setResumePoint(entryRpCopy);
     }
 
+#ifdef DEBUG
     // lazyArguments should never be accessed in |argsObjAliasesFormals| scripts.
-    if (info().hasArguments() && !info().argsObjAliasesFormals()) {
-        lazyArguments_ = MConstant::New(alloc(), MagicValue(JS_OPTIMIZED_ARGUMENTS));
-        current->add(lazyArguments_);
-    }
+    if (info().hasArguments() && !info().argsObjAliasesFormals())
+        hasLazyArguments_ = true;
+#endif
 
     insertRecompileCheck();
 
@@ -1088,10 +1090,10 @@ IonBuilder::buildInline(IonBuilder* callerBuilder, MResumePoint* callerResumePoi
     // +2 for the env chain and |this|, maybe another +1 for arguments object slot.
     MOZ_ASSERT(current->entryResumePoint()->stackDepth() == info().totalSlots());
 
-    if (script_->argumentsHasVarBinding()) {
-        lazyArguments_ = MConstant::New(alloc(), MagicValue(JS_OPTIMIZED_ARGUMENTS));
-        current->add(lazyArguments_);
-    }
+#ifdef DEBUG
+    if (script_->argumentsHasVarBinding())
+        hasLazyArguments_ = true;
+#endif
 
     insertRecompileCheck();
 
@@ -1376,11 +1378,14 @@ IonBuilder::addOsrValueTypeBarrier(uint32_t slot, MInstruction** def_,
       }
 
       case MIRType::MagicOptimizedArguments:
-        MOZ_ASSERT(lazyArguments_);
-        osrBlock->rewriteSlot(slot, lazyArguments_);
-        def = lazyArguments_;
+        {
+        MOZ_ASSERT(hasLazyArguments_);
+        MConstant* lazyArg = MConstant::New(alloc(), MagicValue(JS_OPTIMIZED_ARGUMENTS));
+        osrBlock->insertBefore(osrBlock->lastIns(), lazyArg);
+        osrBlock->rewriteSlot(slot, lazyArg);
+        def = lazyArg;
         break;
-
+		}
       default:
         break;
     }
@@ -1534,6 +1539,47 @@ IonBuilder::traverseBytecode()
             if (!current)
                 return true;
         }
+    }
+
+#ifdef DEBUG
+    MOZ_ASSERT(graph().numBlocks() >= blockWorklist.length());
+    for (i = 0; i < cfg->numBlocks(); i++) {
+        MOZ_ASSERT(blockWorklist[i]);
+        MOZ_ASSERT(!blockWorklist[i]->isDead());
+        MOZ_ASSERT_IF(i != 0, blockWorklist[i]->id() != 0);
+    }
+#endif
+
+    cfg = nullptr;
+
+    blockWorklist.clear();
+    return Ok();
+}
+
+AbortReasonOr<Ok>
+IonBuilder::visitBlock(const CFGBlock* cfgblock, MBasicBlock* mblock)
+{
+    mblock->setLoopDepth(loopDepth_);
+
+    cfgCurrent = cfgblock;
+    pc = cfgblock->startPc();
+
+    if (mblock->pc() && script()->hasScriptCounts())
+        mblock->setHitCount(script()->getHitCount(mblock->pc()));
+
+    // Optimization to move a predecessor that only has this block as successor
+    // just before this block.
+    if (mblock->numPredecessors() == 1 && mblock->getPredecessor(0)->numSuccessors() == 1) {
+        graph().removeBlockFromList(mblock->getPredecessor(0));
+        graph().addBlock(mblock->getPredecessor(0));
+    }
+
+    MOZ_TRY(setCurrentAndSpecializePhis(mblock));
+    graph().addBlock(mblock);
+
+    while (pc < cfgblock->stopPc()) {
+        if (!alloc().ensureBallast())
+            return abort(AbortReason::Alloc);
 
 #ifdef DEBUG
         // In debug builds, after compiling this op, check that all values
@@ -4594,7 +4640,33 @@ IonBuilder::jsop_ifeq(JSOp op)
     if (!improveTypesAtTest(test->getOperand(0), test->ifTrue() == current, test))
         return false;
 
-    return true;
+    MOZ_TRY(setCurrentAndSpecializePhis(ifTrue));
+    MOZ_TRY(improveTypesAtTest(mir->getOperand(0), /* trueBranch = */ true, mir));
+
+    blockWorklist[test->trueBranch()->id()] = ifTrue;
+
+    // Filter the types in the false branch.
+    // Note: sometimes the false branch is used as merge point. As a result
+    // reuse the ifFalse block as a type improvement block and create a new
+    // ifFalse which we can use for the merge.
+    MBasicBlock* filterBlock = ifFalse;
+    ifFalse = nullptr;
+    graph().addBlock(filterBlock);
+
+    MOZ_TRY(setCurrentAndSpecializePhis(filterBlock));
+    MOZ_TRY(improveTypesAtTest(mir->getOperand(0), /* trueBranch = */ false, mir));
+
+    MOZ_TRY_VAR(ifFalse, newBlock(filterBlock, test->falseBranch()->startPc()));
+    filterBlock->end(MGoto::New(alloc(), ifFalse));
+
+    if (filterBlock->pc() && script()->hasScriptCounts())
+        filterBlock->setHitCount(script()->getHitCount(filterBlock->pc()));
+
+    blockWorklist[test->falseBranch()->id()] = ifFalse;
+
+    current = nullptr;
+
+    return Ok();
 }
 
 bool
@@ -4755,9 +4827,78 @@ IonBuilder::processThrow()
     MThrow* ins = MThrow::New(alloc(), def);
     current->end(ins);
 
-    // Make sure no one tries to use this block now.
-    setCurrent(nullptr);
-    return processControlEnd();
+    return Ok();
+}
+
+AbortReasonOr<Ok>
+IonBuilder::visitTableSwitch(CFGTableSwitch* cfgIns)
+{
+    // Pop input.
+    MDefinition* ins = current->pop();
+
+    // Create MIR instruction
+    MTableSwitch* tableswitch = MTableSwitch::New(alloc(), ins, cfgIns->low(), cfgIns->high());
+
+#ifdef DEBUG
+    MOZ_ASSERT(cfgIns->defaultCase() == cfgIns->getSuccessor(0));
+    for (size_t i = 1; i < cfgIns->numSuccessors(); i++) {
+        MOZ_ASSERT(cfgIns->getCase(i-1) == cfgIns->getSuccessor(i));
+    }
+#endif
+
+    // Create the cases
+    for (size_t i = 0; i < cfgIns->numSuccessors(); i++) {
+        const CFGBlock* cfgblock = cfgIns->getSuccessor(i);
+
+        MBasicBlock* caseBlock;
+        MOZ_TRY_VAR(caseBlock, newBlock(current, cfgblock->startPc()));
+
+        blockWorklist[cfgblock->id()] = caseBlock;
+
+        size_t index;
+        if (i == 0) {
+            if (!tableswitch->addDefault(caseBlock, &index))
+                return abort(AbortReason::Alloc);
+
+        } else {
+            if (!tableswitch->addSuccessor(caseBlock, &index))
+                return abort(AbortReason::Alloc);
+
+            if (!tableswitch->addCase(index))
+                return abort(AbortReason::Alloc);
+
+            // If this is an actual case statement, optimize by replacing the
+            // input to the switch case with the actual number of the case.
+            MConstant* constant = MConstant::New(alloc(), Int32Value(i - 1 + tableswitch->low()));
+            caseBlock->add(constant);
+            for (uint32_t j = 0; j < caseBlock->stackDepth(); j++) {
+                if (ins != caseBlock->getSlot(j))
+                    continue;
+
+                constant->setDependency(ins);
+                caseBlock->setSlot(j, constant);
+            }
+            graph().addBlock(caseBlock);
+
+            if (caseBlock->pc() && script()->hasScriptCounts())
+                caseBlock->setHitCount(script()->getHitCount(caseBlock->pc()));
+
+            MBasicBlock* merge;
+            MOZ_TRY_VAR(merge, newBlock(caseBlock, cfgblock->startPc()));
+            if (!merge)
+                return abort(AbortReason::Alloc);
+
+            caseBlock->end(MGoto::New(alloc(), merge));
+            blockWorklist[cfgblock->id()] = merge;
+        }
+
+        MOZ_ASSERT(index == i);
+    }
+
+    // Save the MIR instruction as last instruction of this block.
+    current->end(tableswitch);
+    return Ok();
+
 }
 
 void
@@ -11015,9 +11156,11 @@ IonBuilder::jsop_arguments()
         current->push(current->argumentsObject());
         return true;
     }
-    MOZ_ASSERT(lazyArguments_);
-    current->push(lazyArguments_);
-    return true;
+    MOZ_ASSERT(hasLazyArguments_);
+    MConstant* lazyArg = MConstant::New(alloc(), MagicValue(JS_OPTIMIZED_ARGUMENTS));
+    current->add(lazyArg);
+    current->push(lazyArg);
+    return Ok();
 }
 
 bool

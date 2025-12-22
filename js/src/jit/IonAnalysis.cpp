@@ -196,6 +196,8 @@ FlagPhiInputsAsHavingRemovedUses(MIRGenerator* mir, MBasicBlock* block, MBasicBl
 static bool
 FlagAllOperandsAsHavingRemovedUses(MIRGenerator* mir, MBasicBlock* block)
 {
+    const CompileInfo& info = block->info();
+
     // Flag all instructions operands as having removed uses.
     MInstructionIterator end = block->end();
     for (MInstructionIterator it = block->begin(); it != end; it++) {
@@ -210,13 +212,10 @@ FlagAllOperandsAsHavingRemovedUses(MIRGenerator* mir, MBasicBlock* block)
         if (MResumePoint* rp = ins->resumePoint()) {
             // Note: no need to iterate over the caller's of the resume point as
             // this is the same as the entry resume point.
+            MOZ_ASSERT(&rp->block()->info() == &info);
             for (size_t i = 0, e = rp->numOperands(); i < e; i++) {
-                if (mir->shouldCancel("FlagAllOperandsAsHavingRemovedUses inner loop"))
-                    return false;
-
-                if (!rp->isObservableOperand(i))
-                    continue;
-                rp->getOperand(i)->setUseRemovedUnchecked();
+                if (info.isObservableSlot(i))
+                    rp->getOperand(i)->setUseRemovedUnchecked();
             }
         }
     }
@@ -227,10 +226,10 @@ FlagAllOperandsAsHavingRemovedUses(MIRGenerator* mir, MBasicBlock* block)
         if (mir->shouldCancel("FlagAllOperandsAsHavingRemovedUses loop 2"))
             return false;
 
+        const CompileInfo& info = rp->block()->info();
         for (size_t i = 0, e = rp->numOperands(); i < e; i++) {
-            if (!rp->isObservableOperand(i))
-                continue;
-            rp->getOperand(i)->setUseRemovedUnchecked();
+            if (info.isObservableSlot(i))
+                rp->getOperand(i)->setUseRemovedUnchecked();
         }
         rp = rp->caller();
     }
