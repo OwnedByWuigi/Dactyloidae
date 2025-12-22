@@ -2332,8 +2332,7 @@ CacheIRCompiler::emitWrapResult()
     Register obj = output.valueReg().scratchReg();
     masm.unboxObject(output.valueReg(), obj);
 
-    AllocatableRegisterSet regs(RegisterSet::Volatile());
-    LiveRegisterSet save(regs.asLiveSet());
+    LiveRegisterSet save(GeneralRegisterSet::Volatile(), liveVolatileFloatRegs());
     masm.PushRegsInMask(save);
 
     masm.setupUnalignedABICall(scratch);

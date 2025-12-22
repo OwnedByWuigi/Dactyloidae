@@ -1422,8 +1422,7 @@ IonCacheIRCompiler::emitAddAndStoreSlotShared(CacheOp op)
         int32_t numNewSlots = int32StubField(reader.stubOffset());
         MOZ_ASSERT(numNewSlots > 0);
 
-        AllocatableRegisterSet regs(RegisterSet::Volatile());
-        LiveRegisterSet save(regs.asLiveSet());
+        LiveRegisterSet save(GeneralRegisterSet::Volatile(), liveVolatileFloatRegs());
 
         masm.PushRegsInMask(save);
 
