@@ -40,7 +40,7 @@ namespace irregexp {
 class MOZ_STACK_CLASS RegExpMacroAssembler
 {
   public:
-    RegExpMacroAssembler(LifoAlloc& alloc, size_t numSavedRegisters)
+    RegExpMacroAssembler(JSContext* cx, LifoAlloc& alloc, size_t numSavedRegisters)
       : slow_safe_compiler_(false),
         global_mode_(NOT_GLOBAL),
         alloc_(alloc),
@@ -225,7 +225,7 @@ CaseInsensitiveCompareUCStrings(const CharT* substring1, const CharT* substring2
 class MOZ_STACK_CLASS InterpretedRegExpMacroAssembler final : public RegExpMacroAssembler
 {
   public:
-    InterpretedRegExpMacroAssembler(LifoAlloc* alloc, size_t numSavedRegisters);
+    InterpretedRegExpMacroAssembler(JSContext* cx, LifoAlloc* alloc, size_t numSavedRegisters);
     ~InterpretedRegExpMacroAssembler();
 
     // Inherited virtual methods.

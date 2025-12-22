@@ -96,9 +96,9 @@ irregexp::CaseInsensitiveCompareUCStrings(const char16_t* substring1,
                                           const char16_t* substring2,
                                           size_t byteLength);
 
-InterpretedRegExpMacroAssembler::InterpretedRegExpMacroAssembler(LifoAlloc* alloc,
+InterpretedRegExpMacroAssembler::InterpretedRegExpMacroAssembler(JSContext* cx, LifoAlloc* alloc,
                                                                  size_t numSavedRegisters)
-  : RegExpMacroAssembler(*alloc, numSavedRegisters),
+  : RegExpMacroAssembler(cx, *alloc, numSavedRegisters),
     pc_(0),
     advance_current_start_(0),
     advance_current_offset_(0),
