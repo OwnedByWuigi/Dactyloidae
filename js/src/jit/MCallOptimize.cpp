@@ -610,10 +610,6 @@ IonBuilder::inlineArrayPopShift(CallInfo& callInfo, MArrayPopShift::Mode mode)
     const Class* clasp = thisTypes->getKnownClass(constraints());
     if (clasp != &ArrayObject::class_ && clasp != &UnboxedArrayObject::class_)
         return InliningStatus_NotInlined;
-    if (thisTypes->hasObjectFlags(constraints(), unhandledFlags)) {
-        trackOptimizationOutcome(TrackedOutcome::ArrayBadFlags);
-        return InliningStatus_NotInlined;
-    }
 
     // Watch out for extra indexed properties on the object or its prototype.
     if (ElementAccessHasExtraIndexedProperty(this, obj)) {

@@ -4909,14 +4909,14 @@ MGuardReceiverPolymorphic::congruentTo(const MDefinition* ins) const
 }
 
 void
-InlinePropertyTable::trimTo(const ObjectVector& targets, const BoolVector& choiceSet)
+InlinePropertyTable::trimTo(const InliningTargets& targets, const BoolVector& choiceSet)
 {
     for (size_t i = 0; i < targets.length(); i++) {
         // If the target was inlined, don't erase the entry.
         if (choiceSet[i])
             continue;
 
-        JSFunction* target = &targets[i]->as<JSFunction>();
+        JSFunction* target = &targets[i].target->as<JSFunction>();
 
         // Eliminate all entries containing the vetoed function from the map.
         size_t j = 0;
@@ -4930,7 +4930,7 @@ InlinePropertyTable::trimTo(const ObjectVector& targets, const BoolVector& choic
 }
 
 void
-InlinePropertyTable::trimToTargets(const ObjectVector& targets)
+InlinePropertyTable::trimToTargets(const InliningTargets& targets)
 {
     JitSpew(JitSpew_Inlining, "Got inlineable property cache with %d cases",
             (int)numEntries());
@@ -4939,7 +4939,7 @@ InlinePropertyTable::trimToTargets(const ObjectVector& targets)
     while (i < numEntries()) {
         bool foundFunc = false;
         for (size_t j = 0; j < targets.length(); j++) {
-            if (entries_[i]->func == targets[j]) {
+            if (entries_[i]->func == targets[j].target) {
                 foundFunc = true;
                 break;
             }
@@ -6102,10 +6102,14 @@ jit::PropertyWriteNeedsTypeBarrier(TempAllocator& alloc, CompilerConstraintList*
     bool success = true;
     for (size_t i = 0; i < types->getObjectCount(); i++) {
         TypeSet::ObjectKey* key = types->getObject(i);
-        if (!key)
-            continue;
-        if (!key->hasStableClassAndProto(constraints))
-            return true;
+
+    if (!key) {
+      continue;
+    }
+
+    if (!key->hasStableClassAndProto(constraints)) {
+      return true;
+    }
 
         // TI doesn't track TypedArray indexes and should never insert a type
         // barrier for them.
@@ -6157,10 +6161,14 @@ jit::PropertyWriteNeedsTypeBarrier(TempAllocator& alloc, CompilerConstraintList*
     TypeSet::ObjectKey* excluded = nullptr;
     for (size_t i = 0; i < types->getObjectCount(); i++) {
         TypeSet::ObjectKey* key = types->getObject(i);
-        if (!key)
-            continue;
-        if (!key->hasStableClassAndProto(constraints))
-            return true;
+
+    if (!key) {
+      continue;
+    }
+
+    if (!key->hasStableClassAndProto(constraints)) {
+      return true;
+    }
 
         if (!name && IsTypedArrayClass(key->clasp()))
             continue;

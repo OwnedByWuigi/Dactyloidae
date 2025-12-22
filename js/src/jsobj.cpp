@@ -1892,27 +1892,38 @@ js::SetClassAndProto(JSContext* cx, HandleObject obj,
         return true;
     }
 
-    if (proto.isObject()) {
-        RootedObject protoObj(cx, proto.toObject());
-        if (!JSObject::setNewGroupUnknown(cx, clasp, protoObj))
+    RootedObjectGroup oldGroup(cx, obj->group());
+
+    ObjectGroup* newGroup;
+    if (oldGroup->maybeInterpretedFunction()) {
+        // We're changing the group/proto of a scripted function. Create a new
+        // group so we can keep track of the interpreted function for Ion
+        // inlining.
+        MOZ_ASSERT(obj->is<JSFunction>());
+        newGroup = ObjectGroupCompartment::makeGroup(cx, &JSFunction::class_, proto);
+        if (!newGroup)
+            return false;
+        newGroup->setInterpretedFunction(oldGroup->maybeInterpretedFunction());
+    } else {
+        newGroup = ObjectGroup::defaultNewGroup(cx, clasp, proto);
+        if (!newGroup)
             return false;
     }
 
-    ObjectGroup* group = ObjectGroup::defaultNewGroup(cx, clasp, proto);
-    if (!group)
-        return false;
+    obj->setGroup(newGroup);
 
-    /*
-     * Setting __proto__ on an object that has escaped and may be referenced by
-     * other heap objects can only be done if the properties of both objects
-     * are unknown. Type sets containing this object will contain the original
-     * type but not the new type of the object, so we need to treat all such
-     * type sets as unknown.
-     */
-    MarkObjectGroupUnknownProperties(cx, obj->group());
-    MarkObjectGroupUnknownProperties(cx, group);
+    // Add the object's property types to the new group.
+    if (!newGroup->unknownProperties()) {
+        if (obj->isNative())
+            AddPropertyTypesAfterProtoChange(cx, &obj->as<NativeObject>(), oldGroup);
+        else
+            MarkObjectGroupUnknownProperties(cx, newGroup);
+    }
 
-    obj->setGroup(group);
+    // Type sets containing this object will contain the old group but not the
+    // new group of the object, so we need to treat all such type sets as
+    // unknown.
+    MarkObjectGroupUnknownProperties(cx, oldGroup);
 
     return true;
 }

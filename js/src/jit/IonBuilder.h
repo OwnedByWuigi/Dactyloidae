@@ -233,8 +233,8 @@ class IonBuilder
     void spew(const char* message);
 
     JSFunction* getSingleCallTarget(TemporaryTypeSet* calleeTypes);
-    MOZ_MUST_USE bool getPolyCallTargets(TemporaryTypeSet* calleeTypes, bool constructing,
-                                         ObjectVector& targets, uint32_t maxTargets);
+    AbortReasonOr<Ok> getPolyCallTargets(TemporaryTypeSet* calleeTypes, bool constructing,
+                                         InliningTargets& targets, uint32_t maxTargets);
 
     void popCfgStack();
     DeferredEdge* filterDeadDeferredEdges(DeferredEdge* edge);
@@ -830,7 +830,7 @@ class IonBuilder
     // Oracles.
     InliningDecision canInlineTarget(JSFunction* target, CallInfo& callInfo);
     InliningDecision makeInliningDecision(JSObject* target, CallInfo& callInfo);
-    MOZ_MUST_USE bool selectInliningTargets(const ObjectVector& targets, CallInfo& callInfo,
+    AbortReasonOr<Ok> selectInliningTargets(const InliningTargets& targets, CallInfo& callInfo,
                                             BoolVector& choiceSet, uint32_t* numInlineable);
 
     // Native inlining helpers.
@@ -961,8 +961,8 @@ class IonBuilder
     InliningStatus inlineSingleCall(CallInfo& callInfo, JSObject* target);
 
     // Call functions
-    InliningStatus inlineCallsite(const ObjectVector& targets, CallInfo& callInfo);
-    MOZ_MUST_USE bool inlineCalls(CallInfo& callInfo, const ObjectVector& targets,
+    InliningResult inlineCallsite(const InliningTargets& targets, CallInfo& callInfo);
+    AbortReasonOr<Ok> inlineCalls(CallInfo& callInfo, const InliningTargets& targets,
                                   BoolVector& choiceSet, MGetPropertyCache* maybeCache);
 
     // Inlining helpers.
