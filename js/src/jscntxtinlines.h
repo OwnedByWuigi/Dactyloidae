@@ -82,6 +82,25 @@ class CompartmentChecker
         check(handle.get());
     }
 
+    template<typename T>
+    void check(MutableHandle<T> handle) {
+        check(handle.get());
+    }
+    template <typename T>
+    void checkAtom(T* thing) {
+        static_assert(mozilla::IsSame<T, JSAtom>::value ||
+                      mozilla::IsSame<T, JS::Symbol>::value,
+                      "Should only be called with JSAtom* or JS::Symbol* argument");
+#ifdef DEBUG
+        // Atoms which move across zone boundaries need to be marked in the new
+        // zone, see JS_MarkCrossZoneId.
+        if (compartment) {
+            JSRuntime* rt = compartment->runtimeFromAnyThread();
+            MOZ_ASSERT(rt->gc.atomMarking.atomIsMarked(compartment->zone(), thing));
+        }
+#endif
+    }
+
     void check(JSString* str) {
         MOZ_ASSERT(!js::gc::detail::CellIsMarkedGray(str));
         if (!str->isAtom())
@@ -93,6 +112,20 @@ class CompartmentChecker
             check(&v.toObject());
         else if (v.isString())
             check(v.toString());
+    }
+
+    // Check the contents of any container class that supports the C++
+    // iteration protocol, eg GCVector<jsid>.
+    template <typename Container>
+    typename mozilla::EnableIf<
+        mozilla::IsSame<
+            decltype(((Container*)nullptr)->begin()),
+            decltype(((Container*)nullptr)->end())
+        >::value
+    >::Type
+    check(const Container& container) {
+        for (auto i : container)
+            check(i);
     }
 
     void check(const ValueArray& arr) {

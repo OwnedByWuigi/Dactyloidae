@@ -972,6 +972,8 @@ GlobalScope::XDR(XDRState<mode>* xdr, ScopeKind kind, MutableHandleScope scope)
         if (mode == XDR_DECODE)
             uniqueData.emplace(cx, data);
 
+        if (!xdr->codeUint32(&data->varStart))
+            return false;
         if (!xdr->codeUint32(&data->letStart))
             return false;
         if (!xdr->codeUint32(&data->constStart))
@@ -979,6 +981,7 @@ GlobalScope::XDR(XDRState<mode>* xdr, ScopeKind kind, MutableHandleScope scope)
 
         if (mode == XDR_DECODE) {
             if (!data->length) {
+                MOZ_ASSERT(!data->varStart);
                 MOZ_ASSERT(!data->letStart);
                 MOZ_ASSERT(!data->constStart);
             }
@@ -1389,7 +1392,10 @@ js::DumpBindings(JSContext* cx, Scope* scopeArg)
         fprintf(stderr, "%s %s ", BindingKindString(bi.kind()), bytes.ptr());
         switch (bi.location().kind()) {
           case BindingLocation::Kind::Global:
-            fprintf(stderr, "global\n");
+            if (bi.isTopLevelFunction())
+                fprintf(stderr, "global function\n");
+            else
+                fprintf(stderr, "global\n");
             break;
           case BindingLocation::Kind::Argument:
             fprintf(stderr, "arg slot %u\n", bi.location().argumentSlot());

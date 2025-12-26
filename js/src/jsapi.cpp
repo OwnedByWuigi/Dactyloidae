@@ -2611,7 +2611,7 @@ JS_ForwardSetPropertyTo(JSContext* cx, HandleObject obj, HandleId id, HandleValu
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    assertSameCompartment(cx, obj, id, receiver);
+    assertSameCompartment(cx, obj, id, v, receiver);
 
     return SetProperty(cx, obj, id, v, receiver, result);
 }
@@ -2621,7 +2621,7 @@ JS_SetPropertyById(JSContext* cx, HandleObject obj, HandleId id, HandleValue v)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    assertSameCompartment(cx, obj, id);
+    assertSameCompartment(cx, obj, id, v);
 
     RootedValue receiver(cx, ObjectValue(*obj));
     ObjectOpResult ignored;
@@ -2775,7 +2775,7 @@ JS_Enumerate(JSContext* cx, HandleObject obj, JS::MutableHandle<IdVector> props)
 {
     AssertHeapIsIdle(cx);
     CHECK_REQUEST(cx);
-    assertSameCompartment(cx, obj);
+    assertSameCompartment(cx, obj, props);
     MOZ_ASSERT(props.empty());
 
     AutoIdVector ids(cx);

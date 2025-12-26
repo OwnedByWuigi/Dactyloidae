@@ -515,6 +515,34 @@ DefineArgumentsIterator(JSContext* cx, Handle<ArgumentsObject*> argsobj)
 }
 
 /* static */ bool
+ArgumentsObject::reifyLength(JSContext* cx, Handle<ArgumentsObject*> obj)
+{
+    if (obj->hasOverriddenLength())
+        return true;
+
+    RootedId id(cx, NameToId(cx->names().length));
+    RootedValue val(cx, Int32Value(obj->initialLength()));
+    if (!NativeDefineProperty(cx, obj, id, val, nullptr, nullptr, JSPROP_RESOLVING))
+        return false;
+
+    obj->markLengthOverridden();
+    return true;
+}
+
+/* static */ bool
+ArgumentsObject::reifyIterator(JSContext* cx, Handle<ArgumentsObject*> obj)
+{
+    if (obj->hasOverriddenIterator())
+        return true;
+
+    if (!DefineArgumentsIterator(cx, obj))
+        return false;
+
+    obj->markIteratorOverridden();
+    return true;
+}
+
+/* static */ bool
 MappedArgumentsObject::obj_resolve(JSContext* cx, HandleObject obj, HandleId id, bool* resolvedp)
 {
     Rooted<MappedArgumentsObject*> argsobj(cx, &obj->as<MappedArgumentsObject>());
@@ -567,20 +595,20 @@ MappedArgumentsObject::obj_enumerate(JSContext* cx, HandleObject obj)
 
     // Trigger reflection.
     id = NameToId(cx->names().length);
-    if (!HasProperty(cx, argsobj, id, &found))
+    if (!HasOwnProperty(cx, argsobj, id, &found))
         return false;
 
     id = NameToId(cx->names().callee);
-    if (!HasProperty(cx, argsobj, id, &found))
+    if (!HasOwnProperty(cx, argsobj, id, &found))
         return false;
 
     id = SYMBOL_TO_JSID(cx->wellKnownSymbols().iterator);
-    if (!HasProperty(cx, argsobj, id, &found))
+    if (!HasOwnProperty(cx, argsobj, id, &found))
         return false;
 
     for (unsigned i = 0; i < argsobj->initialLength(); i++) {
         id = INT_TO_JSID(i);
-        if (!HasProperty(cx, argsobj, id, &found))
+        if (!HasOwnProperty(cx, argsobj, id, &found))
             return false;
     }
 
@@ -757,20 +785,20 @@ UnmappedArgumentsObject::obj_enumerate(JSContext* cx, HandleObject obj)
 
     // Trigger reflection.
     id = NameToId(cx->names().length);
-    if (!HasProperty(cx, argsobj, id, &found))
+    if (!HasOwnProperty(cx, argsobj, id, &found))
         return false;
 
     id = NameToId(cx->names().callee);
-    if (!HasProperty(cx, argsobj, id, &found))
+    if (!HasOwnProperty(cx, argsobj, id, &found))
         return false;
 
     id = SYMBOL_TO_JSID(cx->wellKnownSymbols().iterator);
-    if (!HasProperty(cx, argsobj, id, &found))
+    if (!HasOwnProperty(cx, argsobj, id, &found))
         return false;
 
     for (unsigned i = 0; i < argsobj->initialLength(); i++) {
         id = INT_TO_JSID(i);
-        if (!HasProperty(cx, argsobj, id, &found))
+        if (!HasOwnProperty(cx, argsobj, id, &found))
             return false;
     }
 
