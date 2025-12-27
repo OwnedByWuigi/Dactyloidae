@@ -250,7 +250,7 @@ NativeObject::getDenseOrTypedArrayElement(ExclusiveContext* cx, uint32_t idx,
     return true;
 }
 
-/* static */ inline NativeObject*
+/* static */ inline JS::Result<NativeObject*, JS::OOM&>
 NativeObject::createWithTemplate(JSContext* cx, gc::InitialHeap heap,
                                  HandleObject templateObject)
 {
@@ -266,8 +266,8 @@ NativeObject::createWithTemplate(JSContext* cx, gc::InitialHeap heap,
     return &baseObj->as<NativeObject>();
 }
 
-/* static */ inline NativeObject*
-NativeObject::copy(ExclusiveContext* cx, gc::AllocKind kind, gc::InitialHeap heap,
+/* static */ inline JS::Result<NativeObject*, JS::OOM&>
+NativeObject::copy(JSContext* cx, gc::AllocKind kind, gc::InitialHeap heap,
                    HandleNativeObject templateObject)
 {
     RootedShape shape(cx, templateObject->lastProperty());

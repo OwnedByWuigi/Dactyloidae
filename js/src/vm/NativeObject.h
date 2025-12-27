@@ -486,7 +486,7 @@ class NativeObject : public ShapedObject
         return cells && cells->hasCell(cell);
     }
 
-    static inline NativeObject*
+    static inline JS::Result<NativeObject*, JS::OOM&>
     createWithTemplate(JSContext* cx, js::gc::InitialHeap heap, HandleObject templateObject);
 
   protected:
@@ -1321,8 +1321,8 @@ class NativeObject : public ShapedObject
         return privateRef(nfixed);
     }
 
-    static inline NativeObject*
-    copy(ExclusiveContext* cx, gc::AllocKind kind, gc::InitialHeap heap,
+    static inline JS::Result<NativeObject*, JS::OOM&>
+    copy(JSContext* cx, gc::AllocKind kind, gc::InitialHeap heap,
          HandleNativeObject templateObject);
 
     void updateShapeAfterMovingGC();

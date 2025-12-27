@@ -950,9 +950,9 @@ js::CreateIterResultObject(JSContext* cx, HandleValue value, bool done)
     if (!templateObject)
         return nullptr;
 
-    NativeObject* resultObj = NativeObject::createWithTemplate(cx, gc::DefaultHeap, templateObject);
-    if (!resultObj)
-       return nullptr;
+    NativeObject* resultObj;
+    JS_TRY_VAR_OR_RETURN_NULL(
+      cx, resultObj, NativeObject::createWithTemplate(cx, gc::DefaultHeap, templateObject));
 
     // Step 3.
     resultObj->setSlot(JSCompartment::IterResultObjectValueSlot, value);

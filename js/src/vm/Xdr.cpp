@@ -29,8 +29,9 @@ template<XDRMode mode>
 void
 XDRState<mode>::postProcessContextErrors(ExclusiveContext* cx)
 {
-    if (cx->isJSContext() && cx->asJSContext()->isExceptionPending()) {
-        MOZ_ASSERT(resultCode_ == JS::TranscodeResult_Ok);
+    if (!cx->helperThread() && cx->isExceptionPending()) {
+        MOZ_ASSERT(resultCode_ == JS::TranscodeResult_Ok ||
+                   resultCode_ == JS::TranscodeResult_Throw);
         resultCode_ = JS::TranscodeResult_Throw;
     }
 }
@@ -67,6 +68,8 @@ XDRState<mode>::codeChars(char16_t* chars, size_t nchars)
         mozilla::NativeEndian::copyAndSwapToLittleEndian(ptr, chars, nchars);
     } else {
         const uint8_t* ptr = buf.read(nbytes);
+        if (!ptr)
+            return fail(JS::TranscodeResult_Failure_BadDecode);
         mozilla::NativeEndian::copyAndSwapFromLittleEndian(chars, ptr, nchars);
     }
     return true;
