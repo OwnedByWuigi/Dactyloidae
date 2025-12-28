@@ -126,6 +126,7 @@
 
 using mozilla::DebugOnly;
 using mozilla::FloatingPoint;
+using mozilla::FloorLog2;
 using mozilla::IsPowerOfTwo;
 using mozilla::SpecificNaN;
 
@@ -1699,6 +1700,45 @@ class BaseCompiler
         return true;
     }
 
+    [[nodiscard]] bool popConstI64(int64_t& c) {
+        Stk& v = stk_.back();
+        if (v.kind() != Stk::ConstI64)
+            return false;
+        c = v.i64val();
+        stk_.popBack();
+        return true;
+    }
+
+     [[nodiscard]] bool popConstPositivePowerOfTwoI32(int32_t& c,
+                                                    uint_fast8_t& power,
+                                                    int32_t cutoff)
+    {
+        Stk& v = stk_.back();
+        if (v.kind() != Stk::ConstI32)
+            return false;
+        c = v.i32val();
+        if (c <= cutoff || !IsPowerOfTwo(static_cast<uint32_t>(c)))
+            return false;
+        power = FloorLog2(c);
+        stk_.popBack();
+        return true;
+    }
+
+    [[nodiscard]] bool popConstPositivePowerOfTwoI64(int64_t& c,
+                                                    uint_fast8_t& power,
+                                                    int64_t cutoff)
+    {
+        Stk& v = stk_.back();
+        if (v.kind() != Stk::ConstI64)
+            return false;
+        c = v.i64val();
+        if (c <= cutoff || !IsPowerOfTwo(static_cast<uint64_t>(c)))
+            return false;
+        power = FloorLog2(c);
+        stk_.popBack();
+        return true;
+    }
+
     // TODO / OPTIMIZE (Bug 1316818): At the moment we use ReturnReg
     // for JoinReg.  It is possible other choices would lead to better
     // register allocation, as ReturnReg is often first in the
@@ -2692,6 +2732,14 @@ class BaseCompiler
         *r0 = popI64();
 #else
         pop2xI64(r0, r1);
+#endif
+    }
+
+bool rotate64NeedsTemp() const {
+#if defined(JS_CODEGEN_X86)
+        return true;
+#else
+        return false;
 #endif
     }
 
@@ -4214,18 +4262,23 @@ BaseCompiler::emitAddI32()
 void
 BaseCompiler::emitAddI64()
 {
-    // TODO / OPTIMIZE: Ditto check for constant here (Bug 1316803)
-    RegI64 r0, r1;
-    pop2xI64(&r0, &r1);
-    masm.add64(r1.reg, r0.reg);
-    freeI64(r1);
-    pushI64(r0);
+    int64_t c;
+    if (popConstI64(c)) {
+        RegI64 r = popI64();
+        masm.add64(Imm64(c), r);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64(&r0, &r1);
+        masm.add64(r1, r0);
+        freeI64(r1);
+        pushI64(r0);
+    }
 }
 
 void
 BaseCompiler::emitAddF64()
 {
-    // TODO / OPTIMIZE: Ditto check for constant here (Bug 1316803)
     RegF64 r0, r1;
     pop2xF64(&r0, &r1);
     masm.addDouble(r1.reg, r0.reg);
@@ -4236,7 +4289,6 @@ BaseCompiler::emitAddF64()
 void
 BaseCompiler::emitAddF32()
 {
-    // TODO / OPTIMIZE: Ditto check for constant here (Bug 1316803)
     RegF32 r0, r1;
     pop2xF32(&r0, &r1);
     masm.addFloat32(r1.reg, r0.reg);
@@ -4247,21 +4299,35 @@ BaseCompiler::emitAddF32()
 void
 BaseCompiler::emitSubtractI32()
 {
-    RegI32 r0, r1;
-    pop2xI32(&r0, &r1);
-    masm.sub32(r1.reg, r0.reg);
-    freeI32(r1);
-    pushI32(r0);
+    int32_t c;
+    if (popConstI32(c)) {
+        RegI32 r = popI32();
+        masm.sub32(Imm32(c), r);
+        pushI32(r);
+    } else {
+        RegI32 r0, r1;
+        pop2xI32(&r0, &r1);
+        masm.sub32(r1, r0);
+        freeI32(r1);
+        pushI32(r0);
+    }
 }
 
 void
 BaseCompiler::emitSubtractI64()
 {
-    RegI64 r0, r1;
-    pop2xI64(&r0, &r1);
-    masm.sub64(r1.reg, r0.reg);
-    freeI64(r1);
-    pushI64(r0);
+    int64_t c;
+    if (popConstI64(c)) {
+        RegI64 r = popI64();
+        masm.sub64(Imm64(c), r);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64(&r0, &r1);
+        masm.sub64(r1, r0);
+        freeI64(r1);
+        pushI64(r0);
+    }
 }
 
 void
@@ -4388,116 +4454,116 @@ BaseCompiler::emitMultiplyF64()
 void
 BaseCompiler::emitQuotientI32()
 {
-    // TODO / OPTIMIZE: Fast case if lhs >= 0 and rhs is power of two (Bug 1316803)
-    RegI32 r0, r1;
-    pop2xI32ForIntMulDiv(&r0, &r1);
+    int32_t c;
+    uint_fast8_t power;
+    if (popConstPositivePowerOfTwoI32(c, power, 0)) {
+        if (power != 0) {
+            RegI32 r = popI32();
+            Label positive;
+            masm.branchTest32(Assembler::NotSigned, r, r, &positive);
+            masm.add32(Imm32(c-1), r);
+            masm.bind(&positive);
 
-    Label done;
-    checkDivideByZeroI32(r1, r0, &done);
-    checkDivideSignedOverflowI32(r1, r0, &done, ZeroOnOverflow(false));
-    masm.quotient32(r1.reg, r0.reg, IsUnsigned(false));
-    masm.bind(&done);
+            masm.rshift32Arithmetic(Imm32(power & 31), r);
+            pushI32(r);
+        }
+    } else {
+        RegI32 r0, r1;
+        pop2xI32ForIntMulDiv(&r0, &r1);
 
-    freeI32(r1);
-    pushI32(r0);
+        Label done;
+        checkDivideByZeroI32(r1, r0, &done);
+        checkDivideSignedOverflowI32(r1, r0, &done, ZeroOnOverflow(false));
+        masm.quotient32(r1, r0, IsUnsigned(false));
+        masm.bind(&done);
+
+        freeI32(r1);
+        pushI32(r0);
+    }
 }
 
 void
 BaseCompiler::emitQuotientU32()
 {
-  int32_t c;
-  if (popConstI32(c)) {
-    uint32_t uc = uint32_t(c);
-    RegI32 r = popI32();
+    int32_t c;
+    uint_fast8_t power;
+    if (popConstPositivePowerOfTwoI32(c, power, 0)) {
+        if (power != 0) {
+            RegI32 r = popI32();
+            masm.rshift32(Imm32(power & 31), r);
+            pushI32(r);
+        }
+    } else {
+        RegI32 r0, r1;
+        pop2xI32ForIntMulDiv(&r0, &r1);
 
-    if (uc != 0 && IsPowerOfTwo(uc)) {
-      uint32_t shift = 0;
-      while ((uint32_t(1) << shift) != uc)
-        shift++;
-      masm.rshift32(Imm32(shift), r.reg);
-      pushI32(r);
-      return;
+        Label done;
+        checkDivideByZeroI32(r1, r0, &done);
+        masm.quotient32(r1, r0, IsUnsigned(true));
+        masm.bind(&done);
+
+        freeI32(r1);
+        pushI32(r0);
     }
-
-    RegI32 rhs = needI32();
-    masm.move32(Imm32(c), rhs.reg);
-
-    Label done;
-    checkDivideByZeroI32(rhs, r, &done);
-    masm.quotient32(rhs.reg, r.reg, IsUnsigned(true));
-    masm.bind(&done);
-
-    freeI32(rhs);
-    pushI32(r);
-    return;
-  }
-
-  RegI32 r0, r1;
-  pop2xI32ForIntMulDiv(&r0, &r1);
-
-  Label done;
-  checkDivideByZeroI32(r1, r0, &done);
-  masm.quotient32(r1.reg, r0.reg, IsUnsigned(true));
-  masm.bind(&done);
-
-  freeI32(r1);
-  pushI32(r0);
 }
 
 void
 BaseCompiler::emitRemainderI32()
 {
-    // TODO / OPTIMIZE: Fast case if lhs >= 0 and rhs is power of two (Bug 1316803)
-    RegI32 r0, r1;
-    pop2xI32ForIntMulDiv(&r0, &r1);
+    int32_t c;
+    uint_fast8_t power;
+    if (popConstPositivePowerOfTwoI32(c, power, 1)) {
+        RegI32 r = popI32();
+        RegI32 temp = needI32();
+        moveI32(r, temp);
 
-    Label done;
-    checkDivideByZeroI32(r1, r0, &done);
-    checkDivideSignedOverflowI32(r1, r0, &done, ZeroOnOverflow(true));
-    masm.remainder32(r1.reg, r0.reg, IsUnsigned(false));
-    masm.bind(&done);
+        Label positive;
+        masm.branchTest32(Assembler::NotSigned, temp, temp, &positive);
+        masm.add32(Imm32(c-1), temp);
+        masm.bind(&positive);
 
-    freeI32(r1);
-    pushI32(r0);
+        masm.rshift32Arithmetic(Imm32(power & 31), temp);
+        masm.lshift32(Imm32(power & 31), temp);
+        masm.sub32(temp, r);
+        freeI32(temp);
+
+        pushI32(r);
+    } else {
+        RegI32 r0, r1;
+        pop2xI32ForIntMulDiv(&r0, &r1);
+
+        Label done;
+        checkDivideByZeroI32(r1, r0, &done);
+        checkDivideSignedOverflowI32(r1, r0, &done, ZeroOnOverflow(true));
+        masm.remainder32(r1, r0, IsUnsigned(false));
+        masm.bind(&done);
+
+        freeI32(r1);
+        pushI32(r0);
+    }
 }
 
 void
 BaseCompiler::emitRemainderU32()
 {
-  int32_t c;
-  if (popConstI32(c)) {
-    uint32_t uc = uint32_t(c);
-    RegI32 r = popI32();
+    int32_t c;
+    uint_fast8_t power;
+    if (popConstPositivePowerOfTwoI32(c, power, 1)) {
+        RegI32 r = popI32();
+        masm.and32(Imm32(c-1), r);
+        pushI32(r);
+    } else {
+        RegI32 r0, r1;
+        pop2xI32ForIntMulDiv(&r0, &r1);
 
-    if (uc != 0 && IsPowerOfTwo(uc)) {
-      masm.and32(Imm32(int32_t(uc - 1)), r.reg);
-      pushI32(r);
-      return;
+        Label done;
+        checkDivideByZeroI32(r1, r0, &done);
+        masm.remainder32(r1, r0, IsUnsigned(true));
+        masm.bind(&done);
+
+        freeI32(r1);
+        pushI32(r0);
     }
-
-    RegI32 rhs = needI32();
-    masm.move32(Imm32(c), rhs.reg);
-
-    Label done;
-    checkDivideByZeroI32(rhs, r, &done);
-    masm.remainder32(rhs.reg, r.reg, IsUnsigned(true));
-    masm.bind(&done);
-
-    freeI32(rhs);
-    pushI32(r);
-    return;
-  }
-
-  RegI32 r0, r1;
-  pop2xI32ForIntMulDiv(&r0, &r1);
-
-  Label done;
-  checkDivideByZeroI32(r1, r0, &done);
-  masm.remainder32(r1.reg, r0.reg, IsUnsigned(true));
-  masm.bind(&done);
-
-  freeI32(r1);
-  pushI32(r0);
 }
 
 #ifndef INT_DIV_I64_CALLOUT
@@ -4505,11 +4571,27 @@ void
 BaseCompiler::emitQuotientI64()
 {
 # ifdef JS_PUNBOX64
-    RegI64 r0, r1;
-    pop2xI64ForIntDiv(&r0, &r1);
-    quotientI64(r1, r0, IsUnsigned(false));
-    freeI64(r1);
-    pushI64(r0);
+    int64_t c;
+    uint_fast8_t power;
+    if (popConstPositivePowerOfTwoI64(c, power, 0)) {
+        if (power != 0) {
+            RegI64 r = popI64();
+            Label positive;
+            masm.branchTest64(Assembler::NotSigned, r, r, Register::Invalid(),
+                              &positive);
+            masm.add64(Imm32(c-1), r);
+            masm.bind(&positive);
+
+            masm.rshift64Arithmetic(Imm32(power & 63), r);
+            pushI64(r);
+        }
+    } else {
+        RegI64 r0, r1;
+        pop2xI64ForIntDiv(&r0, &r1);
+        quotientI64(r1, r0, IsUnsigned(false));
+        freeI64(r1);
+        pushI64(r0);
+    }
 # else
     MOZ_CRASH("BaseCompiler platform hook: emitQuotientI64");
 # endif
@@ -4519,11 +4601,21 @@ void
 BaseCompiler::emitQuotientU64()
 {
 # ifdef JS_PUNBOX64
-    RegI64 r0, r1;
-    pop2xI64ForIntDiv(&r0, &r1);
-    quotientI64(r1, r0, IsUnsigned(true));
-    freeI64(r1);
-    pushI64(r0);
+    int64_t c;
+    uint_fast8_t power;
+    if (popConstPositivePowerOfTwoI64(c, power, 0)) {
+        if (power != 0) {
+            RegI64 r = popI64();
+            masm.rshift64(Imm32(power & 63), r);
+            pushI64(r);
+        }
+    } else {
+        RegI64 r0, r1;
+        pop2xI64ForIntDiv(&r0, &r1);
+        quotientI64(r1, r0, IsUnsigned(true));
+        freeI64(r1);
+        pushI64(r0);
+    }
 # else
     MOZ_CRASH("BaseCompiler platform hook: emitQuotientU64");
 # endif
@@ -4533,11 +4625,32 @@ void
 BaseCompiler::emitRemainderI64()
 {
 # ifdef JS_PUNBOX64
-    RegI64 r0, r1;
-    pop2xI64ForIntDiv(&r0, &r1);
-    remainderI64(r1, r0, IsUnsigned(false));
-    freeI64(r1);
-    pushI64(r0);
+    int64_t c;
+    uint_fast8_t power;
+    if (popConstPositivePowerOfTwoI64(c, power, 1)) {
+        RegI64 r = popI64();
+        RegI64 temp = needI64();
+        moveI64(r, temp);
+
+        Label positive;
+        masm.branchTest64(Assembler::NotSigned, temp, temp,
+                          Register::Invalid(), &positive);
+        masm.add64(Imm64(c-1), temp);
+        masm.bind(&positive);
+
+        masm.rshift64Arithmetic(Imm32(power & 63), temp);
+        masm.lshift64(Imm32(power & 63), temp);
+        masm.sub64(temp, r);
+        freeI64(temp);
+
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64ForIntDiv(&r0, &r1);
+        remainderI64(r1, r0, IsUnsigned(false));
+        freeI64(r1);
+        pushI64(r0);
+    }
 # else
     MOZ_CRASH("BaseCompiler platform hook: emitRemainderI64");
 # endif
@@ -4547,11 +4660,19 @@ void
 BaseCompiler::emitRemainderU64()
 {
 # ifdef JS_PUNBOX64
-    RegI64 r0, r1;
-    pop2xI64ForIntDiv(&r0, &r1);
-    remainderI64(r1, r0, IsUnsigned(true));
-    freeI64(r1);
-    pushI64(r0);
+    int64_t c;
+    uint_fast8_t power;
+    if (popConstPositivePowerOfTwoI64(c, power, 1)) {
+        RegI64 r = popI64();
+        masm.and64(Imm64(c-1), r);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64ForIntDiv(&r0, &r1);
+        remainderI64(r1, r0, IsUnsigned(true));
+        freeI64(r1);
+        pushI64(r0);
+    }
 # else
     MOZ_CRASH("BaseCompiler platform hook: emitRemainderU64");
 # endif
@@ -4722,61 +4843,103 @@ BaseCompiler::emitCopysignF64()
 void
 BaseCompiler::emitOrI32()
 {
-    RegI32 r0, r1;
-    pop2xI32(&r0, &r1);
-    masm.or32(r1.reg, r0.reg);
-    freeI32(r1);
-    pushI32(r0);
+    int32_t c;
+    if (popConstI32(c)) {
+        RegI32 r = popI32();
+        masm.or32(Imm32(c), r);
+        pushI32(r);
+    } else {
+        RegI32 r0, r1;
+        pop2xI32(&r0, &r1);
+        masm.or32(r1, r0);
+        freeI32(r1);
+        pushI32(r0);
+    }
 }
 
 void
 BaseCompiler::emitOrI64()
 {
-    RegI64 r0, r1;
-    pop2xI64(&r0, &r1);
-    masm.or64(r1.reg, r0.reg);
-    freeI64(r1);
-    pushI64(r0);
+    int64_t c;
+    if (popConstI64(c)) {
+        RegI64 r = popI64();
+        masm.or64(Imm64(c), r);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64(&r0, &r1);
+        masm.or64(r1, r0);
+        freeI64(r1);
+        pushI64(r0);
+    }
 }
 
 void
 BaseCompiler::emitAndI32()
 {
-    RegI32 r0, r1;
-    pop2xI32(&r0, &r1);
-    masm.and32(r1.reg, r0.reg);
-    freeI32(r1);
-    pushI32(r0);
+    int32_t c;
+    if (popConstI32(c)) {
+        RegI32 r = popI32();
+        masm.and32(Imm32(c), r);
+        pushI32(r);
+    } else {
+        RegI32 r0, r1;
+        pop2xI32(&r0, &r1);
+        masm.and32(r1, r0);
+        freeI32(r1);
+        pushI32(r0);
+    }
 }
 
 void
 BaseCompiler::emitAndI64()
 {
-    RegI64 r0, r1;
-    pop2xI64(&r0, &r1);
-    masm.and64(r1.reg, r0.reg);
-    freeI64(r1);
-    pushI64(r0);
+    int64_t c;
+    if (popConstI64(c)) {
+        RegI64 r = popI64();
+        masm.and64(Imm64(c), r);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64(&r0, &r1);
+        masm.and64(r1, r0);
+        freeI64(r1);
+        pushI64(r0);
+    }
 }
 
 void
 BaseCompiler::emitXorI32()
 {
-    RegI32 r0, r1;
-    pop2xI32(&r0, &r1);
-    masm.xor32(r1.reg, r0.reg);
-    freeI32(r1);
-    pushI32(r0);
+    int32_t c;
+    if (popConstI32(c)) {
+        RegI32 r = popI32();
+        masm.xor32(Imm32(c), r);
+        pushI32(r);
+    } else {
+        RegI32 r0, r1;
+        pop2xI32(&r0, &r1);
+        masm.xor32(r1, r0);
+        freeI32(r1);
+        pushI32(r0);
+    }
 }
 
 void
 BaseCompiler::emitXorI64()
 {
-    RegI64 r0, r1;
-    pop2xI64(&r0, &r1);
-    masm.xor64(r1.reg, r0.reg);
-    freeI64(r1);
-    pushI64(r0);
+    int64_t c;
+    if (popConstI64(c)) {
+        RegI64 r = popI64();
+        masm.xor64(Imm64(c), r);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64(&r0, &r1);
+        masm.xor64(r1, r0);
+        freeI64(r1);
+        pushI64(r0);
+    }
 }
 
 void
@@ -4800,18 +4963,18 @@ BaseCompiler::emitShlI32()
 void
 BaseCompiler::emitShlI64()
 {
-  int32_t c;
-  if (popConstI32(c)) {
-    RegI64 r = popI64();
-    masm.lshift64(Imm32(c & 63), r.reg);
-    pushI64(r);
-  } else {
-    RegI64 r0, r1;
-    pop2xI64ForShiftOrRotate(&r0, &r1);
-    masm.lshift64(lowPart(r1), r0.reg);
-    freeI64(r1);
-    pushI64(r0);
-  }
+    int64_t c;
+    if (popConstI64(c)) {
+        RegI64 r = popI64();
+        masm.lshift64(Imm32(c & 63), r);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64ForShiftOrRotate(&r0, &r1);
+        masm.lshift64(lowPart(r1), r0);
+        freeI64(r1);
+        pushI64(r0);
+    }
 }
 
 void
@@ -4835,18 +4998,18 @@ BaseCompiler::emitShrI32()
 void
 BaseCompiler::emitShrI64()
 {
-  int32_t c;
-  if (popConstI32(c)) {
-    RegI64 r = popI64();
-    masm.rshift64Arithmetic(Imm32(c & 63), r.reg);
-    pushI64(r);
-  } else {
-    RegI64 r0, r1;
-    pop2xI64ForShiftOrRotate(&r0, &r1);
-    masm.rshift64Arithmetic(lowPart(r1), r0.reg);
-    freeI64(r1);
-    pushI64(r0);
-  }
+    int64_t c;
+    if (popConstI64(c)) {
+        RegI64 r = popI64();
+        masm.rshift64Arithmetic(Imm32(c & 63), r);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64ForShiftOrRotate(&r0, &r1);
+        masm.rshift64Arithmetic(lowPart(r1), r0);
+        freeI64(r1);
+        pushI64(r0);
+    }
 }
 
 void
@@ -4870,98 +5033,96 @@ BaseCompiler::emitShrU32()
 void
 BaseCompiler::emitShrU64()
 {
-  int32_t c;
-  if (popConstI32(c)) {
-    RegI64 r = popI64();
-    masm.rshift64(Imm32(c & 63), r.reg);
-    pushI64(r);
-  } else {
-    RegI64 r0, r1;
-    pop2xI64ForShiftOrRotate(&r0, &r1);
-    masm.rshift64(lowPart(r1), r0.reg);
-    freeI64(r1);
-    pushI64(r0);
-  }
+    int64_t c;
+    if (popConstI64(c)) {
+        RegI64 r = popI64();
+        masm.rshift64(Imm32(c & 63), r);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64ForShiftOrRotate(&r0, &r1);
+        masm.rshift64(lowPart(r1), r0);
+        freeI64(r1);
+        pushI64(r0);
+    }
 }
 
 void
 BaseCompiler::emitRotrI32()
 {
-  int32_t c;
-  if (popConstI32(c)) {
-    RegI32 r = popI32();
-    masm.rotateRight(Imm32(c & 31), r.reg, r.reg);
-    pushI32(r);
-  } else {
-    RegI32 r0, r1;
-    pop2xI32ForShiftOrRotate(&r0, &r1);
-    masm.rotateRight(r1.reg, r0.reg, r0.reg);
-    freeI32(r1);
-    pushI32(r0);
-  }
+    int32_t c;
+    if (popConstI32(c)) {
+        RegI32 r = popI32();
+        masm.rotateRight(Imm32(c & 31), r, r);
+        pushI32(r);
+    } else {
+        RegI32 r0, r1;
+        pop2xI32ForShiftOrRotate(&r0, &r1);
+        masm.rotateRight(r1, r0, r0);
+        freeI32(r1);
+        pushI32(r0);
+    }
 }
 
 void
 BaseCompiler::emitRotrI64()
 {
-  int32_t c;
-  if (popConstI32(c)) {
-    RegI64 r = popI64();
-#ifdef JS_PUNBOX64
-    masm.rotateRight64(Imm32(c & 63), r.reg, r.reg);
-#else
-    RegI32 temp = needI32();
-    masm.rotateRight64(Imm32(c & 63), r.reg, r.reg, temp.reg);
-    freeI32(temp);
-#endif
-    pushI64(r);
-  } else {
-    RegI64 r0, r1;
-    pop2xI64ForShiftOrRotate(&r0, &r1);
-    masm.rotateRight64(lowPart(r1), r0.reg, r0.reg, maybeHighPart(r1));
-    freeI64(r1);
-    pushI64(r0);
-  }
+    int64_t c;
+    if (popConstI64(c)) {
+        RegI64 r = popI64();
+        RegI32 temp;
+        if (rotate64NeedsTemp())
+            temp = needI32();
+        masm.rotateRight64(Imm32(c & 63), r, r, temp);
+        if (temp != Register::Invalid())
+            freeI32(temp);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64ForShiftOrRotate(&r0, &r1);
+        masm.rotateRight64(lowPart(r1), r0, r0, maybeHighPart(r1));
+        freeI64(r1);
+        pushI64(r0);
+    }
 }
 
 void
 BaseCompiler::emitRotlI32()
 {
-  int32_t c;
-  if (popConstI32(c)) {
-    RegI32 r = popI32();
-    masm.rotateLeft(Imm32(c & 31), r.reg, r.reg);
-    pushI32(r);
-  } else {
-    RegI32 r0, r1;
-    pop2xI32ForShiftOrRotate(&r0, &r1);
-    masm.rotateLeft(r1.reg, r0.reg, r0.reg);
-    freeI32(r1);
-    pushI32(r0);
-  }
+    int32_t c;
+    if (popConstI32(c)) {
+        RegI32 r = popI32();
+        masm.rotateLeft(Imm32(c & 31), r, r);
+        pushI32(r);
+    } else {
+        RegI32 r0, r1;
+        pop2xI32ForShiftOrRotate(&r0, &r1);
+        masm.rotateLeft(r1, r0, r0);
+        freeI32(r1);
+        pushI32(r0);
+    }
 }
 
 void
 BaseCompiler::emitRotlI64()
 {
-  int32_t c;
-  if (popConstI32(c)) {
-    RegI64 r = popI64();
-#ifdef JS_PUNBOX64
-    masm.rotateLeft64(Imm32(c & 63), r.reg, r.reg);
-#else
-    RegI32 temp = needI32();
-    masm.rotateLeft64(Imm32(c & 63), r.reg, r.reg, temp.reg);
-    freeI32(temp);
-#endif
-    pushI64(r);
-  } else {
-    RegI64 r0, r1;
-    pop2xI64ForShiftOrRotate(&r0, &r1);
-    masm.rotateLeft64(lowPart(r1), r0.reg, r0.reg, maybeHighPart(r1));
-    freeI64(r1);
-    pushI64(r0);
-  }
+    int64_t c;
+    if (popConstI64(c)) {
+        RegI64 r = popI64();
+        RegI32 temp;
+        if (rotate64NeedsTemp())
+            temp = needI32();
+        masm.rotateLeft64(Imm32(c & 63), r, r, temp);
+        if (temp != Register::Invalid())
+            freeI32(temp);
+        pushI64(r);
+    } else {
+        RegI64 r0, r1;
+        pop2xI64ForShiftOrRotate(&r0, &r1);
+        masm.rotateLeft64(lowPart(r1), r0, r0, maybeHighPart(r1));
+        freeI64(r1);
+        pushI64(r0);
+    }
 }
 
 void
