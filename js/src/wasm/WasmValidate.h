@@ -16,10 +16,11 @@
  * limitations under the License.
  */
 
-#ifndef wasm_binary_format_h
-#define wasm_binary_format_h
+#ifndef wasm_validate_h
+#define wasm_validate_h
 
 #include "wasm/WasmCode.h"
+#include "wasm/WasmTypes.h"
 
 namespace js {
 namespace wasm {
@@ -622,6 +623,13 @@ struct ModuleEnvironment
         minMemoryLength(0)
     {}
 
+    size_t numTables() const {
+        return tables.length();
+    }
+    size_t numSigs() const {
+        return sigs.length();
+    }
+
     size_t numFuncs() const {
         // asm.js pre-reserves a bunch of function index space which is
         // incrementally filled in during function-body validation. Thus, there
@@ -636,6 +644,10 @@ struct ModuleEnvironment
         // know the number of function definitions until it's done compiling.
         MOZ_ASSERT(!isAsmJS());
         return funcSigs.length() - funcImportGlobalDataOffsets.length();
+    }
+    size_t numFuncImports() const {
+        MOZ_ASSERT(!isAsmJS());
+        return funcImportGlobalDataOffsets.length();
     }
     bool usesMemory() const {
         return UsesMemory(memoryUsage);
@@ -664,6 +676,12 @@ DecodeDataSection(Decoder& d, const ModuleEnvironment& env, DataSegmentVector* s
 
 MOZ_MUST_USE bool
 DecodeUnknownSections(Decoder& d);
+
+[[nodiscard]] bool
+ ValidateFunctionBody(const ModuleEnvironment& env, uint32_t funcIndex, Decoder& d);
+ 
+[[nodiscard]] bool
+Validate(const ShareableBytes& bytecode, UniqueChars* error);
 
 } // namespace wasm
 } // namespace js

@@ -801,18 +801,6 @@ ModuleGenerator::numFuncDefs() const
     return env_->funcSigs.length() - numFuncImports();
 }
 
-uint32_t
-ModuleGenerator::numFuncs() const
-{
-    // asm.js pre-reserves a bunch of function index space which is
-    // incrementally filled in during function-body validation. Thus, there are
-    // a few possible interpretations of numFuncs() (total index space size vs.
-    // exact number of imports/definitions encountered so far) and to simplify
-    // things we simply only define this quantity for wasm.
-    MOZ_ASSERT(!isAsmJS());
-    return env_->funcSigs.length();
-}
-
 const SigWithId&
 ModuleGenerator::funcSig(uint32_t funcIndex) const
 {
@@ -978,7 +966,7 @@ ModuleGenerator::finishFuncDefs()
             MOZ_ASSERT(funcCodeRange(i).funcIndex() == i);
     } else {
         MOZ_ASSERT(numFinishedFuncDefs_ == numFuncDefs());
-        for (uint32_t i = 0; i < numFuncs(); i++)
+        for (uint32_t i = 0; i < env_->numFuncs(); i++)
             MOZ_ASSERT(funcCodeRange(i).funcIndex() == i);
     }
 #endif

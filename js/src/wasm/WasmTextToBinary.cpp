@@ -30,8 +30,8 @@
 #include "js/CharacterEncoding.h"
 #include "js/HashTable.h"
 #include "wasm/WasmAST.h"
-#include "wasm/WasmBinaryFormat.h"
 #include "wasm/WasmTypes.h"
+#include "wasm/WasmValidate.h"
 
 using namespace js;
 using namespace js::wasm;

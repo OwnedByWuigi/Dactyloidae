@@ -19,8 +19,8 @@
 #define wasm_generator_h
 
 #include "jit/MacroAssembler.h"
-#include "wasm/WasmBinaryFormat.h"
 #include "wasm/WasmModule.h"
+#include "wasm/WasmValidate.h"
 
 namespace js {
 namespace wasm {
@@ -289,7 +289,6 @@ private:
     // Functions declarations:
     uint32_t numFuncImports() const;
     uint32_t numFuncDefs() const;
-    uint32_t numFuncs() const;
 
     // Function definitions:
     MOZ_MUST_USE bool startFuncDefs();
