@@ -320,7 +320,7 @@ MacroAssembler::subFromStackPtr(Imm32 imm32)
         // it as we go.
         //
         // When the amount is quite large, which it can be, we emit an actual loop, in order
-        // to keep the function prologue compact. Compactness is a requirement for e.g.
+        // to keep the function prologue compact.  Compactness is a requirement for eg
         // Wasm's CodeRange data structure, which can encode only 8-bit offsets.
         uint32_t amountLeft = imm32.value;
         uint32_t fullPages = amountLeft / 4096;

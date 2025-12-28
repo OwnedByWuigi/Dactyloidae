@@ -612,7 +612,8 @@ DecodeLocalEntries(Decoder& d, ModuleKind kind, ValTypeVector* locals);
 DecodeModuleEnvironment(Decoder& d, ModuleEnvironment* env);
 
 [[nodiscard]] bool
-ValidateFunctionBody(const ModuleEnvironment& env, uint32_t funcIndex, Decoder& d);
+ValidateFunctionBody(const ModuleEnvironment& env, uint32_t funcIndex, uint32_t bodySize,
+                     Decoder& d);
 
 [[nodiscard]] bool
 DecodeModuleTail(Decoder& d, ModuleEnvironment* env);

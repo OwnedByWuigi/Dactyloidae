@@ -44,8 +44,9 @@ static const unsigned GENERATOR_LIFO_DEFAULT_CHUNK_SIZE = 4 * 1024;
 static const unsigned COMPILATION_LIFO_DEFAULT_CHUNK_SIZE = 64 * 1024;
 static const uint32_t BAD_CODE_RANGE = UINT32_MAX;
 
-ModuleGenerator::ModuleGenerator()
+ModuleGenerator::ModuleGenerator(UniqueChars* error)
   : alwaysBaseline_(false),
+    error_(error),
     numSigs_(0),
     numTables_(0),
     lifo_(GENERATOR_LIFO_DEFAULT_CHUNK_SIZE),
@@ -238,9 +239,13 @@ ModuleGenerator::finishOutstandingTask()
         while (true) {
             MOZ_ASSERT(outstanding_ > 0);
 
-            if (HelperThreadState().wasmFailed(lock))
+            if (HelperThreadState().wasmFailed(lock)) {
+                if (error_) {
+                  MOZ_ASSERT(!*error_, "Should have stopped earlier");
+                  *error_ = Move(HelperThreadState().harvestWasmError(lock));
+                }
                 return false;
-
+            }
             if (!HelperThreadState().wasmFinishedList(lock).empty()) {
                 outstanding_--;
                 task = HelperThreadState().wasmFinishedList(lock).popCopy();
@@ -881,6 +886,32 @@ ModuleGenerator::startFuncDef(uint32_t lineOrBytecode, FunctionGenerator* fg)
 }
 
 bool
+ModuleGenerator::launchBatchCompile()
+{
+    MOZ_ASSERT(currentTask_);
+
+    size_t numBatchedFuncs = currentTask_->units().length();
+    MOZ_ASSERT(numBatchedFuncs);
+
+   if (parallel_) {
+        if (!StartOffThreadWasmCompile(currentTask_))
+            return false;
+        outstanding_++;
+    } else {
+        if (!CompileFunction(currentTask_, error_))
+            return false;
+        if (!finishTask(currentTask_))
+            return false;
+    }
+
+    currentTask_ = nullptr;
+    batchedBytecode_ = 0;
+
+    numFinishedFuncDefs_ += numBatchedFuncs;
+    return true;
+}
+
+bool
 ModuleGenerator::finishFuncDef(uint32_t funcIndex, FunctionGenerator* fg)
 {
     MOZ_ASSERT(activeFuncDef_ == fg);
@@ -1115,4 +1146,26 @@ ModuleGenerator::finish(const ShareableBytes& bytecode)
                                        Move(env_->elemSegments),
                                        *metadata_,
                                        bytecode));
+}
+
+bool
+wasm::CompileFunction(CompileTask* task, UniqueChars* error)
+{
+    TraceLoggerThread* logger = TraceLoggerForCurrentThread();
+    AutoTraceLog logCompile(logger, TraceLogger_WasmCompilation);
+
+    for (FuncCompileUnit& unit : task->units()) {
+        switch (unit.mode()) {
+          case CompileMode::Ion:
+            if (!IonCompileFunction(task, &unit, error))
+                return false;
+            break;
+          case CompileMode::Baseline:
+            if (!BaselineCompileFunction(task, &unit, error))
+                return false;
+            break;
+        }
+    }
+
+    return true;
 }

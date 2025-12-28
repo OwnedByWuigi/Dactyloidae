@@ -205,6 +205,7 @@ class MOZ_STACK_CLASS ModuleGenerator
 
     // Constant parameters
     bool                            alwaysBaseline_;
+    UniqueChars*                    error_;
 
     // Data that is moved into the result of finish()
     Assumptions                     assumptions_;
@@ -258,7 +259,7 @@ private:
     [[nodiscard]] bool launchBatchCompile();
 
   public:
-    explicit ModuleGenerator();
+    explicit ModuleGenerator(UniqueChars* error);
     ~ModuleGenerator();
 
     [[nodiscard]] bool init(UniqueModuleEnvironment env, const CompileArgs& args,
@@ -348,6 +349,11 @@ class MOZ_STACK_CLASS FunctionGenerator
     void setUsesAtomics() {
         usesAtomics_ = true;
     }
+
+    bool isAsmJS() const {
+      return m_->isAsmJS();
+    }
+
 
     Bytes& bytes() {
         return bytes_;

@@ -1470,11 +1470,12 @@ HelperThread::handleWasmWorkload(AutoLockHelperThreadState& locked)
 
     currentTask.emplace(HelperThreadState().wasmWorklist(locked).popCopy());
     bool success = false;
+    UniqueChars error;
 
     wasm::IonCompileTask* task = wasmTask();
     {
         AutoUnlockHelperThreadState unlock(locked);
-        success = wasm::CompileFunction(task);
+        success = wasm::CompileFunction(task, &error);
     }
 
     // On success, try to move work to the finished list.
@@ -1482,8 +1483,10 @@ HelperThread::handleWasmWorkload(AutoLockHelperThreadState& locked)
         success = HelperThreadState().wasmFinishedList(locked).append(task);
 
     // On failure, note the failure for harvesting by the parent.
-    if (!success)
+    if (!success) {
         HelperThreadState().noteWasmFailure(locked);
+        HelperThreadState().setWasmError(locked, Move(error));
+	}
 
     // Notify the main thread in case it's waiting.
     HelperThreadState().notifyAll(GlobalHelperThreadState::CONSUMER, locked);
