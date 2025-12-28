@@ -286,10 +286,6 @@ private:
     // Globals:
     const GlobalDescVector& globals() const { return env_->globals; }
 
-    // Functions declarations:
-    uint32_t numFuncImports() const;
-    uint32_t numFuncDefs() const;
-
     // Function definitions:
     MOZ_MUST_USE bool startFuncDefs();
     MOZ_MUST_USE bool startFuncDef(uint32_t lineOrBytecode, FunctionGenerator* fg);
