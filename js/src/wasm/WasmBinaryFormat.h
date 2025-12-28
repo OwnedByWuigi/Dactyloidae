@@ -19,7 +19,7 @@
 #ifndef wasm_binary_format_h
 #define wasm_binary_format_h
 
-#include "wasm/WasmTypes.h"
+#include "wasm/WasmCode.h"
 
 namespace js {
 namespace wasm {
@@ -584,60 +584,86 @@ class Decoder
 
 // Misc helpers.
 
-UniqueChars
-DecodeName(Decoder& d);
-
-MOZ_MUST_USE bool
-DecodeTableLimits(Decoder& d, TableDescVector* tables);
-
-MOZ_MUST_USE bool
-GlobalIsJSCompatible(Decoder& d, ValType type, bool isMutable);
-
-MOZ_MUST_USE bool
+[[nodiscard]] bool
 EncodeLocalEntries(Encoder& d, const ValTypeVector& locals);
 
 MOZ_MUST_USE bool
 DecodeLocalEntries(Decoder& d, ModuleKind kind, ValTypeVector* locals);
 
-MOZ_MUST_USE bool
-DecodeGlobalType(Decoder& d, ValType* type, bool* isMutable);
+// ModuleEnvironment contains all the state necessary to validate, process or
+// render functions. It is created by decoding all the sections before the wasm
+// code section and then used immutably during. When compiling a module using a
+// ModuleGenerator, the ModuleEnvironment holds state shared between the
+// ModuleGenerator thread and background compile threads. All the threads
+// are given a read-only view of the ModuleEnvironment, thus preventing race
+// conditions.
 
-MOZ_MUST_USE bool
-DecodeInitializerExpression(Decoder& d, const GlobalDescVector& globals, ValType expected,
-                            InitExpr* init);
+struct ModuleEnvironment
+{
+    ModuleKind                kind;
+    MemoryUsage               memoryUsage;
+    mozilla::Atomic<uint32_t> minMemoryLength;
+    Maybe<uint32_t>           maxMemoryLength;
 
-MOZ_MUST_USE bool
-DecodeLimits(Decoder& d, Limits* limits);
+    SigWithIdVector           sigs;
+    SigWithIdPtrVector        funcSigs;
+    Uint32Vector              funcImportGlobalDataOffsets;
+    GlobalDescVector          globals;
+    TableDescVector           tables;
+    Uint32Vector              asmJSSigToTableIndex;
+    ImportVector              imports;
+    ExportVector              exports;
+    Maybe<uint32_t>           startFuncIndex;
+    ElemSegmentVector         elemSegments;
 
-MOZ_MUST_USE bool
-DecodeMemoryLimits(Decoder& d, bool hasMemory, Limits* memory);
+    explicit ModuleEnvironment(ModuleKind kind = ModuleKind::Wasm)
+      : kind(kind),
+        memoryUsage(MemoryUsage::None),
+        minMemoryLength(0)
+    {}
+
+    size_t numFuncs() const {
+        // asm.js pre-reserves a bunch of function index space which is
+        // incrementally filled in during function-body validation. Thus, there
+        // are a few possible interpretations of numFuncs() (total index space
+        // size vs.  exact number of imports/definitions encountered so far) and
+        // to simplify things we simply only define this quantity for wasm.
+        MOZ_ASSERT(!isAsmJS());
+        return funcSigs.length();
+    }
+    size_t numFuncDefs() const {
+        // asm.js overallocates the length of funcSigs and in general does not
+        // know the number of function definitions until it's done compiling.
+        MOZ_ASSERT(!isAsmJS());
+        return funcSigs.length() - funcImportGlobalDataOffsets.length();
+    }
+    bool usesMemory() const {
+        return UsesMemory(memoryUsage);
+    }
+
+    bool isAsmJS() const {
+        return kind == ModuleKind::AsmJS;
+    }
+    bool funcIsImport(uint32_t funcIndex) const {
+        return funcIndex < funcImportGlobalDataOffsets.length();
+    }
+    uint32_t funcIndexToSigIndex(uint32_t funcIndex) const {
+        return funcSigs[funcIndex] - sigs.begin();
+    }
+};
+
+typedef UniquePtr<ModuleEnvironment> UniqueModuleEnvironment;
 
 // Section macros.
 
-MOZ_MUST_USE bool
-DecodePreamble(Decoder& d);
+[[nodiscard]] bool
+DecodeModuleEnvironment(Decoder& d, ModuleEnvironment* env);
 
-MOZ_MUST_USE bool
-DecodeTypeSection(Decoder& d, SigWithIdVector* sigs);
-
-MOZ_MUST_USE bool
-DecodeImportSection(Decoder& d, const SigWithIdVector& sigs, Uint32Vector* funcSigIndices,
-                    GlobalDescVector* globals, TableDescVector* tables, Maybe<Limits>* memory,
-                    ImportVector* imports);
-
-MOZ_MUST_USE bool
-DecodeFunctionSection(Decoder& d, const SigWithIdVector& sigs, size_t numImportedFunc,
-                      Uint32Vector* funcSigIndexes);
+[[nodiscard]] bool
+DecodeDataSection(Decoder& d, const ModuleEnvironment& env, DataSegmentVector* segments);
 
 MOZ_MUST_USE bool
 DecodeUnknownSections(Decoder& d);
-
-MOZ_MUST_USE bool
-DecodeDataSection(Decoder& d, bool usesMemory, uint32_t minMemoryByteLength,
-                  const GlobalDescVector& globals, DataSegmentVector* segments);
-
-MOZ_MUST_USE bool
-DecodeMemorySection(Decoder& d, bool hasMemory, Limits* memory, bool* present);
 
 } // namespace wasm
 } // namespace js

@@ -147,7 +147,7 @@ class FunctionCompiler
     typedef Vector<ControlFlowPatchVector, 0, SystemAllocPolicy> ControlFlowPatchsVector;
     typedef Vector<CallCompileState*, 0, SystemAllocPolicy> CallCompileStateVector;
 
-    const ModuleGeneratorData& mg_;
+    const ModuleEnvironment&   env_;
     IonOpIter                  iter_;
     const FuncBytes&           func_;
     const ValTypeVector&       locals_;
@@ -172,13 +172,12 @@ class FunctionCompiler
     MWasmParameter*            tlsPointer_;
 
   public:
-    FunctionCompiler(const ModuleGeneratorData& mg,
+    FunctionCompiler(const ModuleEnvironment& env,
                      Decoder& decoder,
                      const FuncBytes& func,
                      const ValTypeVector& locals,
-                     MIRGenerator& mirGen,
-                     FuncCompileResults& compileResults)
-      : mg_(mg),
+                     MIRGenerator& mirGen)
+      : env_(env),
         iter_(decoder, func.lineOrBytecode()),
         func_(func),
         locals_(locals),
@@ -195,7 +194,7 @@ class FunctionCompiler
         tlsPointer_(nullptr)
     {}
 
-    const ModuleGeneratorData& mg() const    { return mg_; }
+    const ModuleEnvironment&   env() const   { return env_; }
     IonOpIter&                 iter()        { return iter_; }
     TempAllocator&             alloc() const { return alloc_; }
     MacroAssembler&            masm() const  { return compileResults_.masm(); }
@@ -205,7 +204,7 @@ class FunctionCompiler
         return iter_.trapOffset();
     }
     Maybe<TrapOffset> trapIfNotAsmJS() const {
-        return mg_.isAsmJS() ? Nothing() : Some(iter_.trapOffset());
+        return env_.isAsmJS() ? Nothing() : Some(iter_.trapOffset());
     }
 
     bool init()
@@ -372,7 +371,7 @@ class FunctionCompiler
 
     bool mustPreserveNaN(MIRType type)
     {
-        return IsFloatingPointType(type) && mg().kind == ModuleKind::Wasm;
+        return IsFloatingPointType(type) && !env().isAsmJS();
     }
 
     MDefinition* sub(MDefinition* lhs, MDefinition* rhs, MIRType type)
@@ -417,7 +416,7 @@ class FunctionCompiler
     {
         if (inDeadCode())
             return nullptr;
-        bool trapOnError = !mg().isAsmJS();
+        bool trapOnError = !env().isAsmJS();
         auto* ins = MDiv::New(alloc(), lhs, rhs, type, unsignd, trapOnError, trapOffset(),
                               mustPreserveNaN(type));
         curBlock_->add(ins);
@@ -428,7 +427,7 @@ class FunctionCompiler
     {
         if (inDeadCode())
             return nullptr;
-        bool trapOnError = !mg().isAsmJS();
+        bool trapOnError = !env().isAsmJS();
         auto* ins = MMod::New(alloc(), lhs, rhs, type, unsignd, trapOnError, trapOffset());
         curBlock_->add(ins);
         return ins;
@@ -811,12 +810,12 @@ class FunctionCompiler
             return true;
         }
 
-        const SigWithId& sig = mg_.sigs[sigIndex];
+        const SigWithId& sig = env_.sigs[sigIndex];
 
         CalleeDesc callee;
-        if (mg_.isAsmJS()) {
+        if (env_.isAsmJS()) {
             MOZ_ASSERT(sig.id.kind() == SigIdDesc::Kind::None);
-            const TableDesc& table = mg_.tables[mg_.asmJSSigToTableIndex[sigIndex]];
+            const TableDesc& table = env_.tables[env_.asmJSSigToTableIndex[sigIndex]];
             MOZ_ASSERT(IsPowerOfTwo(table.limits.initial));
             MOZ_ASSERT(!table.external);
             MOZ_ASSERT(call.tlsStackOffset_ == MWasmCall::DontSaveTls);
@@ -830,8 +829,8 @@ class FunctionCompiler
             callee = CalleeDesc::asmJSTable(table);
         } else {
             MOZ_ASSERT(sig.id.kind() != SigIdDesc::Kind::None);
-            MOZ_ASSERT(mg_.tables.length() == 1);
-            const TableDesc& table = mg_.tables[0];
+            MOZ_ASSERT(env_.tables.length() == 1);
+            const TableDesc& table = env_.tables[0];
             MOZ_ASSERT(table.external == (call.tlsStackOffset_ != MWasmCall::DontSaveTls));
 
             callee = CalleeDesc::wasmTable(table, sig.id);
@@ -1683,8 +1682,8 @@ EmitCall(FunctionCompiler& f)
     if (f.inDeadCode())
         return true;
 
-    const Sig& sig = *f.mg().funcSigs[funcIndex];
-    bool import = f.mg().funcIsImport(funcIndex);
+    const Sig& sig = *f.env().funcSigs[funcIndex];
+    bool import = f.env().funcIsImport(funcIndex);
 
     CallCompileState call(f, lineOrBytecode);
     if (!EmitCallArgs(f, sig, import ? TlsUsage::CallerSaved : TlsUsage::Need, &call))
@@ -1695,7 +1694,7 @@ EmitCall(FunctionCompiler& f)
 
     MDefinition* def;
     if (import) {
-        uint32_t globalDataOffset = f.mg().funcImportGlobalDataOffsets[funcIndex];
+        uint32_t globalDataOffset = f.env().funcImportGlobalDataOffsets[funcIndex];
         if (!f.callImport(globalDataOffset, call, sig.ret(), &def))
             return false;
     } else {
@@ -1728,9 +1727,9 @@ EmitCallIndirect(FunctionCompiler& f, bool oldStyle)
     if (f.inDeadCode())
         return true;
 
-    const Sig& sig = f.mg().sigs[sigIndex];
+    const Sig& sig = f.env().sigs[sigIndex];
 
-    TlsUsage tls = !f.mg().isAsmJS() && f.mg().tables[0].external
+    TlsUsage tls = !f.env().isAsmJS() && f.env().tables[0].external
                    ? TlsUsage::CallerSaved
                    : TlsUsage::Need;
 
@@ -1796,10 +1795,10 @@ static bool
 EmitGetGlobal(FunctionCompiler& f)
 {
     uint32_t id;
-    if (!f.iter().readGetGlobal(f.mg().globals, &id))
+    if (!f.iter().readGetGlobal(f.env().globals, &id))
         return false;
 
-    const GlobalDesc& global = f.mg().globals[id];
+    const GlobalDesc& global = f.env().globals[id];
     if (!global.isConstant()) {
         f.iter().setResult(f.loadGlobalVar(global.offset(), !global.isMutable(),
                                            ToMIRType(global.type())));
@@ -1836,10 +1835,10 @@ EmitSetGlobal(FunctionCompiler& f)
 {
     uint32_t id;
     MDefinition* value;
-    if (!f.iter().readSetGlobal(f.mg().globals, &id, &value))
+    if (!f.iter().readSetGlobal(f.env().globals, &id, &value))
         return false;
 
-    const GlobalDesc& global = f.mg().globals[id];
+    const GlobalDesc& global = f.env().globals[id];
     MOZ_ASSERT(global.isMutable());
 
     f.storeGlobalVar(global.offset(), value);
@@ -1851,10 +1850,10 @@ EmitTeeGlobal(FunctionCompiler& f)
 {
     uint32_t id;
     MDefinition* value;
-    if (!f.iter().readTeeGlobal(f.mg().globals, &id, &value))
+    if (!f.iter().readTeeGlobal(f.env().globals, &id, &value))
         return false;
 
-    const GlobalDesc& global = f.mg().globals[id];
+    const GlobalDesc& global = f.env().globals[id];
     MOZ_ASSERT(global.isMutable());
 
     f.storeGlobalVar(global.offset(), value);
@@ -1919,13 +1918,13 @@ EmitTruncate(FunctionCompiler& f, ValType operandType, ValType resultType,
         return false;
 
     if (resultType == ValType::I32) {
-        if (f.mg().isAsmJS())
+        if (f.env().isAsmJS())
             f.iter().setResult(f.unary<MTruncateToInt32>(input));
         else
             f.iter().setResult(f.truncate<MWasmTruncateToInt32>(input, isUnsigned));
     } else {
         MOZ_ASSERT(resultType == ValType::I64);
-        MOZ_ASSERT(!f.mg().isAsmJS());
+        MOZ_ASSERT(!f.env().isAsmJS());
         f.iter().setResult(f.truncate<MWasmTruncateToInt64>(input, isUnsigned));
     }
     return true;
@@ -2862,8 +2861,8 @@ wasm::IonCompileFunction(IonCompileTask* task)
 {
     MOZ_ASSERT(task->mode() == IonCompileTask::CompileMode::Ion);
 
-    const FuncBytes& func = task->func();
-    FuncCompileResults& results = task->results();
+    const FuncBytes& func = unit->func();
+    const ModuleEnvironment& env = task->env();
 
     Decoder d(func.bytes());
 
@@ -2872,7 +2871,7 @@ wasm::IonCompileFunction(IonCompileTask* task)
     ValTypeVector locals;
     if (!locals.appendAll(func.sig().args()))
         return false;
-    if (!DecodeLocalEntries(d, task->mg().kind, &locals))
+	if (!DecodeLocalEntries(d, env.kind, &locals))
         return false;
 
     // Set up for Ion compilation.
@@ -2883,7 +2882,7 @@ wasm::IonCompileFunction(IonCompileTask* task)
     CompileInfo compileInfo(locals.length());
     MIRGenerator mir(nullptr, options, &results.alloc(), &graph, &compileInfo,
                      IonOptimizations.get(OptimizationLevel::Wasm));
-    mir.initMinWasmHeapLength(task->mg().minMemoryLength);
+	mir.initMinWasmHeapLength(env.minMemoryLength);
 
     // Capture the prologue's trap site before decoding the function.
 
@@ -2891,7 +2890,7 @@ wasm::IonCompileFunction(IonCompileTask* task)
 
     // Build MIR graph
     {
-        FunctionCompiler f(task->mg(), d, func, locals, mir, results);
+		FunctionCompiler f(env, d, func, locals, mir);
         if (!f.init())
             return false;
 
@@ -2931,7 +2930,7 @@ wasm::IonCompileFunction(IonCompileTask* task)
         if (!lir)
             return false;
 
-        SigIdDesc sigId = task->mg().funcSigs[func.index()]->id;
+        SigIdDesc sigId = env.funcSigs[func.index()]->id;
 
         CodeGenerator codegen(&mir, lir, &results.masm());
         if (!codegen.generateWasm(sigId, prologueTrapOffset, &results.offsets()))

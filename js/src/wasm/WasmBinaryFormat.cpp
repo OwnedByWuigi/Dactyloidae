@@ -28,16 +28,67 @@ using namespace js::wasm;
 
 using mozilla::CheckedInt;
 
-bool
-wasm::DecodePreamble(Decoder& d)
-{
-    uint32_t u32;
-    if (!d.readFixedU32(&u32) || u32 != MagicNumber)
-        return d.fail("failed to match magic number");
+// Decoder implementation.
 
-    if (!d.readFixedU32(&u32) || (u32 != EncodingVersion && u32 != PrevEncodingVersion)) {
-        return d.fail("binary version 0x%" PRIx32 " does not match expected version 0x%" PRIx32,
-                      u32, EncodingVersion);
+bool
+Decoder::fail(const char* msg, ...)
+{
+    va_list ap;
+    va_start(ap, msg);
+    UniqueChars str(JS_vsmprintf(msg, ap));
+    va_end(ap);
+    if (!str)
+        return false;
+
+    return fail(Move(str));
+}
+
+bool
+Decoder::fail(UniqueChars msg)
+{
+    MOZ_ASSERT(error_);
+    UniqueChars strWithOffset(JS_smprintf("at offset %" PRIuSIZE ": %s", currentOffset(), msg.get()));
+    if (!strWithOffset)
+        return false;
+
+    *error_ = Move(strWithOffset);
+    return false;
+}
+
+// Misc helpers.
+
+bool
+wasm::EncodeLocalEntries(Encoder& e, const ValTypeVector& locals)
+{
+    uint32_t numLocalEntries = 0;
+    ValType prev = ValType(TypeCode::Limit);
+    for (ValType t : locals) {
+        if (t != prev) {
+            numLocalEntries++;
+            prev = t;
+        }
+    }
+
+    if (!e.writeVarU32(numLocalEntries))
+        return false;
+
+    if (numLocalEntries) {
+        prev = locals[0];
+        uint32_t count = 1;
+        for (uint32_t i = 1; i < locals.length(); i++, count++) {
+            if (prev != locals[i]) {
+                if (!e.writeVarU32(count))
+                    return false;
+                if (!e.writeValType(prev))
+                    return false;
+                prev = locals[i];
+                count = 0;
+            }
+        }
+        if (!e.writeVarU32(count))
+            return false;
+        if (!e.writeValType(prev))
+            return false;
     }
 
     return true;
@@ -64,7 +115,49 @@ DecodeValType(Decoder& d, ModuleKind kind, ValType* type)
 }
 
 bool
-wasm::DecodeTypeSection(Decoder& d, SigWithIdVector* sigs)
+wasm::DecodeLocalEntries(Decoder& d, ModuleKind kind, ValTypeVector* locals)
+{
+    uint32_t numLocalEntries;
+    if (!d.readVarU32(&numLocalEntries))
+        return d.fail("failed to read number of local entries");
+
+    for (uint32_t i = 0; i < numLocalEntries; i++) {
+        uint32_t count;
+        if (!d.readVarU32(&count))
+            return d.fail("failed to read local entry count");
+
+        if (MaxLocals - locals->length() < count)
+            return d.fail("too many locals");
+
+        ValType type;
+        if (!DecodeValType(d, kind, &type))
+            return false;
+
+        if (!locals->appendN(type, count))
+            return false;
+    }
+
+    return true;
+}
+
+// Section macros.
+
+static bool
+DecodePreamble(Decoder& d)
+{
+    uint32_t u32;
+    if (!d.readFixedU32(&u32) || u32 != MagicNumber)
+        return d.fail("failed to match magic number");
+
+    if (!d.readFixedU32(&u32) || (u32 != EncodingVersion && u32 != PrevEncodingVersion)) {
+        return d.fail("binary version 0x%" PRIx32 " does not match expected version 0x%" PRIx32,
+                      u32, EncodingVersion);
+    }
+    return true;
+}
+
+static bool
+DecodeTypeSection(Decoder& d, SigWithIdVector* sigs)
 {
     uint32_t sectionStart, sectionSize;
     if (!d.startSection(SectionId::Type, &sectionStart, &sectionSize, "type"))
@@ -129,8 +222,8 @@ wasm::DecodeTypeSection(Decoder& d, SigWithIdVector* sigs)
     return true;
 }
 
-UniqueChars
-wasm::DecodeName(Decoder& d)
+static UniqueChars
+DecodeName(Decoder& d)
 {
     uint32_t numBytes;
     if (!d.readVarU32(&numBytes))
@@ -162,8 +255,38 @@ DecodeSignatureIndex(Decoder& d, const SigWithIdVector& sigs, uint32_t* sigIndex
     return true;
 }
 
-bool
-wasm::DecodeTableLimits(Decoder& d, TableDescVector* tables)
+static bool
+DecodeLimits(Decoder& d, Limits* limits)
+{
+    uint32_t flags;
+    if (!d.readVarU32(&flags))
+        return d.fail("expected flags");
+
+    if (flags & ~uint32_t(0x1))
+        return d.fail("unexpected bits set in flags: %" PRIu32, (flags & ~uint32_t(0x1)));
+
+    if (!d.readVarU32(&limits->initial))
+        return d.fail("expected initial length");
+
+    if (flags & 0x1) {
+        uint32_t maximum;
+        if (!d.readVarU32(&maximum))
+            return d.fail("expected maximum length");
+
+        if (limits->initial > maximum) {
+            return d.fail("memory size minimum must not be greater than maximum; "
+                          "maximum length %" PRIu32 " is less than initial length %" PRIu32,
+                          maximum, limits->initial);
+        }
+
+        limits->maximum.emplace(maximum);
+    }
+
+    return true;
+}
+
+static bool
+DecodeTableLimits(Decoder& d, TableDescVector* tables)
 {
     uint32_t elementType;
     if (!d.readVarU32(&elementType))
@@ -176,14 +299,17 @@ wasm::DecodeTableLimits(Decoder& d, TableDescVector* tables)
     if (!DecodeLimits(d, &limits))
         return false;
 
+    if (limits.initial > MaxTableElems)
+        return d.fail("too many table elements");
+
     if (tables->length())
         return d.fail("already have default table");
 
     return tables->emplaceBack(TableKind::AnyFunction, limits);
 }
 
-bool
-wasm::GlobalIsJSCompatible(Decoder& d, ValType type, bool isMutable)
+static bool
+GlobalIsJSCompatible(Decoder& d, ValType type, bool isMutable)
 {
     switch (type) {
       case ValType::I32:
@@ -205,9 +331,56 @@ wasm::GlobalIsJSCompatible(Decoder& d, ValType type, bool isMutable)
 }
 
 static bool
-DecodeImport(Decoder& d, const SigWithIdVector& sigs, Uint32Vector* funcSigIndices,
-             GlobalDescVector* globals, TableDescVector* tables, Maybe<Limits>* memory,
-             ImportVector* imports)
+DecodeGlobalType(Decoder& d, ValType* type, bool* isMutable)
+{
+    if (!DecodeValType(d, ModuleKind::Wasm, type))
+        return false;
+
+    uint32_t flags;
+    if (!d.readVarU32(&flags))
+        return d.fail("expected global flags");
+
+    if (flags & ~uint32_t(GlobalTypeImmediate::AllowedMask))
+        return d.fail("unexpected bits set in global flags");
+
+    *isMutable = flags & uint32_t(GlobalTypeImmediate::IsMutable);
+    return true;
+}
+
+static bool
+DecodeMemoryLimits(Decoder& d, ModuleEnvironment* env)
+{
+    if (env->usesMemory())
+        return d.fail("already have default memory");
+
+    Limits memory;
+    if (!DecodeLimits(d, &memory))
+        return false;
+
+    CheckedInt<uint32_t> initialBytes = memory.initial;
+    initialBytes *= PageSize;
+    if (!initialBytes.isValid() || initialBytes.value() > uint32_t(INT32_MAX))
+        return d.fail("initial memory size too big");
+
+    memory.initial = initialBytes.value();
+
+    if (memory.maximum) {
+        CheckedInt<uint32_t> maximumBytes = *memory.maximum;
+        maximumBytes *= PageSize;
+        if (!maximumBytes.isValid())
+            return d.fail("maximum memory size too big");
+
+        memory.maximum = Some(maximumBytes.value());
+    }
+
+    env->memoryUsage = MemoryUsage::Unshared;
+    env->minMemoryLength = memory.initial;
+    env->maxMemoryLength = memory.maximum;
+    return true;
+}
+
+static bool
+DecodeImport(Decoder& d, ModuleEnvironment* env)
 {
     UniqueChars moduleName = DecodeName(d);
     if (!moduleName)
@@ -226,22 +399,21 @@ DecodeImport(Decoder& d, const SigWithIdVector& sigs, Uint32Vector* funcSigIndic
     switch (importKind) {
       case DefinitionKind::Function: {
         uint32_t sigIndex;
-        if (!DecodeSignatureIndex(d, sigs, &sigIndex))
+        if (!DecodeSignatureIndex(d, env->sigs, &sigIndex))
             return false;
-        if (!funcSigIndices->append(sigIndex))
+        if (!env->funcSigs.append(&env->sigs[sigIndex]))
             return false;
         break;
       }
       case DefinitionKind::Table: {
-        if (!DecodeTableLimits(d, tables))
+        if (!DecodeTableLimits(d, &env->tables))
             return false;
+        env->tables.back().external = true;
         break;
       }
       case DefinitionKind::Memory: {
-        Limits limits;
-        if (!DecodeMemoryLimits(d, !!*memory, &limits))
+        if (!DecodeMemoryLimits(d, env))
             return false;
-        memory->emplace(limits);
         break;
       }
       case DefinitionKind::Global: {
@@ -251,7 +423,7 @@ DecodeImport(Decoder& d, const SigWithIdVector& sigs, Uint32Vector* funcSigIndic
             return false;
         if (!GlobalIsJSCompatible(d, type, isMutable))
             return false;
-        if (!globals->append(GlobalDesc(type, isMutable, globals->length())))
+        if (!env->globals.append(GlobalDesc(type, isMutable, env->globals.length())))
             return false;
         break;
       }
@@ -259,13 +431,11 @@ DecodeImport(Decoder& d, const SigWithIdVector& sigs, Uint32Vector* funcSigIndic
         return d.fail("unsupported import kind");
     }
 
-    return imports->emplaceBack(Move(moduleName), Move(funcName), importKind);
+    return env->imports.emplaceBack(Move(moduleName), Move(funcName), importKind);
 }
 
-bool
-wasm::DecodeImportSection(Decoder& d, const SigWithIdVector& sigs, Uint32Vector* funcSigIndices,
-                          GlobalDescVector* globals, TableDescVector* tables, Maybe<Limits>* memory,
-                          ImportVector* imports)
+static bool
+DecodeImportSection(Decoder& d, ModuleEnvironment* env)
 {
     uint32_t sectionStart, sectionSize;
     if (!d.startSection(SectionId::Import, &sectionStart, &sectionSize, "import"))
@@ -281,19 +451,22 @@ wasm::DecodeImportSection(Decoder& d, const SigWithIdVector& sigs, Uint32Vector*
         return d.fail("too many imports");
 
     for (uint32_t i = 0; i < numImports; i++) {
-        if (!DecodeImport(d, sigs, funcSigIndices, globals, tables, memory, imports))
+        if (!DecodeImport(d, env))
             return false;
     }
 
     if (!d.finishSection(sectionStart, sectionSize, "import"))
         return false;
 
+    // The global data offsets will be filled in by ModuleGenerator::init.
+    if (!env->funcImportGlobalDataOffsets.resize(env->funcSigs.length()))
+        return false;
+
     return true;
 }
 
-bool
-wasm::DecodeFunctionSection(Decoder& d, const SigWithIdVector& sigs, size_t numImportedFunc,
-                            Uint32Vector* funcSigIndexes)
+static bool
+DecodeFunctionSection(Decoder& d, ModuleEnvironment* env)
 {
     uint32_t sectionStart, sectionSize;
     if (!d.startSection(SectionId::Function, &sectionStart, &sectionSize, "function"))
@@ -305,19 +478,19 @@ wasm::DecodeFunctionSection(Decoder& d, const SigWithIdVector& sigs, size_t numI
     if (!d.readVarU32(&numDefs))
         return d.fail("expected number of function definitions");
 
-    CheckedInt<uint32_t> numFuncs = numImportedFunc;
+    CheckedInt<uint32_t> numFuncs = env->funcSigs.length();
     numFuncs += numDefs;
     if (!numFuncs.isValid() || numFuncs.value() > MaxFuncs)
         return d.fail("too many functions");
 
-    if (!funcSigIndexes->reserve(numDefs))
+    if (!env->funcSigs.reserve(numFuncs.value()))
         return false;
 
     for (uint32_t i = 0; i < numDefs; i++) {
         uint32_t sigIndex;
-        if (!DecodeSignatureIndex(d, sigs, &sigIndex))
+        if (!DecodeSignatureIndex(d, env->sigs, &sigIndex))
             return false;
-        funcSigIndexes->infallibleAppend(sigIndex);
+        env->funcSigs.infallibleAppend(&env->sigs[sigIndex]);
     }
 
     if (!d.finishSection(sectionStart, sectionSize, "function"))
@@ -326,89 +499,59 @@ wasm::DecodeFunctionSection(Decoder& d, const SigWithIdVector& sigs, size_t numI
     return true;
 }
 
-bool
-wasm::EncodeLocalEntries(Encoder& e, const ValTypeVector& locals)
+static bool
+DecodeTableSection(Decoder& d, TableDescVector* tables)
 {
-    uint32_t numLocalEntries = 0;
-    ValType prev = ValType(TypeCode::Limit);
-    for (ValType t : locals) {
-        if (t != prev) {
-            numLocalEntries++;
-            prev = t;
-        }
-    }
+    uint32_t sectionStart, sectionSize;
+    if (!d.startSection(SectionId::Table, &sectionStart, &sectionSize, "table"))
+        return false;
+    if (sectionStart == Decoder::NotStarted)
+        return true;
 
-    if (!e.writeVarU32(numLocalEntries))
+    uint32_t numTables;
+    if (!d.readVarU32(&numTables))
+        return d.fail("failed to read number of tables");
+
+    if (numTables != 1)
+        return d.fail("the number of tables must be exactly one");
+
+    if (!DecodeTableLimits(d, tables))
         return false;
 
-    if (numLocalEntries) {
-        prev = locals[0];
-        uint32_t count = 1;
-        for (uint32_t i = 1; i < locals.length(); i++, count++) {
-            if (prev != locals[i]) {
-                if (!e.writeVarU32(count))
-                    return false;
-                if (!e.writeValType(prev))
-                    return false;
-                prev = locals[i];
-                count = 0;
-            }
-        }
-        if (!e.writeVarU32(count))
-            return false;
-        if (!e.writeValType(prev))
-            return false;
-    }
-
-    return true;
-}
-
-bool
-wasm::DecodeLocalEntries(Decoder& d, ModuleKind kind, ValTypeVector* locals)
-{
-    uint32_t numLocalEntries;
-    if (!d.readVarU32(&numLocalEntries))
-        return d.fail("failed to read number of local entries");
-
-    for (uint32_t i = 0; i < numLocalEntries; i++) {
-        uint32_t count;
-        if (!d.readVarU32(&count))
-            return d.fail("failed to read local entry count");
-
-        if (MaxLocals - locals->length() < count)
-            return d.fail("too many locals");
-
-        ValType type;
-        if (!DecodeValType(d, kind, &type))
-            return false;
-
-        if (!locals->appendN(type, count))
-            return false;
-    }
-
-    return true;
-}
-
-bool
-wasm::DecodeGlobalType(Decoder& d, ValType* type, bool* isMutable)
-{
-    if (!DecodeValType(d, ModuleKind::Wasm, type))
+    if (!d.finishSection(sectionStart, sectionSize, "table"))
         return false;
 
-    uint32_t flags;
-    if (!d.readVarU32(&flags))
-        return d.fail("expected global flags");
-
-    if (flags & ~uint32_t(GlobalTypeImmediate::AllowedMask))
-        return d.fail("unexpected bits set in global flags");
-
-    *isMutable = flags & uint32_t(GlobalTypeImmediate::IsMutable);
     return true;
 }
 
-bool
-wasm::DecodeInitializerExpression(Decoder& d, const GlobalDescVector& globals, ValType expected,
-                                  InitExpr* init)
+static bool
+DecodeMemorySection(Decoder& d, ModuleEnvironment* env)
+{
+    uint32_t sectionStart, sectionSize;
+    if (!d.startSection(SectionId::Memory, &sectionStart, &sectionSize, "memory"))
+        return false;
+    if (sectionStart == Decoder::NotStarted)
+        return true;
+
+    uint32_t numMemories;
+    if (!d.readVarU32(&numMemories))
+        return d.fail("failed to read number of memories");
+
+    if (numMemories != 1)
+        return d.fail("the number of memories must be exactly one");
+
+    if (!DecodeMemoryLimits(d, env))
+        return false;
+
+    if (!d.finishSection(sectionStart, sectionSize, "memory"))
+        return false;
+
+    return true;
+}
+
+static bool
+DecodeInitializerExpression(Decoder& d, const GlobalDescVector& globals, ValType expected,
+                            InitExpr* init)
 {
     uint16_t op;
     if (!d.readOp(&op))
@@ -469,39 +612,290 @@ wasm::DecodeInitializerExpression(Decoder& d, const GlobalDescVector& globals, V
     return true;
 }
 
-bool
-wasm::DecodeLimits(Decoder& d, Limits* limits)
+static bool
+DecodeGlobalSection(Decoder& d, GlobalDescVector* globals)
 {
-    uint32_t flags;
-    if (!d.readVarU32(&flags))
-        return d.fail("expected flags");
+    uint32_t sectionStart, sectionSize;
+    if (!d.startSection(SectionId::Global, &sectionStart, &sectionSize, "global"))
+        return false;
+    if (sectionStart == Decoder::NotStarted)
+        return true;
 
-    if (flags & ~uint32_t(0x1))
-        return d.fail("unexpected bits set in flags: %" PRIu32, (flags & ~uint32_t(0x1)));
+    uint32_t numDefs;
+    if (!d.readVarU32(&numDefs))
+        return d.fail("expected number of globals");
 
-    if (!d.readVarU32(&limits->initial))
-        return d.fail("expected initial length");
+    uint32_t numGlobals = globals->length() + numDefs;
+    if (numGlobals > MaxGlobals)
+        return d.fail("too many globals");
 
-    if (flags & 0x1) {
-        uint32_t maximum;
-        if (!d.readVarU32(&maximum))
-            return d.fail("expected maximum length");
+    if (!globals->reserve(numGlobals))
+        return false;
 
-        if (limits->initial > maximum) {
-            return d.fail("memory size minimum must not be greater than maximum; "
-                          "maximum length %" PRIu32 " is less than initial length %" PRIu32,
-                          maximum, limits->initial);
+    for (uint32_t i = 0; i < numDefs; i++) {
+        ValType type;
+        bool isMutable;
+        if (!DecodeGlobalType(d, &type, &isMutable))
+            return false;
+
+        InitExpr initializer;
+        if (!DecodeInitializerExpression(d, *globals, type, &initializer))
+            return false;
+
+        globals->infallibleAppend(GlobalDesc(initializer, isMutable));
+    }
+
+    if (!d.finishSection(sectionStart, sectionSize, "global"))
+        return false;
+
+    return true;
+}
+
+typedef HashSet<const char*, CStringHasher, SystemAllocPolicy> CStringSet;
+
+static UniqueChars
+DecodeExportName(Decoder& d, CStringSet* dupSet)
+{
+    UniqueChars exportName = DecodeName(d);
+    if (!exportName) {
+        d.fail("expected valid export name");
+        return nullptr;
+    }
+
+    CStringSet::AddPtr p = dupSet->lookupForAdd(exportName.get());
+    if (p) {
+        d.fail("duplicate export");
+        return nullptr;
+    }
+
+    if (!dupSet->add(p, exportName.get()))
+        return nullptr;
+
+    return Move(exportName);
+}
+
+static bool
+DecodeExport(Decoder& d, ModuleEnvironment* env, CStringSet* dupSet)
+{
+    UniqueChars fieldName = DecodeExportName(d, dupSet);
+    if (!fieldName)
+        return false;
+
+    uint32_t exportKind;
+    if (!d.readVarU32(&exportKind))
+        return d.fail("failed to read export kind");
+
+    switch (DefinitionKind(exportKind)) {
+      case DefinitionKind::Function: {
+        uint32_t funcIndex;
+        if (!d.readVarU32(&funcIndex))
+            return d.fail("expected function index");
+
+        if (funcIndex >= env->numFuncs())
+            return d.fail("exported function index out of bounds");
+
+        return env->exports.emplaceBack(Move(fieldName), funcIndex, DefinitionKind::Function);
+      }
+      case DefinitionKind::Table: {
+        uint32_t tableIndex;
+        if (!d.readVarU32(&tableIndex))
+            return d.fail("expected table index");
+
+        if (tableIndex >= env->tables.length())
+            return d.fail("exported table index out of bounds");
+
+        MOZ_ASSERT(env->tables.length() == 1);
+        env->tables[0].external = true;
+
+        return env->exports.emplaceBack(Move(fieldName), DefinitionKind::Table);
+      }
+      case DefinitionKind::Memory: {
+        uint32_t memoryIndex;
+        if (!d.readVarU32(&memoryIndex))
+            return d.fail("expected memory index");
+
+        if (memoryIndex > 0 || !env->usesMemory())
+            return d.fail("exported memory index out of bounds");
+
+        return env->exports.emplaceBack(Move(fieldName), DefinitionKind::Memory);
+      }
+      case DefinitionKind::Global: {
+        uint32_t globalIndex;
+        if (!d.readVarU32(&globalIndex))
+            return d.fail("expected global index");
+
+        if (globalIndex >= env->globals.length())
+            return d.fail("exported global index out of bounds");
+
+        const GlobalDesc& global = env->globals[globalIndex];
+        if (!GlobalIsJSCompatible(d, global.type(), global.isMutable()))
+            return false;
+
+        return env->exports.emplaceBack(Move(fieldName), globalIndex, DefinitionKind::Global);
+      }
+      default:
+        return d.fail("unexpected export kind");
+    }
+
+    MOZ_CRASH("unreachable");
+}
+
+static bool
+DecodeExportSection(Decoder& d, ModuleEnvironment* env)
+{
+    uint32_t sectionStart, sectionSize;
+    if (!d.startSection(SectionId::Export, &sectionStart, &sectionSize, "export"))
+        return false;
+    if (sectionStart == Decoder::NotStarted)
+        return true;
+
+    CStringSet dupSet;
+    if (!dupSet.init())
+        return false;
+
+    uint32_t numExports;
+    if (!d.readVarU32(&numExports))
+        return d.fail("failed to read number of exports");
+
+    if (numExports > MaxExports)
+        return d.fail("too many exports");
+
+    for (uint32_t i = 0; i < numExports; i++) {
+        if (!DecodeExport(d, env, &dupSet))
+            return false;
+    }
+
+    if (!d.finishSection(sectionStart, sectionSize, "export"))
+        return false;
+
+    return true;
+}
+
+static bool
+DecodeStartSection(Decoder& d, ModuleEnvironment* env)
+{
+    uint32_t sectionStart, sectionSize;
+    if (!d.startSection(SectionId::Start, &sectionStart, &sectionSize, "start"))
+        return false;
+    if (sectionStart == Decoder::NotStarted)
+        return true;
+
+    uint32_t funcIndex;
+    if (!d.readVarU32(&funcIndex))
+        return d.fail("failed to read start func index");
+
+    if (funcIndex >= env->numFuncs())
+        return d.fail("unknown start function");
+
+    const Sig& sig = *env->funcSigs[funcIndex];
+    if (!IsVoid(sig.ret()))
+        return d.fail("start function must not return anything");
+
+    if (sig.args().length())
+        return d.fail("start function must be nullary");
+
+    env->startFuncIndex = Some(funcIndex);
+
+    if (!d.finishSection(sectionStart, sectionSize, "start"))
+        return false;
+
+    return true;
+}
+
+static bool
+DecodeElemSection(Decoder& d, ModuleEnvironment* env)
+{
+    uint32_t sectionStart, sectionSize;
+    if (!d.startSection(SectionId::Elem, &sectionStart, &sectionSize, "elem"))
+        return false;
+    if (sectionStart == Decoder::NotStarted)
+        return true;
+
+    uint32_t numSegments;
+    if (!d.readVarU32(&numSegments))
+        return d.fail("failed to read number of elem segments");
+
+    if (numSegments > MaxElemSegments)
+        return d.fail("too many elem segments");
+
+    for (uint32_t i = 0; i < numSegments; i++) {
+        uint32_t tableIndex;
+        if (!d.readVarU32(&tableIndex))
+            return d.fail("expected table index");
+
+        MOZ_ASSERT(env->tables.length() <= 1);
+        if (tableIndex >= env->tables.length())
+            return d.fail("table index out of range");
+
+        InitExpr offset;
+        if (!DecodeInitializerExpression(d, env->globals, ValType::I32, &offset))
+            return false;
+
+        uint32_t numElems;
+        if (!d.readVarU32(&numElems))
+            return d.fail("expected segment size");
+
+        Uint32Vector elemFuncIndices;
+        if (!elemFuncIndices.resize(numElems))
+            return false;
+
+        for (uint32_t i = 0; i < numElems; i++) {
+            if (!d.readVarU32(&elemFuncIndices[i]))
+                return d.fail("failed to read element function index");
+            if (elemFuncIndices[i] >= env->numFuncs())
+                return d.fail("table element out of range");
         }
 
-        limits->maximum.emplace(maximum);
+        if (!env->elemSegments.emplaceBack(0, offset, Move(elemFuncIndices)))
+            return false;
+
+        env->tables[env->elemSegments.back().tableIndex].external = true;
     }
+
+    if (!d.finishSection(sectionStart, sectionSize, "elem"))
+        return false;
 
     return true;
 }
 
 bool
-wasm::DecodeDataSection(Decoder& d, bool usesMemory, uint32_t minMemoryByteLength,
-                        const GlobalDescVector& globals, DataSegmentVector* segments)
+wasm::DecodeModuleEnvironment(Decoder& d, ModuleEnvironment* env)
+{
+    if (!DecodePreamble(d))
+        return false;
+
+    if (!DecodeTypeSection(d, &env->sigs))
+        return false;
+
+    if (!DecodeImportSection(d, env))
+        return false;
+
+    if (!DecodeFunctionSection(d, env))
+        return false;
+
+    if (!DecodeTableSection(d, &env->tables))
+        return false;
+
+    if (!DecodeMemorySection(d, env))
+        return false;
+
+    if (!DecodeGlobalSection(d, &env->globals))
+        return false;
+
+    if (!DecodeExportSection(d, env))
+        return false;
+
+    if (!DecodeStartSection(d, env))
+        return false;
+
+    if (!DecodeElemSection(d, env))
+        return false;
+
+    return true;
+}
+
+bool
+wasm::DecodeDataSection(Decoder& d, const ModuleEnvironment& env, DataSegmentVector* segments)
 {
     uint32_t sectionStart, sectionSize;
     if (!d.startSection(SectionId::Data, &sectionStart, &sectionSize, "data"))
@@ -509,7 +903,7 @@ wasm::DecodeDataSection(Decoder& d, bool usesMemory, uint32_t minMemoryByteLengt
     if (sectionStart == Decoder::NotStarted)
         return true;
 
-    if (!usesMemory)
+    if (!env.usesMemory())
         return d.fail("data section requires a memory section");
 
     uint32_t numSegments;
@@ -528,7 +922,7 @@ wasm::DecodeDataSection(Decoder& d, bool usesMemory, uint32_t minMemoryByteLengt
             return d.fail("linear memory index must currently be 0");
 
         DataSegment seg;
-        if (!DecodeInitializerExpression(d, globals, ValType::I32, &seg.offset))
+        if (!DecodeInitializerExpression(d, env.globals, ValType::I32, &seg.offset))
             return false;
 
         if (!d.readVarU32(&seg.length))
@@ -550,63 +944,6 @@ wasm::DecodeDataSection(Decoder& d, bool usesMemory, uint32_t minMemoryByteLengt
 }
 
 bool
-wasm::DecodeMemoryLimits(Decoder& d, bool hasMemory, Limits* memory)
-{
-    if (hasMemory)
-        return d.fail("already have default memory");
-
-    if (!DecodeLimits(d, memory))
-        return false;
-
-    CheckedInt<uint32_t> initialBytes = memory->initial;
-    initialBytes *= PageSize;
-    if (!initialBytes.isValid() || initialBytes.value() > uint32_t(INT32_MAX))
-        return d.fail("initial memory size too big");
-
-    memory->initial = initialBytes.value();
-
-    if (memory->maximum) {
-        CheckedInt<uint32_t> maximumBytes = *memory->maximum;
-        maximumBytes *= PageSize;
-        if (!maximumBytes.isValid())
-            return d.fail("maximum memory size too big");
-
-        memory->maximum = Some(maximumBytes.value());
-    }
-
-    return true;
-}
-
-bool
-wasm::DecodeMemorySection(Decoder& d, bool hasMemory, Limits* memory, bool *present)
-{
-    *present = false;
-
-    uint32_t sectionStart, sectionSize;
-    if (!d.startSection(SectionId::Memory, &sectionStart, &sectionSize, "memory"))
-        return false;
-    if (sectionStart == Decoder::NotStarted)
-        return true;
-
-    *present = true;
-
-    uint32_t numMemories;
-    if (!d.readVarU32(&numMemories))
-        return d.fail("failed to read number of memories");
-
-    if (numMemories != 1)
-        return d.fail("the number of memories must be exactly one");
-
-    if (!DecodeMemoryLimits(d, hasMemory, memory))
-        return false;
-
-    if (!d.finishSection(sectionStart, sectionSize, "memory"))
-        return false;
-
-    return true;
-}
-
-bool
 wasm::DecodeUnknownSections(Decoder& d)
 {
     while (!d.done()) {
@@ -615,29 +952,4 @@ wasm::DecodeUnknownSections(Decoder& d)
     }
 
     return true;
-}
-
-bool
-Decoder::fail(const char* msg, ...)
-{
-    va_list ap;
-    va_start(ap, msg);
-    UniqueChars str(JS_vsmprintf(msg, ap));
-    va_end(ap);
-    if (!str)
-        return false;
-
-    return fail(Move(str));
-}
-
-bool
-Decoder::fail(UniqueChars msg)
-{
-    MOZ_ASSERT(error_);
-    UniqueChars strWithOffset(JS_smprintf("at offset %" PRIuSIZE ": %s", currentOffset(), msg.get()));
-    if (!strWithOffset)
-        return false;
-
-    *error_ = Move(strWithOffset);
-    return false;
 }

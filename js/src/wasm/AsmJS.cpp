@@ -39,6 +39,7 @@
 #include "vm/Time.h"
 #include "vm/TypedArrayObject.h"
 #include "wasm/WasmBinaryFormat.h"
+#include "wasm/WasmCompile.h"
 #include "wasm/WasmGenerator.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmJS.h"
@@ -1464,7 +1465,6 @@ class MOZ_STACK_CLASS ModuleValidator
         importMap_(cx),
         arrayViews_(cx),
         atomicsPresent_(false),
-        mg_(ImportVector()),
         errorString_(nullptr),
         errorOffset_(UINT32_MAX),
         errorOverRecursed_(false)
@@ -1562,20 +1562,20 @@ class MOZ_STACK_CLASS ModuleValidator
         if (!args.initFromContext(cx_, Move(scriptedCaller)))
             return false;
 
-        auto genData = MakeUnique<ModuleGeneratorData>(ModuleKind::AsmJS);
-        if (!genData ||
-            !genData->sigs.resize(MaxSigs) ||
-            !genData->funcSigs.resize(MaxFuncs) ||
-            !genData->funcImportGlobalDataOffsets.resize(AsmJSMaxImports) ||
-            !genData->tables.resize(MaxTables) ||
-            !genData->asmJSSigToTableIndex.resize(MaxSigs))
+        auto env = MakeUnique<ModuleEnvironment>(ModuleKind::AsmJS);
+        if (!env ||
+            !env->sigs.resize(MaxSigs) ||
+            !env->funcSigs.resize(MaxFuncs) ||
+            !env->funcImportGlobalDataOffsets.resize(AsmJSMaxImports) ||
+            !env->tables.resize(MaxTables) ||
+            !env->asmJSSigToTableIndex.resize(MaxSigs))
         {
             return false;
         }
 
-        genData->minMemoryLength = RoundUpToNextValidAsmJSHeapLength(0);
+        env->minMemoryLength = RoundUpToNextValidAsmJSHeapLength(0);
 
-        if (!mg_.init(Move(genData), args, asmJSMetadata_.get()))
+        if (!mg_.init(Move(env), args, asmJSMetadata_.get()))
             return false;
 
         return true;
@@ -1823,8 +1823,8 @@ class MOZ_STACK_CLASS ModuleValidator
             return false;
 
         // Declare which function is exported which gives us an index into the
-        // module FuncExportVector.
-        if (!mg_.addFuncExport(Move(fieldChars), func.index()))
+        // module ExportVector.
+        if (!mg_.addExport(Move(fieldChars), func.index()))
             return false;
 
         // The exported function might have already been exported in which case
@@ -2053,7 +2053,9 @@ class MOZ_STACK_CLASS ModuleValidator
         if (!bytes)
             return nullptr;
 
-        return mg_.finish(*bytes);
+        return mg_.finish(*bytes,
+                          DataSegmentVector(),
+                          NameInBytecodeVector());
     }
 };
 
