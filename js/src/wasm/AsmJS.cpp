@@ -2053,9 +2053,7 @@ class MOZ_STACK_CLASS ModuleValidator
         if (!bytes)
             return nullptr;
 
-        return mg_.finish(*bytes,
-                          DataSegmentVector(),
-                          NameInBytecodeVector());
+        return mg_.finish(*bytes);
     }
 };
 

@@ -469,6 +469,7 @@ Metadata::serializedSize() const
            SerializedPodVectorSize(callSites) +
            SerializedPodVectorSize(callThunks) +
            SerializedPodVectorSize(funcNames) +
+           SerializedPodVectorSize(customSections) +
            filename.serializedSize();
 }
 
@@ -488,6 +489,7 @@ Metadata::serialize(uint8_t* cursor) const
     cursor = SerializePodVector(cursor, callSites);
     cursor = SerializePodVector(cursor, callThunks);
     cursor = SerializePodVector(cursor, funcNames);
+    cursor = SerializePodVector(cursor, customSections);
     cursor = filename.serialize(cursor);
     return cursor;
 }
@@ -508,6 +510,7 @@ Metadata::deserialize(const uint8_t* cursor)
     (cursor = DeserializePodVector(cursor, &callSites)) &&
     (cursor = DeserializePodVector(cursor, &callThunks)) &&
     (cursor = DeserializePodVector(cursor, &funcNames)) &&
+    (cursor = DeserializePodVector(cursor, &customSections)) &&
     (cursor = filename.deserialize(cursor));
     return cursor;
 }
@@ -527,6 +530,7 @@ Metadata::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const
            callSites.sizeOfExcludingThis(mallocSizeOf) +
            callThunks.sizeOfExcludingThis(mallocSizeOf) +
            funcNames.sizeOfExcludingThis(mallocSizeOf) +
+           customSections.sizeOfExcludingThis(mallocSizeOf) +
            filename.sizeOfExcludingThis(mallocSizeOf);
 }
 

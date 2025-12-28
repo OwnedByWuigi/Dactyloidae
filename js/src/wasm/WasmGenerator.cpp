@@ -218,6 +218,15 @@ ModuleGenerator::init(UniqueModuleEnvironment env, const CompileArgs& args,
     return true;
 }
 
+ModuleEnvironment&
+ModuleGenerator::mutableEnv()
+{
+    // Mutation is not safe during parallel compilation.
+    MOZ_ASSERT(!startedFuncDefs_ || finishedFuncDefs_);
+    return *env_;
+}
+
+
 bool
 ModuleGenerator::finishOutstandingTask()
 {
@@ -1020,8 +1029,7 @@ ModuleGenerator::initSigTableElems(uint32_t sigIndex, Uint32Vector&& elemFuncInd
 }
 
 SharedModule
-ModuleGenerator::finish(const ShareableBytes& bytecode, DataSegmentVector&& dataSegments,
-                        NameInBytecodeVector&& funcNames)
+ModuleGenerator::finish(const ShareableBytes& bytecode)
 {
     MOZ_ASSERT(!activeFuncDef_);
     MOZ_ASSERT(finishedFuncDefs_);
@@ -1058,8 +1066,6 @@ ModuleGenerator::finish(const ShareableBytes& bytecode, DataSegmentVector&& data
     if (!metadata_->callSites.appendAll(masm_.callSites()))
         return nullptr;
 
-    metadata_->funcNames = Move(funcNames);
-
     // The MacroAssembler has accumulated all the memory accesses during codegen.
     metadata_->memoryAccesses = masm_.extractMemoryAccesses();
     metadata_->memoryPatches = masm_.extractMemoryPatches();
@@ -1071,6 +1077,8 @@ ModuleGenerator::finish(const ShareableBytes& bytecode, DataSegmentVector&& data
     metadata_->maxMemoryLength = env_->maxMemoryLength;
     metadata_->tables = Move(env_->tables);
     metadata_->globals = Move(env_->globals);
+    metadata_->funcNames = Move(env_->funcNames);
+    metadata_->customSections = Move(env_->customSections);
 
     // These Vectors can get large and the excess capacity can be significant,
     // so realloc them down to size.
@@ -1103,7 +1111,7 @@ ModuleGenerator::finish(const ShareableBytes& bytecode, DataSegmentVector&& data
                                        Move(linkData_),
                                        Move(env_->imports),
                                        Move(env_->exports),
-                                       Move(dataSegments),
+                                       Move(env_->dataSegments),
                                        Move(env_->elemSegments),
                                        *metadata_,
                                        bytecode));

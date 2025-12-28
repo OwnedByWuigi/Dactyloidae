@@ -30,7 +30,7 @@ static const uint32_t EncodingVersion    = 0x01;
 static const uint32_t PrevEncodingVersion = 0x0d;
 
 enum class SectionId {
-    UserDefined                          = 0,
+    Custom                               = 0,
     Type                                 = 1,
     Import                               = 2,
     Function                             = 3,
