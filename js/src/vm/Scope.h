@@ -71,7 +71,10 @@ enum class ScopeKind : uint8_t
     NonSyntactic,
 
     // ModuleScope
-    Module
+    Module,
+
+    // WasmFunctionScope
+    WasmFunction
 };
 
 static inline bool
@@ -963,6 +966,60 @@ class ModuleScope : public Scope
     static Shape* getEmptyEnvironmentShape(ExclusiveContext* cx);
 };
 
+// Scope corresponding to the wasm function. A WasmFunctionScope is used by
+// Debugger only, and not for wasm execution.
+//
+class WasmFunctionScope : public Scope
+{
+    friend class BindingIter;
+    friend class Scope;
+    static const ScopeKind classScopeKind_ = ScopeKind::WasmFunction;
+
+  public:
+    struct Data
+    {
+        uint32_t length= 0;
+        uint32_t nextFrameSlot= 0;
+        uint32_t funcIndex= 0;
+
+        // The wasm instance of the scope.
+        GCPtr<WasmInstanceObject*> instance = {};
+
+        TrailingNamesArray trailingNames;
+
+        explicit Data(size_t nameCount) : trailingNames(nameCount) {}
+        Data() = delete;
+
+        void trace(JSTracer* trc);
+    };
+
+    static WasmFunctionScope* create(JSContext* cx, WasmInstanceObject* instance, uint32_t funcIndex);
+
+    static size_t sizeOfData(uint32_t length) {
+        return sizeof(Data) + (length ? length - 1 : 0) * sizeof(BindingName);
+    }
+
+  private:
+    Data& data() {
+        return *reinterpret_cast<Data*>(data_);
+    }
+
+    const Data& data() const {
+        return *reinterpret_cast<Data*>(data_);
+    }
+
+  public:
+    WasmInstanceObject* instance() const {
+        return data().instance;
+    }
+
+    uint32_t funcIndex() const {
+        return data().funcIndex;
+    }
+
+    static Shape* getEmptyEnvironmentShape(JSContext* cx);
+};
+
 //
 // An iterator for a Scope's bindings. This is the source of truth for frame
 // and environment object layout.
@@ -1072,6 +1129,7 @@ class BindingIter
     void init(GlobalScope::Data& data);
     void init(EvalScope::Data& data, bool strict);
     void init(ModuleScope::Data& data);
+    void init(WasmFunctionScope::Data& data);
 
     bool hasFormalParameterExprs() const {
         return flags_ & HasFormalParameterExprs;
@@ -1141,6 +1199,10 @@ class BindingIter
     }
 
     explicit BindingIter(ModuleScope::Data& data) {
+        init(data);
+    }
+
+    explicit BindingIter(WasmFunctionScope::Data& data) {
         init(data);
     }
 
@@ -1448,6 +1510,7 @@ DEFINE_SCOPE_DATA_GCPOLICY(js::VarScope::Data);
 DEFINE_SCOPE_DATA_GCPOLICY(js::GlobalScope::Data);
 DEFINE_SCOPE_DATA_GCPOLICY(js::EvalScope::Data);
 DEFINE_SCOPE_DATA_GCPOLICY(js::ModuleScope::Data);
+DEFINE_SCOPE_DATA_GCPOLICY(js::WasmFunctionScope::Data);
 
 #undef DEFINE_SCOPE_DATA_GCPOLICY
 

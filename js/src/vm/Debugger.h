@@ -297,7 +297,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
         virtual const HashSet<Zone*>* zones() const { return nullptr; }
 
         virtual bool shouldRecompileOrInvalidate(JSScript* script) const = 0;
-        virtual bool shouldMarkAsDebuggee(ScriptFrameIter& iter) const = 0;
+        virtual bool shouldMarkAsDebuggee(FrameIter& iter) const = 0;
     };
 
     // This enum is converted to and compare with bool values; NotObserving
@@ -768,11 +768,11 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
      * Gets a Debugger.Frame object. If maybeIter is non-null, we eagerly copy
      * its data if we need to make a new Debugger.Frame.
      */
-    MOZ_MUST_USE bool getScriptFrameWithIter(JSContext* cx, AbstractFramePtr frame,
-                                             const ScriptFrameIter* maybeIter,
+    [[nodiscard]] bool getScriptFrameWithIter(JSContext* cx, AbstractFramePtr frame,
+                                             const FrameIter* maybeIter,
                                              MutableHandleValue vp);
-    MOZ_MUST_USE bool getScriptFrameWithIter(JSContext* cx, AbstractFramePtr frame,
-                                             const ScriptFrameIter* maybeIter,
+    [[nodiscard]] bool getScriptFrameWithIter(JSContext* cx, AbstractFramePtr frame,
+                                             const FrameIter* maybeIter,
                                              MutableHandleDebuggerFrame result);
 
     inline Breakpoint* firstBreakpoint() const;
@@ -911,6 +911,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
     bool observesFrame(AbstractFramePtr frame) const;
     bool observesFrame(const FrameIter& iter) const;
     bool observesScript(JSScript* script) const;
+    bool observesWasm(wasm::Instance* instance) const;
 
     /*
      * If env is nullptr, call vp->setNull() and return true. Otherwise, find
@@ -995,11 +996,11 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
      * frame, in which case the cost of walking the stack has already been
      * paid.
      */
-    MOZ_MUST_USE bool getScriptFrame(JSContext* cx, const ScriptFrameIter& iter,
+    [[nodiscard]] bool getScriptFrame(JSContext* cx, const FrameIter& iter,
                                      MutableHandleValue vp) {
         return getScriptFrameWithIter(cx, iter.abstractFramePtr(), &iter, vp);
     }
-    MOZ_MUST_USE bool getScriptFrame(JSContext* cx, const ScriptFrameIter& iter,
+    [[nodiscard]] bool getScriptFrame(JSContext* cx, const FrameIter& iter,
                                      MutableHandleDebuggerFrame result);
 
 
@@ -1144,13 +1145,15 @@ enum class DebuggerFrameType {
     Eval,
     Global,
     Call,
-    Module
+    Module,
+    WasmCall
 };
 
 enum class DebuggerFrameImplementation {
     Interpreter,
     Baseline,
-    Ion
+    Ion,
+    Wasm
 };
 
 class DebuggerFrame : public NativeObject
@@ -1166,7 +1169,7 @@ class DebuggerFrame : public NativeObject
 
     static NativeObject* initClass(JSContext* cx, HandleObject dbgCtor, HandleObject objProto);
     static DebuggerFrame* create(JSContext* cx, HandleObject proto, AbstractFramePtr referent,
-                                 const ScriptFrameIter* maybeIter, HandleNativeObject debugger);
+                                 const FrameIter* maybeIter, HandleNativeObject debugger);
 
     static MOZ_MUST_USE bool getCallee(JSContext* cx, HandleDebuggerFrame frame,
                                        MutableHandleDebuggerObject result);
@@ -1197,8 +1200,9 @@ class DebuggerFrame : public NativeObject
     static const JSFunctionSpec methods_[];
 
     static AbstractFramePtr getReferent(HandleDebuggerFrame frame);
-    static MOZ_MUST_USE bool getScriptFrameIter(JSContext* cx, HandleDebuggerFrame frame,
-                                                mozilla::Maybe<ScriptFrameIter>& result);
+    [[nodiscard]] static bool getFrameIter(JSContext* cx, HandleDebuggerFrame frame,
+                                                mozilla::Maybe<FrameIter>& result);
+    [[nodiscard]] static bool requireScriptReferent(JSContext* cx, HandleDebuggerFrame frame);
 
     static MOZ_MUST_USE bool construct(JSContext* cx, unsigned argc, Value* vp);
 

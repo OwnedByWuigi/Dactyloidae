@@ -17,6 +17,7 @@
 
 #include "wasm/WasmFrameIterator.h"
 
+#include "wasm/WasmDebugFrame.h"
 #include "wasm/WasmInstance.h"
 
 #include "jit/MacroAssembler-inl.h"
@@ -41,6 +42,13 @@ static uint8_t*
 CallerFPFromFP(void* fp)
 {
     return reinterpret_cast<Frame*>(fp)->callerFP;
+}
+
+static TlsData*
+TlsDataFromFP(void *fp)
+{
+    void* debugFrame = (uint8_t*)fp - DebugFrame::offsetOfFrame();
+    return reinterpret_cast<DebugFrame*>(debugFrame)->tlsData();
 }
 
 FrameIterator::FrameIterator()
@@ -142,6 +150,7 @@ FrameIterator::settle()
       case CodeRange::ImportJitExit:
       case CodeRange::ImportInterpExit:
       case CodeRange::TrapExit:
+      case CodeRange::DebugTrap:
       case CodeRange::Inline:
       case CodeRange::FarJumpIsland:
         MOZ_CRASH("Should not encounter an exit during iteration");
@@ -205,6 +214,38 @@ FrameIterator::lineOrBytecode() const
     MOZ_ASSERT(!done());
     return callsite_ ? callsite_->lineOrBytecode()
                      : (codeRange_ ? codeRange_->funcLineOrBytecode() : 0);
+}
+
+Instance*
+FrameIterator::instance() const
+{
+    MOZ_ASSERT(!done() && debugEnabled());
+    return TlsDataFromFP(fp_ + callsite_->stackDepth())->instance;
+}
+
+bool
+FrameIterator::debugEnabled() const
+{
+    MOZ_ASSERT(!done() && code_);
+    MOZ_ASSERT_IF(!missingFrameMessage_, codeRange_->kind() == CodeRange::Function);
+    return code_->metadata().debugEnabled;
+}
+
+DebugFrame*
+FrameIterator::debugFrame() const
+{
+    MOZ_ASSERT(!done() && debugEnabled());
+    // The fp() points to wasm::Frame.
+    void* buf = static_cast<uint8_t*>(fp_ + callsite_->stackDepth()) - DebugFrame::offsetOfFrame();
+    return static_cast<DebugFrame*>(buf);
+}
+
+const CallSite*
+FrameIterator::debugTrapCallsite() const
+{
+    MOZ_ASSERT(!done() && debugEnabled());
+    MOZ_ASSERT(callsite_->kind() == CallSite::EnterFrame || callsite_->kind() == CallSite::LeaveFrame);
+    return callsite_;
 }
 
 /*****************************************************************************/
@@ -566,6 +607,7 @@ ProfilingFrameIterator::initFromFP()
       case CodeRange::ImportJitExit:
       case CodeRange::ImportInterpExit:
       case CodeRange::TrapExit:
+      case CodeRange::DebugTrap:
       case CodeRange::Inline:
       case CodeRange::FarJumpIsland:
         MOZ_CRASH("Unexpected CodeRange kind");
@@ -698,6 +740,7 @@ ProfilingFrameIterator::ProfilingFrameIterator(const WasmActivation& activation,
         callerFP_ = nullptr;
         break;
       }
+      case CodeRange::DebugTrap:
       case CodeRange::Inline: {
         // The throw stub clears WasmActivation::fp on it's way out.
         if (!fp) {
@@ -754,6 +797,7 @@ ProfilingFrameIterator::operator++()
       case CodeRange::ImportJitExit:
       case CodeRange::ImportInterpExit:
       case CodeRange::TrapExit:
+      case CodeRange::DebugTrap:
       case CodeRange::Inline:
       case CodeRange::FarJumpIsland:
         stackAddress_ = callerFP_;
@@ -780,6 +824,7 @@ ProfilingFrameIterator::label() const
     const char* importInterpDescription = "slow FFI trampoline (in asm.js)";
     const char* nativeDescription = "native call (in asm.js)";
     const char* trapDescription = "trap handling (in asm.js)";
+    const char* debugTrapDescription = "debug trap handling (in asm.js)";
 
     switch (exitReason_) {
       case ExitReason::None:
@@ -792,6 +837,8 @@ ProfilingFrameIterator::label() const
         return nativeDescription;
       case ExitReason::Trap:
         return trapDescription;
+      case ExitReason::DebugTrap:
+        return debugTrapDescription;
     }
 
     switch (codeRange_->kind()) {
@@ -800,6 +847,7 @@ ProfilingFrameIterator::label() const
       case CodeRange::ImportJitExit:    return importJitDescription;
       case CodeRange::ImportInterpExit: return importInterpDescription;
       case CodeRange::TrapExit:         return trapDescription;
+      case CodeRange::DebugTrap:        return debugTrapDescription;
       case CodeRange::Inline:           return "inline stub (in asm.js)";
       case CodeRange::FarJumpIsland:    return "interstitial (in asm.js)";
     }

@@ -318,7 +318,8 @@ Instance::Instance(JSContext* cx,
     object_(object),
     code_(Move(code)),
     memory_(memory),
-    tables_(Move(tables))
+    tables_(Move(tables)),
+    enterFrameTrapsEnabled_(false)
 {
     MOZ_ASSERT(funcImports.length() == metadata().funcImports.length());
     MOZ_ASSERT(tables_.length() == metadata().tables.length());
@@ -732,6 +733,16 @@ Instance::ensureProfilingState(JSContext* cx, bool newProfilingEnabled)
     }
 
     return true;
+}
+
+void
+Instance::ensureEnterFrameTrapsState(JSContext* cx, bool enabled)
+{
+    if (enterFrameTrapsEnabled_ == enabled)
+        return;
+
+    code_->adjustEnterAndLeaveFrameTrapsState(cx, enabled);
+    enterFrameTrapsEnabled_ = enabled;
 }
 
 void

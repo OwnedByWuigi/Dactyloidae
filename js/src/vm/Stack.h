@@ -61,6 +61,7 @@ namespace jit {
 class CommonFrameLayout;
 }
 namespace wasm {
+class DebugFrame;
 class Instance;
 }
 
@@ -134,7 +135,8 @@ class AbstractFramePtr
         Tag_InterpreterFrame = 0x1,
         Tag_BaselineFrame = 0x2,
         Tag_RematerializedFrame = 0x3,
-        TagMask = 0x3
+        Tag_WasmDebugFrame = 0x4,
+        TagMask = 0x7
     };
 
   public:
@@ -158,6 +160,12 @@ class AbstractFramePtr
       : ptr_(fp ? uintptr_t(fp) | Tag_RematerializedFrame : 0)
     {
         MOZ_ASSERT_IF(fp, asRematerializedFrame() == fp);
+    }
+
+    MOZ_IMPLICIT AbstractFramePtr(wasm::DebugFrame* fp)
+      : ptr_(fp ? uintptr_t(fp) | Tag_WasmDebugFrame : 0)
+    {
+        MOZ_ASSERT_IF(fp, asWasmDebugFrame() == fp);
     }
 
     static AbstractFramePtr FromRaw(void* raw) {
@@ -196,6 +204,15 @@ class AbstractFramePtr
         MOZ_ASSERT(res);
         return res;
     }
+    bool isWasmDebugFrame() const {
+        return (ptr_ & TagMask) == Tag_WasmDebugFrame;
+    }
+    wasm::DebugFrame* asWasmDebugFrame() const {
+        MOZ_ASSERT(isWasmDebugFrame());
+        wasm::DebugFrame* res = (wasm::DebugFrame*)(ptr_ & ~TagMask);
+        MOZ_ASSERT(res);
+        return res;
+    }
 
     void* raw() const { return reinterpret_cast<void*>(ptr_); }
 
@@ -223,7 +240,10 @@ class AbstractFramePtr
     inline bool hasCachedSavedFrame() const;
     inline void setHasCachedSavedFrame();
 
+    inline bool hasScript() const;
     inline JSScript* script() const;
+    inline wasm::Instance* wasmInstance() const;
+    inline GlobalObject* global() const;
     inline JSFunction* callee() const;
     inline Value calleev() const;
     inline Value& thisArgument() const;
@@ -268,6 +288,7 @@ class AbstractFramePtr
     friend void GDBTestInitAbstractFramePtr(AbstractFramePtr&, InterpreterFrame*);
     friend void GDBTestInitAbstractFramePtr(AbstractFramePtr&, jit::BaselineFrame*);
     friend void GDBTestInitAbstractFramePtr(AbstractFramePtr&, jit::RematerializedFrame*);
+    friend void GDBTestInitAbstractFramePtr(AbstractFramePtr& frame, wasm::DebugFrame* ptr);
 };
 
 class NullFramePtr : public AbstractFramePtr
@@ -1809,6 +1830,11 @@ class FrameIter
     bool hasScript() const { return !isWasm(); }
 
     // -----------------------------------------------------------
+	//  The following functions can only be called when isWasm()
+    // -----------------------------------------------------------
+    inline wasm::Instance* wasmInstance() const;
+
+    // -----------------------------------------------------------
     // The following functions can only be called when hasScript()
     // -----------------------------------------------------------
 
@@ -1869,7 +1895,7 @@ class FrameIter
 
     // -----------------------------------------------------------
     // The following functions can only be called when isInterp(),
-    // isBaseline(), or isIon(). Further, abstractFramePtr() can
+    // isBaseline(), isWasm() or isIon(). Further, abstractFramePtr() can
     // only be called when hasUsableAbstractFramePtr().
     // -----------------------------------------------------------
 
@@ -2052,6 +2078,14 @@ FrameIter::script() const
     if (data_.jitFrames_.isIonJS())
         return ionInlineFrames_.script();
     return data_.jitFrames_.script();
+}
+
+inline wasm::Instance*
+FrameIter::wasmInstance() const
+{
+    MOZ_ASSERT(!done());
+    MOZ_ASSERT(data_.state_ == WASM);
+    return data_.wasmFrames_.instance();
 }
 
 inline bool

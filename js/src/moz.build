@@ -356,6 +356,7 @@ main_deunified_sources = [
     'wasm/WasmCode.cpp',
     'wasm/WasmCompartment.cpp',
     'wasm/WasmCompile.cpp',
+    'wasm/WasmDebugFrame.cpp',
     'wasm/WasmFrameIterator.cpp',
     'wasm/WasmGenerator.cpp',
     'wasm/WasmInstance.cpp',

@@ -823,6 +823,9 @@ js::XDRScript(XDRState<mode>* xdr, HandleScope scriptEnclosingScope,
               case ScopeKind::Module:
                 MOZ_CRASH("NYI");
                 break;
+              case ScopeKind::WasmFunction:
+                MOZ_CRASH("wasm functions cannot be nested in JSScripts");
+                break;
               default:
                 // Fail in debug, but only soft-fail in release
                 MOZ_ASSERT(false, "Bad XDR scope kind");

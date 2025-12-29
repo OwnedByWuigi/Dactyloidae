@@ -1272,6 +1272,14 @@ ModuleScope::Data::trace(JSTracer* trc)
     TraceNullableEdge(trc, &module, "scope module");
     TraceBindingNames(trc, trailingNames.start(), length);
 }
+
+void
+WasmFunctionScope::Data::trace(JSTracer* trc)
+{
+    TraceNullableEdge(trc, &instance, "wasm function");
+    TraceBindingNames(trc, trailingNames.start(), length);
+}
+
 void
 Scope::traceChildren(JSTracer* trc)
 {
@@ -1305,6 +1313,10 @@ Scope::traceChildren(JSTracer* trc)
         break;
       case ScopeKind::With:
         break;
+      case ScopeKind::WasmFunction:
+        reinterpret_cast<WasmFunctionScope::Data*>(data_)->trace(trc);
+        break;
+
     }
 }
 inline void
@@ -1370,7 +1382,15 @@ js::GCMarker::eagerlyMarkChildren(Scope* scope)
 
       case ScopeKind::With:
         break;
+     case ScopeKind::WasmFunction: {
+        WasmFunctionScope::Data* data = reinterpret_cast<WasmFunctionScope::Data*>(scope->data_);
+        traverseEdge(scope, static_cast<JSObject*>(data->instance));
+        names = &data->trailingNames;
+        length = data->length;
+        break;
+      }
     }
+
     if (scope->kind_ == ScopeKind::Function) {
         for (uint32_t i = 0; i < length; i++) {
             if (JSAtom* name = names->operator[](i).name())

@@ -144,6 +144,7 @@ class CompileTask
     Maybe<jit::TempAllocator>  alloc_;
     Maybe<jit::MacroAssembler> masm_;
     FuncCompileUnitVector      units_;
+    bool                       debugEnabled_;
 
     CompileTask(const CompileTask&) = delete;
     CompileTask& operator=(const CompileTask&) = delete;
@@ -151,6 +152,7 @@ class CompileTask
     void init() {
         alloc_.emplace(&lifo_);
         masm_.emplace(jit::MacroAssembler::WasmToken(), *alloc_);
+        debugEnabled_ = false;
     }
 
   public:
@@ -174,6 +176,12 @@ class CompileTask
     }
     FuncCompileUnitVector& units() {
         return units_;
+    }
+    bool debugEnabled() const {
+        return debugEnabled_;
+    }
+    void setDebugEnabled(bool enabled) {
+        debugEnabled_ = enabled;
     }
     bool reset(UniqueFuncBytesVector* freeFuncBytes) {
         for (FuncCompileUnit& unit : units_) {
@@ -205,6 +213,7 @@ class MOZ_STACK_CLASS ModuleGenerator
 
     // Constant parameters
     bool                            alwaysBaseline_;
+    bool                            debugEnabled_;
     UniqueChars*                    error_;
 
     // Data that is moved into the result of finish()
@@ -224,6 +233,7 @@ class MOZ_STACK_CLASS ModuleGenerator
     Uint32Set                       exportedFuncs_;
     uint32_t                        lastPatchedCallsite_;
     uint32_t                        startOfUnpatchedCallsites_;
+    Uint32Vector                    debugTrapFarJumps_;
 
     // Parallel compilation
     bool                            parallel_;
@@ -243,7 +253,7 @@ public:
     uint32_t numFuncImports() const;
 private:
     [[nodiscard]] bool patchCallSites(TrapExitOffsetArray* maybeTrapExits = nullptr);
-    [[nodiscard]] bool patchFarJumps(const TrapExitOffsetArray& trapExits);
+    [[nodiscard]] bool patchFarJumps(const TrapExitOffsetArray& trapExits, const Offsets& debugTrapStub);
     [[nodiscard]] bool finishTask(CompileTask* task);
     [[nodiscard]] bool finishOutstandingTask();
     [[nodiscard]] bool finishFuncExports();
