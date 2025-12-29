@@ -295,16 +295,16 @@ class MOZ_STACK_CLASS OpIter : private Policy
         *out = d_.uncheckedReadVarU64();
         return true;
     }
-    MOZ_MUST_USE bool readFixedF32(RawF32* out) {
+    [[nodiscard]] bool readFixedF32(float* out) {
         if (Validate)
             return d_.readFixedF32(out);
-        *out = d_.uncheckedReadFixedF32();
+        d_.uncheckedReadFixedF32(out);
         return true;
     }
-    MOZ_MUST_USE bool readFixedF64(RawF64* out) {
+    [[nodiscard]] bool readFixedF64(double* out) {
         if (Validate)
             return d_.readFixedF64(out);
-        *out = d_.uncheckedReadFixedF64();
+        d_.uncheckedReadFixedF64(out);
         return true;
     }
 
@@ -531,24 +531,24 @@ class MOZ_STACK_CLASS OpIter : private Policy
     MOZ_MUST_USE bool readGrowMemory(Value* input);
     MOZ_MUST_USE bool readSelect(ValType* type,
                                  Value* trueValue, Value* falseValue, Value* condition);
-    MOZ_MUST_USE bool readGetLocal(const ValTypeVector& locals, uint32_t* id);
-    MOZ_MUST_USE bool readSetLocal(const ValTypeVector& locals, uint32_t* id, Value* value);
-    MOZ_MUST_USE bool readTeeLocal(const ValTypeVector& locals, uint32_t* id, Value* value);
-    MOZ_MUST_USE bool readGetGlobal(const GlobalDescVector& globals, uint32_t* id);
-    MOZ_MUST_USE bool readSetGlobal(const GlobalDescVector& globals, uint32_t* id, Value* value);
-    MOZ_MUST_USE bool readTeeGlobal(const GlobalDescVector& globals, uint32_t* id, Value* value);
-    MOZ_MUST_USE bool readI32Const(int32_t* i32);
-    MOZ_MUST_USE bool readI64Const(int64_t* i64);
-    MOZ_MUST_USE bool readF32Const(RawF32* f32);
-    MOZ_MUST_USE bool readF64Const(RawF64* f64);
-    MOZ_MUST_USE bool readCall(uint32_t* calleeIndex);
-    MOZ_MUST_USE bool readCallIndirect(uint32_t* sigIndex, Value* callee);
-    MOZ_MUST_USE bool readOldCallIndirect(uint32_t* sigIndex);
-    MOZ_MUST_USE bool readCallArg(ValType type, uint32_t numArgs, uint32_t argIndex, Value* arg);
-    MOZ_MUST_USE bool readCallArgsEnd(uint32_t numArgs);
-    MOZ_MUST_USE bool readOldCallIndirectCallee(Value* callee);
-    MOZ_MUST_USE bool readCallReturn(ExprType ret);
-    MOZ_MUST_USE bool readAtomicLoad(LinearMemoryAddress<Value>* addr,
+    [[nodiscard]] bool readGetLocal(const ValTypeVector& locals, uint32_t* id);
+    [[nodiscard]] bool readSetLocal(const ValTypeVector& locals, uint32_t* id, Value* value);
+    [[nodiscard]] bool readTeeLocal(const ValTypeVector& locals, uint32_t* id, Value* value);
+    [[nodiscard]] bool readGetGlobal(const GlobalDescVector& globals, uint32_t* id);
+    [[nodiscard]] bool readSetGlobal(const GlobalDescVector& globals, uint32_t* id, Value* value);
+    [[nodiscard]] bool readTeeGlobal(const GlobalDescVector& globals, uint32_t* id, Value* value);
+    [[nodiscard]] bool readI32Const(int32_t* i32);
+    [[nodiscard]] bool readI64Const(int64_t* i64);
+    [[nodiscard]] bool readF32Const(float* f32);
+    [[nodiscard]] bool readF64Const(double* f64);
+    [[nodiscard]] bool readCall(uint32_t* calleeIndex);
+    [[nodiscard]] bool readCallIndirect(uint32_t* sigIndex, Value* callee);
+    [[nodiscard]] bool readOldCallIndirect(uint32_t* sigIndex);
+    [[nodiscard]] bool readCallArg(ValType type, uint32_t numArgs, uint32_t argIndex, Value* arg);
+    [[nodiscard]] bool readCallArgsEnd(uint32_t numArgs);
+    [[nodiscard]] bool readOldCallIndirectCallee(Value* callee);
+    [[nodiscard]] bool readCallReturn(ExprType ret);
+    [[nodiscard]] bool readAtomicLoad(LinearMemoryAddress<Value>* addr,
                                      Scalar::Type* viewType);
     MOZ_MUST_USE bool readAtomicStore(LinearMemoryAddress<Value>* addr,
                                       Scalar::Type* viewType,
@@ -1564,11 +1564,11 @@ OpIter<Policy>::readI64Const(int64_t* i64)
 
 template <typename Policy>
 inline bool
-OpIter<Policy>::readF32Const(RawF32* f32)
+OpIter<Policy>::readF32Const(float* f32)
 {
     MOZ_ASSERT(Classify(op_) == OpKind::F32);
 
-    RawF32 unused;
+    float unused;
     if (!readFixedF32(Output ? f32 : &unused))
         return false;
 
@@ -1580,11 +1580,11 @@ OpIter<Policy>::readF32Const(RawF32* f32)
 
 template <typename Policy>
 inline bool
-OpIter<Policy>::readF64Const(RawF64* f64)
+OpIter<Policy>::readF64Const(double* f64)
 {
     MOZ_ASSERT(Classify(op_) == OpKind::F64);
 
-    RawF64 unused;
+    double unused;
     if (!readFixedF64(Output ? f64 : &unused))
        return false;
 

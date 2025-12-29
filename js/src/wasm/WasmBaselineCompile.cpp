@@ -880,8 +880,8 @@ class BaseCompiler
             RegF64   f64reg_;
             int32_t  i32val_;
             int64_t  i64val_;
-            RawF32   f32val_;
-            RawF64   f64val_;
+            float    f32val_;
+            double   f64val_;
             uint32_t slot_;
             uint32_t offs_;
         };
@@ -897,8 +897,11 @@ class BaseCompiler
         RegF64   f64reg() const { MOZ_ASSERT(kind_ == RegisterF64); return f64reg_; }
         int32_t  i32val() const { MOZ_ASSERT(kind_ == ConstI32); return i32val_; }
         int64_t  i64val() const { MOZ_ASSERT(kind_ == ConstI64); return i64val_; }
-        RawF32   f32val() const { MOZ_ASSERT(kind_ == ConstF32); return f32val_; }
-        RawF64   f64val() const { MOZ_ASSERT(kind_ == ConstF64); return f64val_; }
+        // For these two, use an out-param instead of simply returning, to
+        // use the normal stack and not the x87 FP stack (which has effect on
+        // NaNs with the signaling bit set).
+        void     f32val(float* out) const { MOZ_ASSERT(kind_ == ConstF32); *out = f32val_; }
+        void     f64val(double* out) const { MOZ_ASSERT(kind_ == ConstF64); *out = f64val_; }
         uint32_t slot() const { MOZ_ASSERT(kind_ > MemLast && kind_ <= LocalLast); return slot_; }
         uint32_t offs() const { MOZ_ASSERT(isMem()); return offs_; }
 
@@ -908,8 +911,8 @@ class BaseCompiler
         void setF64Reg(RegF64 r) { kind_ = RegisterF64; f64reg_ = r; }
         void setI32Val(int32_t v) { kind_ = ConstI32; i32val_ = v; }
         void setI64Val(int64_t v) { kind_ = ConstI64; i64val_ = v; }
-        void setF32Val(RawF32 v) { kind_ = ConstF32; f32val_ = v; }
-        void setF64Val(RawF64 v) { kind_ = ConstF64; f64val_ = v; }
+        void setF32Val(float v) { kind_ = ConstF32; f32val_ = v; }
+        void setF64Val(double v) { kind_ = ConstF64; f64val_ = v; }
         void setSlot(Kind k, uint32_t v) { MOZ_ASSERT(k > MemLast && k <= LocalLast); kind_ = k; slot_ = v; }
         void setOffs(Kind k, uint32_t v) { MOZ_ASSERT(k <= MemLast); kind_ = k; offs_ = v; }
     };
@@ -1101,8 +1104,63 @@ class BaseCompiler
     }
 
     void loadRegisterI32(Register r, Stk& src) {
-        if (src.i32reg().reg != r)
-            masm.move32(src.i32reg().reg, r);
+        if (src.i32reg() != r)
+            masm.move32(src.i32reg(), r);
+    }
+
+    void loadConstI64(Register64 r, Stk &src) {
+        masm.move64(Imm64(src.i64val()), r);
+    }
+
+    void loadMemI64(Register64 r, Stk& src) {
+        loadFromFrameI64(r, src.offs());
+    }
+
+    void loadLocalI64(Register64 r, Stk& src) {
+        loadFromFrameI64(r, frameOffsetFromSlot(src.slot(), MIRType::Int64));
+    }
+
+    void loadRegisterI64(Register64 r, Stk& src) {
+        if (src.i64reg() != r)
+            masm.move64(src.i64reg(), r);
+    }
+
+    void loadConstF64(FloatRegister r, Stk &src) {
+        double d;
+        src.f64val(&d);
+        masm.loadConstantDouble(d, r);
+    }
+
+    void loadMemF64(FloatRegister r, Stk& src) {
+        loadFromFrameF64(r, src.offs());
+    }
+
+    void loadLocalF64(FloatRegister r, Stk& src) {
+        loadFromFrameF64(r, frameOffsetFromSlot(src.slot(), MIRType::Double));
+    }
+
+    void loadRegisterF64(FloatRegister r, Stk& src) {
+        if (src.f64reg() != r)
+            masm.moveDouble(src.f64reg(), r);
+    }
+
+    void loadConstF32(FloatRegister r, Stk &src) {
+        float f;
+        src.f32val(&f);
+        masm.loadConstantFloat32(f, r);
+    }
+
+    void loadMemF32(FloatRegister r, Stk& src) {
+        loadFromFrameF32(r, src.offs());
+    }
+
+    void loadLocalF32(FloatRegister r, Stk& src) {
+        loadFromFrameF32(r, frameOffsetFromSlot(src.slot(), MIRType::Float32));
+    }
+
+    void loadRegisterF32(FloatRegister r, Stk& src) {
+        if (src.f32reg() != r)
+            masm.moveFloat32(src.f32reg(), r);
     }
 
     void loadI32(Register r, Stk& src) {
@@ -1417,12 +1475,12 @@ class BaseCompiler
         x.setI64Val(v);
     }
 
-    void pushF64(RawF64 v) {
+    void pushF64(double v) {
         Stk& x = push();
         x.setF64Val(v);
     }
 
-    void pushF32(RawF32 v) {
+    void pushF32(float v) {
         Stk& x = push();
         x.setF32Val(v);
     }
@@ -7819,7 +7877,7 @@ BaseCompiler::emitBody()
 
           // F32
           case uint16_t(Op::F32Const): {
-            RawF32 f32;
+            float f32;
             CHECK(iter_.readF32Const(&f32));
             if (!deadCode_)
                 pushF32(f32);
@@ -7888,7 +7946,7 @@ BaseCompiler::emitBody()
 
           // F64
           case uint16_t(Op::F64Const): {
-            RawF64 f64;
+            double f64;
             CHECK(iter_.readF64Const(&f64));
             if (!deadCode_)
                 pushF64(f64);

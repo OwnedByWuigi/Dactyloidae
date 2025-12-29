@@ -96,7 +96,7 @@ MacroAssemblerX86::convertUInt64ToDouble(Register64 src, FloatRegister dest, Reg
 }
 
 void
-MacroAssemblerX86::loadConstantDouble(wasm::RawF64 d, FloatRegister dest)
+MacroAssemblerX86::loadConstantDouble(double d, FloatRegister dest)
 {
     if (maybeInlineDouble(d, dest))
         return;
@@ -108,13 +108,7 @@ MacroAssemblerX86::loadConstantDouble(wasm::RawF64 d, FloatRegister dest)
 }
 
 void
-MacroAssemblerX86::loadConstantDouble(double d, FloatRegister dest)
-{
-    loadConstantDouble(wasm::RawF64(d), dest);
-}
-
-void
-MacroAssemblerX86::loadConstantFloat32(wasm::RawF32 f, FloatRegister dest)
+MacroAssemblerX86::loadConstantFloat32(float f, FloatRegister dest)
 {
     if (maybeInlineFloat(f, dest))
         return;
@@ -123,12 +117,6 @@ MacroAssemblerX86::loadConstantFloat32(wasm::RawF32 f, FloatRegister dest)
         return;
     masm.vmovss_mr(nullptr, dest.encoding());
     propagateOOM(flt->uses.append(CodeOffset(masm.size())));
-}
-
-void
-MacroAssemblerX86::loadConstantFloat32(float f, FloatRegister dest)
-{
-    loadConstantFloat32(wasm::RawF32(f), dest);
 }
 
 void
@@ -164,7 +152,7 @@ MacroAssemblerX86::finish()
         CodeOffset cst(masm.currentOffset());
         for (CodeOffset use : d.uses)
             addCodeLabel(CodeLabel(use, cst));
-        masm.int64Constant(d.value);
+        masm.doubleConstant(d.value);
         if (!enoughMemory_)
             return;
     }
@@ -175,7 +163,7 @@ MacroAssemblerX86::finish()
         CodeOffset cst(masm.currentOffset());
         for (CodeOffset use : f.uses)
             addCodeLabel(CodeLabel(use, cst));
-        masm.int32Constant(f.value);
+        masm.floatConstant(f.value);
         if (!enoughMemory_)
             return;
     }

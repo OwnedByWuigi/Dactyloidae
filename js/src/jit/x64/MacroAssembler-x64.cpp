@@ -18,7 +18,7 @@ using namespace js;
 using namespace js::jit;
 
 void
-MacroAssemblerX64::loadConstantDouble(wasm::RawF64 d, FloatRegister dest)
+MacroAssemblerX64::loadConstantDouble(double d, FloatRegister dest)
 {
     if (maybeInlineDouble(d, dest))
         return;
@@ -35,7 +35,7 @@ MacroAssemblerX64::loadConstantDouble(wasm::RawF64 d, FloatRegister dest)
 }
 
 void
-MacroAssemblerX64::loadConstantFloat32(wasm::RawF32 f, FloatRegister dest)
+MacroAssemblerX64::loadConstantFloat32(float f, FloatRegister dest)
 {
     if (maybeInlineFloat(f, dest))
         return;
@@ -57,18 +57,6 @@ MacroAssemblerX64::loadConstantSimd128Int(const SimdConstant& v, FloatRegister d
         return;
     JmpSrc j = masm.vmovdqa_ripr(dest.encoding());
     propagateOOM(val->uses.append(CodeOffset(j.offset())));
-}
-
-void
-MacroAssemblerX64::loadConstantFloat32(float f, FloatRegister dest)
-{
-    loadConstantFloat32(wasm::RawF32(f), dest);
-}
-
-void
-MacroAssemblerX64::loadConstantDouble(double d, FloatRegister dest)
-{
-    loadConstantDouble(wasm::RawF64(d), dest);
 }
 
 void
@@ -264,14 +252,14 @@ MacroAssemblerX64::finish()
         masm.haltingAlign(sizeof(double));
     for (const Double& d : doubles_) {
         bindOffsets(d.uses);
-        masm.int64Constant(d.value);
+        masm.doubleConstant(d.value);
     }
 
     if (!floats_.empty())
         masm.haltingAlign(sizeof(float));
     for (const Float& f : floats_) {
         bindOffsets(f.uses);
-        masm.int32Constant(f.value);
+        masm.floatConstant(f.value);
     }
 
     // SIMD memory values must be suitably aligned.

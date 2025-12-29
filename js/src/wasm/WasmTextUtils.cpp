@@ -52,19 +52,21 @@ js::wasm::RenderInBase(StringBuffer& sb, uint64_t num)
 template bool js::wasm::RenderInBase<10>(StringBuffer& sb, uint64_t num);
 
 template<class T>
-bool
-js::wasm::RenderNaN(StringBuffer& sb, Raw<T> num)
+[[nodiscard]] bool
+js::wasm::RenderNaN(StringBuffer& sb, T num)
 {
     typedef typename mozilla::FloatingPoint<T> Traits;
+    typedef typename Traits::Bits Bits;
 
-    MOZ_ASSERT(IsNaN(num.fp()));
+    MOZ_ASSERT(IsNaN(num));
 
-    if ((num.bits() & Traits::kSignBit) && !sb.append("-"))
+    Bits bits = mozilla::BitwiseCast<Bits>(num);
+    if ((bits & Traits::kSignBit) && !sb.append("-"))
         return false;
     if (!sb.append("nan"))
         return false;
 
-    typename Traits::Bits payload = num.bits() & Traits::kSignificandBits;
+    Bits payload = bits & Traits::kSignificandBits;
     // Only render the payload if it's not the spec's default NaN.
     if (payload == ((Traits::kSignificandBits + 1) >> 1))
         return true;
@@ -73,5 +75,5 @@ js::wasm::RenderNaN(StringBuffer& sb, Raw<T> num)
            RenderInBase<16>(sb, payload);
 }
 
-template MOZ_MUST_USE bool js::wasm::RenderNaN(StringBuffer& b, Raw<float> num);
-template MOZ_MUST_USE bool js::wasm::RenderNaN(StringBuffer& b, Raw<double> num);
+template bool js::wasm::RenderNaN(StringBuffer& b, float num);
+template bool js::wasm::RenderNaN(StringBuffer& b, double num);
