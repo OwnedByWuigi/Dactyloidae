@@ -859,7 +859,7 @@ DecodeTableLimits(Decoder& d, TableDescVector* tables)
     if (!DecodeLimits(d, &limits))
         return false;
 
-    if (limits.initial > MaxTableLength)
+    if (limits.initial > MaxTableInitialLength)
         return d.fail("too many table elements");
 
     if (tables->length())
@@ -919,7 +919,7 @@ DecodeMemoryLimits(Decoder& d, ModuleEnvironment* env)
 
     CheckedInt<uint32_t> initialBytes = memory.initial;
     initialBytes *= PageSize;
-    if (!initialBytes.isValid() || initialBytes.value() > uint32_t(INT32_MAX))
+    if (!initialBytes.isValid() || initialBytes.value() > MaxMemoryInitialBytes)
         return d.fail("initial memory size too big");
 
     memory.initial = initialBytes.value();
@@ -1400,7 +1400,7 @@ DecodeElemSection(Decoder& d, ModuleEnvironment* env)
         if (!d.readVarU32(&numElems))
             return d.fail("expected segment size");
 
-        if (numElems > MaxTableLength)
+        if (numElems > MaxTableInitialLength)
             return d.fail("too many table elements");
 
         Uint32Vector elemFuncIndices;
@@ -1547,6 +1547,8 @@ DecodeDataSection(Decoder& d, ModuleEnvironment* env)
         if (!d.readVarU32(&seg.length))
             return d.fail("expected segment size");
 
+        if (seg.length > MaxMemoryInitialBytes)
+            return d.fail("segment size too big");
         seg.bytecodeOffset = d.currentOffset();
 
         if (!d.readBytes(seg.length))
