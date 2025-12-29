@@ -139,7 +139,6 @@ class ControlStackEntry
         MOZ_ASSERT(kind_ == LabelKind::Then || kind_ == LabelKind::UnreachableThen);
         reachable_ = reachable;
         kind_ = LabelKind::Else;
-        controlItem_ = ControlItem();
     }
 };
 
@@ -346,9 +345,9 @@ class MOZ_STACK_CLASS OpIter : private Policy
     MOZ_MUST_USE bool checkType(ValType actual, ValType expected);
     MOZ_MUST_USE bool checkType(ExprType actual, ExprType expected);
 
-    MOZ_MUST_USE bool pushControl(LabelKind kind, ExprType type, bool reachable);
-    MOZ_MUST_USE bool mergeControl(LabelKind* kind, ExprType* type, Value* value);
-    MOZ_MUST_USE bool popControl(LabelKind* kind, ExprType* type, Value* value);
+    [[nodiscard]] bool pushControl(LabelKind kind, ExprType type, bool reachable);
+    [[nodiscard]] bool checkControlAtEndOfBlock(LabelKind* kind, ExprType* type, Value* value);
+    [[nodiscard]] bool finishControl(LabelKind* kind, ExprType* type, Value* value);
 
     MOZ_MUST_USE bool push(ValType t) {
         if (MOZ_UNLIKELY(!reachable_))
@@ -498,17 +497,18 @@ class MOZ_STACK_CLASS OpIter : private Policy
     // ------------------------------------------------------------------------
     // Decoding and validation interface.
 
-    MOZ_MUST_USE bool readOp(uint16_t* op);
-    MOZ_MUST_USE bool readFunctionStart(ExprType ret);
-    MOZ_MUST_USE bool readFunctionEnd();
-    MOZ_MUST_USE bool readReturn(Value* value);
-    MOZ_MUST_USE bool readBlock();
-    MOZ_MUST_USE bool readLoop();
-    MOZ_MUST_USE bool readIf(Value* condition);
-    MOZ_MUST_USE bool readElse(ExprType* thenType, Value* thenValue);
-    MOZ_MUST_USE bool readEnd(LabelKind* kind, ExprType* type, Value* value);
-    MOZ_MUST_USE bool readBr(uint32_t* relativeDepth, ExprType* type, Value* value);
-    MOZ_MUST_USE bool readBrIf(uint32_t* relativeDepth, ExprType* type,
+    [[nodiscard]] bool readOp(uint16_t* op);
+    [[nodiscard]] bool readFunctionStart(ExprType ret);
+    [[nodiscard]] bool readFunctionEnd();
+    [[nodiscard]] bool readReturn(Value* value);
+    [[nodiscard]] bool readBlock();
+    [[nodiscard]] bool readLoop();
+    [[nodiscard]] bool readIf(Value* condition);
+    [[nodiscard]] bool readElse(ExprType* thenType, Value* thenValue);
+    [[nodiscard]] bool readEnd(LabelKind* kind, ExprType* type, Value* value);
+    void popEnd();
+    [[nodiscard]] bool readBr(uint32_t* relativeDepth, ExprType* type, Value* value);
+    [[nodiscard]] bool readBrIf(uint32_t* relativeDepth, ExprType* type,
                                Value* value, Value* condition);
     MOZ_MUST_USE bool readBrTable(uint32_t* tableLength, ExprType* type,
                                   Value* value, Value* index);
@@ -588,6 +588,16 @@ class MOZ_STACK_CLASS OpIter : private Policy
     // Return a reference to the top of the control stack.
     ControlItem& controlItem() {
         return controlStack_.back().controlItem();
+    }
+
+    // Return a reference to an element in the control stack.
+    ControlItem& controlItem(uint32_t relativeDepth) {
+        return controlStack_[controlStack_.length() - 1 - relativeDepth].controlItem();
+    }
+
+    // Return a reference to the outermost element on the control stack.
+    ControlItem& controlOutermost() {
+        return controlStack_[0].controlItem();
     }
 
     // Return the signature of the top of the control stack.
@@ -679,7 +689,7 @@ OpIter<Policy>::pushControl(LabelKind kind, ExprType type, bool reachable)
 
 template <typename Policy>
 inline bool
-OpIter<Policy>::mergeControl(LabelKind* kind, ExprType* type, Value* value)
+OpIter<Policy>::checkControlAtEndOfBlock(LabelKind* kind, ExprType* type, Value* value)
 {
     MOZ_ASSERT(!controlStack_.empty());
 
@@ -727,9 +737,9 @@ OpIter<Policy>::mergeControl(LabelKind* kind, ExprType* type, Value* value)
 
 template <typename Policy>
 inline bool
-OpIter<Policy>::popControl(LabelKind* kind, ExprType* type, Value* value)
+OpIter<Policy>::finishControl(LabelKind* kind, ExprType* type, Value* value)
 {
-    if (!mergeControl(kind, type, value))
+    if (!checkControlAtEndOfBlock(kind, type, value))
         return false;
 
     if (*kind == LabelKind::Then) {
@@ -740,11 +750,6 @@ OpIter<Policy>::popControl(LabelKind* kind, ExprType* type, Value* value)
         }
         reachable_ = true;
     }
-
-    controlStack_.popBack();
-
-    if (!reachable_ && !controlStack_.empty())
-        valueStack_.shrinkTo(controlStack_.back().valueStackStart());
 
     return true;
 }
@@ -916,7 +921,7 @@ OpIter<Policy>::readElse(ExprType* thenType, Value* thenValue)
     // Finish up the then arm.
     ExprType type = ExprType::Limit;
     LabelKind kind;
-    if (!mergeControl(&kind, &type, thenValue))
+    if (!checkControlAtEndOfBlock(&kind, &type, thenValue))
         return false;
 
     if (Output)
@@ -947,7 +952,7 @@ OpIter<Policy>::readEnd(LabelKind* kind, ExprType* type, Value* value)
 
     LabelKind validateKind = static_cast<LabelKind>(-1);
     ExprType validateType = ExprType::Limit;
-    if (!popControl(&validateKind, &validateType, value))
+    if (!finishControl(&validateKind, &validateType, value))
         return false;
 
     if (Output) {
@@ -956,6 +961,18 @@ OpIter<Policy>::readEnd(LabelKind* kind, ExprType* type, Value* value)
     }
 
     return true;
+}
+
+template <typename Policy>
+inline void
+OpIter<Policy>::popEnd()
+{
+    MOZ_ASSERT(Classify(op_) == OpKind::End);
+
+    controlStack_.popBack();
+
+    if (!reachable_ && !controlStack_.empty())
+        valueStack_.shrinkTo(controlStack_.back().valueStackStart());
 }
 
 template <typename Policy>

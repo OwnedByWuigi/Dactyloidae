@@ -1476,7 +1476,6 @@ EmitIf(FunctionCompiler& f)
 static bool
 EmitElse(FunctionCompiler& f)
 {
-    MBasicBlock* block = f.iter().controlItem();
 
     ExprType thenType;
     MDefinition* thenValue;
@@ -1486,7 +1485,7 @@ EmitElse(FunctionCompiler& f)
     if (!IsVoid(thenType))
         f.pushDef(thenValue);
 
-    if (!f.switchToElse(block, &f.iter().controlItem()))
+    if (!f.switchToElse(f.iter().controlItem(), &f.iter().controlItem()))
         return false;
 
     return true;
@@ -1495,13 +1494,16 @@ EmitElse(FunctionCompiler& f)
 static bool
 EmitEnd(FunctionCompiler& f)
 {
-    MBasicBlock* block = f.iter().controlItem();
 
     LabelKind kind;
     ExprType type;
     MDefinition* value;
     if (!f.iter().readEnd(&kind, &type, &value))
         return false;
+
+    MBasicBlock* block = f.iter().controlItem();
+
+    f.iter().popEnd();
 
     if (!IsVoid(type))
         f.pushDef(value);
