@@ -242,7 +242,9 @@ namespace jit {
     _(Floor)                                                                \
     _(Ceil)                                                                 \
     _(Round)                                                                \
-    _(In)                                                                   \
+    _(NearbyInt)                                                            \
+    _(InCache)                                                              \
+    _(HasOwnCache)                                                          \
     _(InstanceOf)                                                           \
     _(CallInstanceOf)                                                       \
     _(InterruptCheck)                                                       \

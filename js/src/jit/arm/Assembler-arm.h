@@ -1725,6 +1725,8 @@ class Assembler : public AssemblerShared
         return js::jit::SupportsSimd;
     }
 
+    static bool HasRoundInstruction(RoundingMode mode) { return false; }
+
   protected:
     void addPendingJump(BufferOffset src, ImmPtr target, Relocation::Kind kind) {
         enoughMemory_ &= jumps_.append(RelativePatch(target.value, kind));

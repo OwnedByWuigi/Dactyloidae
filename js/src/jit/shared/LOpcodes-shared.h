@@ -329,7 +329,9 @@
     _(CeilF)                        \
     _(Round)                        \
     _(RoundF)                       \
-    _(In)                           \
+    _(NearbyInt)                    \
+    _(NearbyIntF)                   \
+    _(InCache)                      \
     _(InArray)                      \
     _(InstanceOfO)                  \
     _(InstanceOfV)                  \

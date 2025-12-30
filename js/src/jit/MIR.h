@@ -11064,7 +11064,7 @@ class MStringLength
     ALLOW_CLONE(MStringLength)
 };
 
-// Inlined version of Math.floor().
+// Inlined assembly for Math.floor(double | float32) -> int32.
 class MFloor
   : public MUnaryInstruction,
     public FloatingPointPolicy<0>::Data
@@ -11105,7 +11105,7 @@ class MFloor
     ALLOW_CLONE(MFloor)
 };
 
-// Inlined version of Math.ceil().
+// Inlined version of Math.round(double | float32) -> int32.
 class MCeil
   : public MUnaryInstruction,
     public FloatingPointPolicy<0>::Data
@@ -11146,7 +11146,7 @@ class MCeil
     ALLOW_CLONE(MCeil)
 };
 
-// Inlined version of Math.round().
+// Inlined version of Math.round(double | float32) -> int32.
 class MRound
   : public MUnaryInstruction,
     public FloatingPointPolicy<0>::Data
@@ -11187,6 +11187,62 @@ class MRound
 
     ALLOW_CLONE(MRound)
 };
+
+// NearbyInt rounds the floating-point input to the nearest integer, according
+// to the RoundingMode.
+class MNearbyInt
+  : public MUnaryInstruction,
+    public FloatingPointPolicy<0>::Data
+{
+    RoundingMode roundingMode_;
+
+    explicit MNearbyInt(MDefinition* num, MIRType resultType, RoundingMode roundingMode)
+      : MUnaryInstruction(classOpcode, num),
+        roundingMode_(roundingMode)
+    {
+        MOZ_ASSERT(HasAssemblerSupport(roundingMode));
+
+        MOZ_ASSERT(IsFloatingPointType(resultType));
+        setResultType(resultType);
+        specialization_ = resultType;
+
+        setMovable();
+    }
+
+  public:
+    INSTRUCTION_HEADER(NearbyInt)
+    TRIVIAL_NEW_WRAPPERS
+
+    static bool HasAssemblerSupport(RoundingMode mode) {
+        return Assembler::HasRoundInstruction(mode);
+    }
+
+    RoundingMode roundingMode() const { return roundingMode_; }
+
+    AliasSet getAliasSet() const override {
+        return AliasSet::None();
+    }
+
+    bool isFloat32Commutative() const override {
+        return true;
+    }
+    void trySpecializeFloat32(TempAllocator& alloc) override;
+#ifdef DEBUG
+    bool isConsistentFloat32Use(MUse* use) const override {
+        return true;
+    }
+#endif
+
+    bool congruentTo(const MDefinition* ins) const override {
+        return congruentIfOperandsEqual(ins) &&
+               ins->toNearbyInt()->roundingMode() == roundingMode_;
+    }
+
+    void printOpcode(GenericPrinter& out) const override;
+
+    ALLOW_CLONE(MNearbyInt)
+};
+
 
 class MIteratorStart
   : public MUnaryInstruction,
