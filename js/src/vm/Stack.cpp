@@ -712,6 +712,8 @@ FrameIter::operator++()
             while (!hasUsableAbstractFramePtr() || abstractFramePtr() != eifPrev) {
                 if (data_.state_ == JIT)
                     popJitFrame();
+                else if (data_.state_ == WASM)
+                    popWasmFrame();
                 else
                     popInterpreterFrame();
             }
