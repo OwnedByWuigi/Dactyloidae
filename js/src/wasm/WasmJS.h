@@ -154,15 +154,15 @@ class WasmInstanceObject : public NativeObject
     static void finalize(FreeOp* fop, JSObject* obj);
     static void trace(JSTracer* trc, JSObject* obj);
 
-    // ExportMap maps from function index to exported function object.
-    // This allows the instance to lazily create exported function
-    // just to ensure a unique object identity for any given function object.
+    // ExportMap maps from function index to exported function
+    // object. This allows the instance to lazily create exported function
+    // objects on demand (instead up-front for all table elements) while
+    // correctly preserving observable function object identity.
     using ExportMap = GCHashMap<uint32_t,
-                                ReadBarrieredFunction,
+                                HeapPtr<JSFunction*>,
                                 DefaultHasher<uint32_t>,
                                 SystemAllocPolicy>;
-    using WeakExportMap = JS::WeakCache<ExportMap>;
-    WeakExportMap& exports() const;
+    ExportMap& exports() const;
 
     // WeakScopeMap maps from function index to js::Scope. This maps is weak
     // to avoid holding scope objects alive. The scopes are normally created
