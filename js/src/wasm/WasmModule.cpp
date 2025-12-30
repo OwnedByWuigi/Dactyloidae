@@ -896,6 +896,12 @@ Module::instantiate(JSContext* cx,
         return false;
     }
 
+    auto globalSegment = GlobalSegment::create(linkData_.globalDataLength);
+    if (!globalSegment) {
+        ReportOutOfMemory(cx);
+        return false;
+	}
+
     auto code = cx->make_unique<Code>(Move(codeSegment), *metadata_, maybeBytecode);
     if (!code) {
         ReportOutOfMemory(cx);
@@ -904,6 +910,7 @@ Module::instantiate(JSContext* cx,
 
     instance.set(WasmInstanceObject::create(cx,
                                             Move(code),
+                                            Move(globalSegment),
                                             memory,
                                             Move(tables),
                                             funcImports,

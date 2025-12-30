@@ -39,7 +39,6 @@ static constexpr Register IntArgReg0 = { Registers::invalid_reg };
 static constexpr Register IntArgReg1 = { Registers::invalid_reg };
 static constexpr Register IntArgReg2 = { Registers::invalid_reg };
 static constexpr Register IntArgReg3 = { Registers::invalid_reg };
-static constexpr Register GlobalReg = { Registers::invalid_reg };
 static constexpr Register HeapReg = { Registers::invalid_reg };
 
 static constexpr Register WasmIonExitRegCallee = { Registers::invalid_reg };
