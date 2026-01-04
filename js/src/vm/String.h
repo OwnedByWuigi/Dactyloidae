@@ -251,11 +251,11 @@ class JSString : public js::gc::TenuredCell
     static const uint32_t INLINE_CHARS_BIT       = JS_BIT(2);
     static const uint32_t ATOM_BIT               = JS_BIT(3);
 
-    static const uint32_t ROPE_FLAGS             = 0;
-    static const uint32_t DEPENDENT_FLAGS        = HAS_BASE_BIT;
-    static const uint32_t UNDEPENDED_FLAGS       = FLAT_BIT | HAS_BASE_BIT;
-    static const uint32_t EXTENSIBLE_FLAGS       = FLAT_BIT | JS_BIT(4);
-    static const uint32_t EXTERNAL_FLAGS         = JS_BIT(5);
+    static const uint32_t ROPE_FLAGS             = NON_ATOM_BIT;
+    static const uint32_t DEPENDENT_FLAGS        = NON_ATOM_BIT | HAS_BASE_BIT;
+    static const uint32_t UNDEPENDED_FLAGS       = NON_ATOM_BIT | FLAT_BIT | HAS_BASE_BIT;
+    static const uint32_t EXTENSIBLE_FLAGS       = NON_ATOM_BIT | FLAT_BIT | JS_BIT(4);
+    static const uint32_t EXTERNAL_FLAGS         = NON_ATOM_BIT | JS_BIT(5);
 
     static const uint32_t FAT_INLINE_MASK        = INLINE_CHARS_BIT | JS_BIT(4);
     static const uint32_t PERMANENT_ATOM_MASK    = ATOM_BIT | JS_BIT(5);
@@ -506,11 +506,12 @@ class JSString : public js::gc::TenuredCell
     static const JS::TraceKind TraceKind = JS::TraceKind::String;
 
     JS::Zone* zone() const {
-        if (isTenured()) {
+        if (isTenured())  {
             // Allow permanent atoms to be accessed across zones and runtimes.
             if (isPermanentAtom())
                 return zoneFromAnyThread();
             return asTenured().zone();
+		}
         return js::Nursery::getStringZone(this);
     }
 
@@ -1586,6 +1587,17 @@ JSAtom::asPropertyName()
     MOZ_ASSERT(!isIndex(&dummy));
 #endif
     return static_cast<js::PropertyName*>(this);
+}
+
+namespace js {
+namespace gc {
+template<>
+inline JSString*
+Cell::as<JSString>() {
+    MOZ_ASSERT(is<JSString>());
+    return reinterpret_cast<JSString*>(this);
+}
+}
 }
 
 #endif /* vm_String_h */

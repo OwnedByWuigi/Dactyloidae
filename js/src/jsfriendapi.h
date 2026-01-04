@@ -587,7 +587,7 @@ struct String
 {
     static const uint32_t INLINE_CHARS_BIT = JS_BIT(2);
     static const uint32_t LATIN1_CHARS_BIT = JS_BIT(6);
-    static const uint32_t ROPE_FLAGS       = 0;
+    static const uint32_t ROPE_FLAGS       = NON_ATOM_BIT;
     static const uint32_t TYPE_FLAGS_MASK  = JS_BIT(6) - 1;
     uint32_t flags;
     uint32_t length;
