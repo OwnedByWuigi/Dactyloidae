@@ -43,6 +43,11 @@ class RelocationOverlay
         return reinterpret_cast<RelocationOverlay*>(cell);
     }
 
+    // ADD THIS: Const-friendly version
+    static const RelocationOverlay* fromCell(const Cell* cell) {
+        return reinterpret_cast<const RelocationOverlay*>(cell);
+    }
+
     bool isForwarded() const {
         return magic_ == Relocated;
     }
