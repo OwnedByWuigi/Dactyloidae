@@ -9094,7 +9094,11 @@ jit::NeedsPostBarrier(MDefinition* value)
 {
     if (!GetJitContext()->runtime->gcNursery().exists())
         return false;
-    return value->mightBeType(MIRType::Object);
+    if (value->mightBeType(MIRType::Object))
+        return true;
+    if (value->mightBeType(MIRType::String) && runtime->canNurseryAllocateStrings())
+        return true;
+    return false;
 }
 
 bool

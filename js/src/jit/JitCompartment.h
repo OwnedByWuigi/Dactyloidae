@@ -665,6 +665,8 @@ class JitCompartment
     }
 
     size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
+
+    bool stringsCanBeInNursery;
 };
 
 // Called from JSCompartment::discardJitCode().

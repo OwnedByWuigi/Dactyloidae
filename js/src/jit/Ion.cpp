@@ -450,14 +450,7 @@ JitCompartment::initialize(JSContext* cx)
         return false;
     }
 
-    cacheIRStubCodes_ = cx->new_<CacheIRStubCodeMap>(cx->runtime());
-    if (!cacheIRStubCodes_)
-        return false;
-
-    if (!cacheIRStubCodes_->init()) {
-        ReportOutOfMemory(cx);
-        return false;
-    }
+    stringsCanBeInNursery = cx->nursery().canAllocateStrings();
 
     return true;
 }

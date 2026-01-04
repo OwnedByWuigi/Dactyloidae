@@ -157,14 +157,17 @@ class CodeGenerator final : public CodeGeneratorSpecific
     void visitMonitorTypes(LMonitorTypes* lir);
     void emitPostWriteBarrier(const LAllocation* obj);
     void emitPostWriteBarrier(Register objreg);
-    template <class LPostBarrierType>
-    void visitPostWriteBarrierCommonO(LPostBarrierType* lir, OutOfLineCode* ool);
+    void emitPostWriteBarrierS(Address address, Register prev, Register next);
+    template <class LPostBarrierType, MIRType nurseryType>
+    void visitPostWriteBarrierCommon(LPostBarrierType* lir, OutOfLineCode* ool);
     template <class LPostBarrierType>
     void visitPostWriteBarrierCommonV(LPostBarrierType* lir, OutOfLineCode* ool);
     void visitPostWriteBarrierO(LPostWriteBarrierO* lir);
     void visitPostWriteElementBarrierO(LPostWriteElementBarrierO* lir);
     void visitPostWriteBarrierV(LPostWriteBarrierV* lir);
     void visitPostWriteElementBarrierV(LPostWriteElementBarrierV* lir);
+    void visitPostWriteBarrierS(LPostWriteBarrierS* lir) override;
+    void visitPostWriteElementBarrierS(LPostWriteElementBarrierS* lir) override;
     void visitOutOfLineCallPostWriteBarrier(OutOfLineCallPostWriteBarrier* ool);
     void visitOutOfLineCallPostWriteElementBarrier(OutOfLineCallPostWriteElementBarrier* ool);
     void visitCallNative(LCallNative* call);
