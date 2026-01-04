@@ -1023,7 +1023,7 @@ EmitStoreBufferMutation(MacroAssembler& masm, Register strbase, int32_t strofs,
     Register addrReg = regs.takeAny();
     masm.computeEffectiveAddress(Address(strbase, strofs), addrReg);
 
-    bool needExtraReg = !regs.hasAny<GeneralRegisterSet::DefaultType>();
+    bool needExtraReg = !regs.empty();
     if (needExtraReg) {
         masm.push(strbase);
         masm.setupUnalignedABICall(strbase);
@@ -1032,8 +1032,8 @@ EmitStoreBufferMutation(MacroAssembler& masm, Register strbase, int32_t strofs,
     }
     masm.passABIArg(buffer);
     masm.passABIArg(addrReg);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, fun), MoveOp::GENERAL,
-                     CheckUnsafeCallWithABI::DontCheckOther);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, fun), MoveOp::GENERAL);
+                     //CheckUnsafeCallWithABI::DontCheckOther);
 
     if (needExtraReg)
         masm.pop(strbase);
@@ -1119,7 +1119,7 @@ EmitStoreBufferMutation(MacroAssembler& masm, Register holder, FieldToBarrier fi
         break;
     }
 
-    bool needExtraReg = !regs.hasAny<GeneralRegisterSet::DefaultType>();
+    bool needExtraReg = !regs.empty();
     if (needExtraReg) {
         masm.push(holder);
         masm.setupUnalignedABICall(holder);
@@ -1128,8 +1128,8 @@ EmitStoreBufferMutation(MacroAssembler& masm, Register holder, FieldToBarrier fi
     }
     masm.passABIArg(buffer);
     masm.passABIArg(addrReg);
-    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, fun), MoveOp::GENERAL,
-                     CheckUnsafeCallWithABI::DontCheckOther);
+    masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, fun), MoveOp::GENERAL);
+                     //CheckUnsafeCallWithABI::DontCheckOther);
 
     if (needExtraReg)
         masm.pop(holder);
