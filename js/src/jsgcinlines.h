@@ -9,6 +9,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 
+#include "gc/RelocationOverlay.h"
 #include "gc/GCTrace.h"
 #include "gc/Zone.h"
 
