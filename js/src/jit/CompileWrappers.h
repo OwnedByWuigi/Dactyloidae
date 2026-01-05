@@ -99,7 +99,9 @@ class CompileZone
     const void* addressOfNurseryCurrentEnd();
     const void* addressOfStringNurseryCurrentEnd();
 
-    const void* addressOfFreeList(gc::AllocKind allocKind);
+    bool nurseryExists();
+    bool canNurseryAllocateStrings();
+    void setMinorGCShouldCancelIonCompilations();
 };
 
 class JitCompartment;
