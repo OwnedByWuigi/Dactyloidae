@@ -1528,7 +1528,36 @@ class GCRuntime
      * During incremental sweeping, this field temporarily holds the arenas of
      * the current AllocKind being swept in order of increasing free space.
      */
-    SortedArenaList incrementalSweepList;
+    ActiveThreadData<SortedArenaList> incrementalSweepList;
+
+  private:
+    ActiveThreadData<Nursery> nursery_;
+    ActiveThreadData<gc::StoreBuffer> storeBuffer_;
+  public:
+    Nursery& nursery() { return nursery_.ref(); }
+    gc::StoreBuffer& storeBuffer() { return storeBuffer_.ref(); }
+
+    // Free LIFO blocks are transferred to this allocator before being freed
+    // after minor GC.
+    ActiveThreadData<LifoAlloc> blocksToFreeAfterMinorGC;
+
+    const void* addressOfNurseryPosition() {
+        return nursery_.refNoCheck().addressOfPosition();
+    }
+    const void* addressOfNurseryCurrentEnd() {
+        return nursery_.refNoCheck().addressOfCurrentEnd();
+    }
+
+    const void* addressOfStringNurseryCurrentEnd() {
+        return nursery_.refNoCheck().addressOfCurrentStringEnd();
+    }
+
+    void minorGC(JS::gcreason::Reason reason,
+                 gcstats::Phase phase = gcstats::PHASE_MINOR_GC) JS_HAZ_GC_CALL;
+    void evictNursery(JS::gcreason::Reason reason = JS::gcreason::EVICT_NURSERY) {
+        minorGC(reason, gcstats::PHASE_EVICT_NURSERY);
+    }
+    void freeAllLifoBlocksAfterMinorGC(LifoAlloc* lifo);
 
     friend class js::GCHelperState;
     friend class MarkingValidator;

@@ -120,6 +120,7 @@ js::Nursery::Nursery(JSRuntime* rt)
   , currentStartChunk_(0)
   , currentStartPosition_(0)
   , currentEnd_(0)
+  , currentStringEnd_(0)
   , currentChunk_(0)
   , maxChunkCount_(0)
   , chunkCountLimit_(0)
@@ -240,6 +241,8 @@ js::Nursery::disable()
 
     currentEnd_ = 0;
 
+    position_ = 0;
+    currentStringEnd_ = 0;
     runtime()->gc.storeBuffer().disable();
 }
 
@@ -248,6 +251,7 @@ js::Nursery::enableStrings()
 {
     MOZ_ASSERT(isEmpty());
     canAllocateStrings_ = true;
+    currentStringEnd_ = currentEnd_;
 }
 
 void
@@ -255,6 +259,7 @@ js::Nursery::disableStrings()
 {
     MOZ_ASSERT(isEmpty());
     canAllocateStrings_ = false;
+    currentStringEnd_ = 0;
 }
 
 bool
@@ -1002,6 +1007,8 @@ js::Nursery::setCurrentChunk(unsigned chunkno)
     currentChunk_ = chunkno;
     position_ = chunk(chunkno).start();
     currentEnd_ = chunk(chunkno).end();
+    if (canAllocateStrings_)
+        currentStringEnd_ = currentEnd_;
     chunk(chunkno).poisonAndInit(runtime(), JS_FRESH_NURSERY_PATTERN);
 }
 

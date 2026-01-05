@@ -217,6 +217,45 @@ CompileZone::addressOfFreeList(gc::AllocKind allocKind)
     return zone()->arenas.addressOfFreeList(allocKind);
 }
 
+const void*
+CompileZone::addressOfNurseryPosition()
+{
+    return zone()->runtimeFromAnyThread()->gc.addressOfNurseryPosition();
+}
+
+const void*
+CompileZone::addressOfStringNurseryPosition()
+{
+    // Objects and strings share a nursery, for now at least.
+    return zone()->runtimeFromAnyThread()->gc.addressOfNurseryPosition();
+}
+
+const void*
+CompileZone::addressOfNurseryCurrentEnd()
+{
+    return zone()->runtimeFromAnyThread()->gc.addressOfNurseryCurrentEnd();
+}
+
+const void*
+CompileZone::addressOfStringNurseryCurrentEnd()
+{
+    return zone()->runtimeFromAnyThread()->gc.addressOfStringNurseryCurrentEnd();
+}
+
+bool
+CompileZone::nurseryExists()
+{
+    MOZ_ASSERT(CurrentThreadCanAccessZone(zone()));
+    return zone()->group()->nursery().exists();
+}
+
+void
+CompileZone::setMinorGCShouldCancelIonCompilations()
+{
+    MOZ_ASSERT(CurrentThreadCanAccessZone(zone()));
+    zone()->group()->storeBuffer().setShouldCancelIonCompilations();
+}
+
 JSCompartment*
 CompileCompartment::compartment()
 {

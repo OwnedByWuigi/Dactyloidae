@@ -93,6 +93,11 @@ class CompileZone
     static CompileZone* get(Zone* zone);
 
     const void* addressOfNeedsIncrementalBarrier();
+    const void* addressOfFreeList(gc::AllocKind allocKind);
+    const void* addressOfNurseryPosition();
+    const void* addressOfStringNurseryPosition();
+    const void* addressOfNurseryCurrentEnd();
+    const void* addressOfStringNurseryCurrentEnd();
 
     const void* addressOfFreeList(gc::AllocKind allocKind);
 };
