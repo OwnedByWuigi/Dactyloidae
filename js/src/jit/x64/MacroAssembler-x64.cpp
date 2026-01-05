@@ -614,7 +614,7 @@ MacroAssembler::branchValueIsNurseryCellImpl(Condition cond, const T& value, Reg
     branchTestObject(Assembler::Equal, tag, &checkObjectAddress);
     branchTestString(Assembler::NotEqual, tag, cond == Assembler::Equal ? &done : label);
 
-    unboxString(value, temp);
+    UnboxStringHelper(value, temp);
     jump(&checkAddress);
 
     bind(&checkObjectAddress);

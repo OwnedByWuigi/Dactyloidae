@@ -488,7 +488,6 @@ JSRope::flattenInternal(ExclusiveContext* maybecx)
             }
             str->setNonInlineChars(wholeChars);
             pos = wholeChars + left.d.u1.length;
-            JS_STATIC_ASSERT(!(EXTENSIBLE_FLAGS & DEPENDENT_FLAGS));
             left.d.u1.flags ^= (EXTENSIBLE_FLAGS | DEPENDENT_FLAGS);
             left.d.s.u3.base = (JSLinearString*)this;  /* will be true on exit */
             BarrierMethods<JSString*>::postBarrier((JSString**)&left.d.s.u3.base, nullptr, this);

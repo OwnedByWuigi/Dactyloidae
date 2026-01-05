@@ -149,8 +149,8 @@ UnboxedLayout::makeConstructorCode(JSContext* cx, HandleObjectGroup group)
 		} else {
             MOZ_ASSERT(property.type == JSVAL_TYPE_STRING);
             Label notString;
-            masm.branchTestString(Assembler::NotEqual, valueAddress, &notString);
-            masm.unboxString(valueAddress, scratch1);
+            masm.branchTestStringHelper(Assembler::NotEqual, valueAddress, &notString);
+            masm.UnboxStringHelper(valueAddress, scratch1);
             masm.branchPtrInNurseryChunk(Assembler::Equal, scratch1, scratch2, &postBarrier);
             masm.bind(&notString);
         }

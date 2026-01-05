@@ -31,6 +31,24 @@
 using namespace js;
 using namespace js::jit;
 
+template <typename T>
+void branchTestStringHelper(MacroAssembler& masm, Assembler::Condition cond, const T& src, Label* label) {
+    if constexpr (std::is_same_v<T, ValueOperand>) {
+        masm.branchTestString(cond, src, label);
+    } else {
+        // Address/BaseIndex must be wrapped in Operand for the x64 brancher
+        masm.branchTestString(cond, Operand(src), label);
+    }
+}
+template <typename T>
+void UnboxStringHelper(MacroAssembler* masm, const T& src, Register dest) {
+    if constexpr (std::is_same_v<T, ValueOperand>) {
+        masm->unboxString(src, dest);
+    } else {
+        masm->unboxString(Operand(src), dest);
+    }
+}
+
 using JS::GenericNaN;
 using JS::ToInt32;
 

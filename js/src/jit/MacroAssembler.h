@@ -205,6 +205,30 @@ class MacroAssembler : public MacroAssemblerSpecific
         return this;
     }
 
+public:
+template <typename T>
+void branchTestStringHelper(Assembler::Condition cond, const T& src, Label* label) {
+    if constexpr (std::is_same_v<T, ValueOperand>) {
+        this->branchTestString(cond, src, label);
+    } else if constexpr (std::is_same_v<T, Address>) {
+        // Use the Address-specific path instead of wrapping in Operand
+        // This avoids the C2665 "cannot convert Operand" error
+        this->branchTest32(cond, src, Imm32(JSString::TYPE_FLAGS_MASK), label);
+    } else {
+        // Fallback for other types (like Register)
+        this->branchTestString(cond, src, label);
+    }
+}
+
+template <typename T>
+void UnboxStringHelper(const T& src, Register dest) {
+    if constexpr (std::is_same_v<T, ValueOperand>) {
+        this->unboxString(src, dest);
+    } else {
+        this->unboxString(Operand(src), dest);
+    }
+}
+
   public:
     class AutoRooter : public JS::AutoGCRooter
     {
