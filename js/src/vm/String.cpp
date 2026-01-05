@@ -21,6 +21,7 @@
 #include "jscntxtinlines.h"
 #include "jscompartmentinlines.h"
 
+
 using namespace js;
 
 using mozilla::IsSame;
@@ -636,7 +637,7 @@ js::ConcatStrings(ExclusiveContext* cx,
     bool canUseInline = isLatin1
                         ? JSInlineString::lengthFits<Latin1Char>(wholeLength)
                         : JSInlineString::lengthFits<char16_t>(wholeLength);
-    if (canUseInline && cx->isJSContext()) {
+    if (canUseInline) {
         Latin1Char* latin1Buf = nullptr;  // initialize to silence GCC warning
         char16_t* twoByteBuf = nullptr;  // initialize to silence GCC warning
         JSInlineString* str = isLatin1

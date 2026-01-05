@@ -643,7 +643,7 @@ StartOffThreadParseTask(JSContext* cx, const ReadOnlyCompileOptions& options,
     // Suppress GC so that calls below do not trigger a new incremental GC
     // which could require barriers on the atoms compartment.
     gc::AutoSuppressGC nogc(cx);
-    gc::AutoAssertNoNurseryAlloc noNurseryAlloc(cx->runtime());
+    gc::AutoSuppressNurseryCellAlloc noNurseryAlloc(cx);
     AutoSuppressAllocationMetadataBuilder suppressMetadata(cx);
 
     Maybe<AutoClearUsedByHelperThread> clearUseGuard;
@@ -1929,6 +1929,18 @@ HelperThread::handleGCHelperWorkload(AutoLockHelperThreadState& locked)
 
     currentTask.reset();
     HelperThreadState().notifyAll(GlobalHelperThreadState::CONSUMER, locked);
+}
+
+void
+JSContext::setHelperThread(HelperThread* thread)
+{
+    if (helperThread_)
+        nurserySuppressions_--;
+
+    helperThread_ = thread;
+
+    if (helperThread_)
+        nurserySuppressions_++;
 }
 
 void

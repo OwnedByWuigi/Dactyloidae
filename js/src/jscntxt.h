@@ -33,6 +33,10 @@ class JitContext;
 class DebugModeOSRVolatileJitFrameIterator;
 } // namespace jit
 
+namespace gc {
+class AutoSuppressNurseryCellAlloc;
+}
+
 typedef HashSet<Shape*> ShapeSet;
 
 /* Detects cycles when traversing an object graph. */
@@ -113,8 +117,34 @@ enum class ContextKind
     // JSRuntime, so it's more efficient to use the base class.
     JSRuntime* const runtime_;
 
-    // The thread on which this context is running, if this is not a JSContext.
-    HelperThread* helperThread_;
+/*
+ * A JSContext encapsulates the thread local state used when using the JS
+ * runtime.
+ */
+struct JSContext : public JS::RootingContext,
+                   public js::MallocProvider<JSContext>
+{
+    JSContext(JSRuntime* runtime, const JS::ContextOptions& options);
+    ~JSContext();
+
+    bool init(js::ContextKind kind);
+
+  private:
+    js::UnprotectedData<JSRuntime*> runtime_;
+    js::WriteOnceData<js::ContextKind> kind_;
+
+    // System handle for the thread this context is associated with.
+    js::WriteOnceData<size_t> threadNative_;
+
+    // The thread on which this context is running, if this is performing a parse task.
+    js::ThreadLocalData<js::HelperThread*> helperThread_;
+
+    friend class js::gc::AutoSuppressNurseryCellAlloc;
+    js::ThreadLocalData<size_t> nurserySuppressions_;
+
+    js::ThreadLocalData<JS::ContextOptions> options_;
+
+    js::ThreadLocalData<js::gc::ArenaLists*> arenas_;
 
   public:
     enum ContextKind {
@@ -286,8 +316,14 @@ enum class ContextKind
     void setHelperThread(HelperThread* helperThread);
     HelperThread* helperThread() const { return helperThread_; }
 
-    // Threads with an ExclusiveContext may freely access any data in their
-    // compartment and zone.
+    void setHelperThread(js::HelperThread* helperThread);
+    js::HelperThread* helperThread() const { return helperThread_; }
+
+    bool isNurseryAllocSuppressed() const {
+        return nurserySuppressions_;
+    }
+
+    // Threads may freely access any data in their compartment and zone.
     JSCompartment* compartment() const {
         return compartment_;
     }
