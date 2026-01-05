@@ -3989,6 +3989,13 @@ CodeGenerator::visitPostWriteElementBarrierO(LPostWriteElementBarrierO* lir)
 }
 
 void
+CodeGenerator::visitPostWriteElementBarrierS(LPostWriteElementBarrierS* lir)
+{
+    auto ool = new(alloc()) OutOfLineCallPostWriteElementBarrier(lir, lir->object(), lir->index());
+    visitPostWriteBarrierCommon<LPostWriteElementBarrierS, MIRType::String>(lir, ool);
+ }
+
+void
 CodeGenerator::visitPostWriteElementBarrierV(LPostWriteElementBarrierV* lir)
 {
     auto ool = new(alloc()) OutOfLineCallPostWriteElementBarrier(lir, lir->object(), lir->index());
