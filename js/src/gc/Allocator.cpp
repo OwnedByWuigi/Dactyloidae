@@ -92,11 +92,8 @@ GCRuntime::tryNewNurseryObject(JSContext* cx, size_t thingSize, size_t nDynamicS
         minorGC(JS::gcreason::OUT_OF_NURSERY);
 
         // Exceeding gcMaxBytes while tenuring can disable the Nursery.
-        if (nursery.isEnabled()) {
-            JSObject* obj = nursery.allocateObject(cx, thingSize, nDynamicSlots, clasp);
-            MOZ_ASSERT(obj);
-            return obj;
-        }
+        if (cx->nursery().isEnabled())
+            return cx->nursery().allocateObject(cx, thingSize, nDynamicSlots, clasp);
     }
     return nullptr;
 }
@@ -147,11 +144,8 @@ GCRuntime::tryNewNurseryString(JSContext* cx, size_t thingSize, AllocKind kind)
         cx->runtime()->gc.minorGC(JS::gcreason::OUT_OF_NURSERY);
 
         // Exceeding gcMaxBytes while tenuring can disable the Nursery.
-        if (cx->nursery().isEnabled()) {
-            cell = cx->nursery().allocateString(cx, cx->zone(), thingSize, kind);
-            MOZ_ASSERT(cell);
-            return static_cast<JSString*>(cell);
-        }
+        if (cx->nursery().isEnabled())
+            return static_cast<JSString*>(cx->nursery().allocateString(cx, cx->zone(), thingSize, kind));
     }
     return nullptr;
 }
