@@ -1576,10 +1576,9 @@ CreateDependentString::generate(MacroAssembler& masm, const JSAtomState& names,
         // Watch for undepended strings, which have a base pointer but don't
         // actually share their characters with it.
         Label noBase;
-        masm.branchTest32(Assembler::Zero, Address(base, JSString::offsetOfFlags()),
-                          Imm32(JSString::HAS_BASE_BIT), &noBase);
-        masm.branchTest32(Assembler::NonZero, Address(base, JSString::offsetOfFlags()),
-                          Imm32(JSString::FLAT_BIT), &noBase);
+        masm.load32(Address(base, JSString::offsetOfFlags()), temp2);
+        masm.and32(Imm32(JSString::TYPE_FLAGS_MASK), temp2);
+        masm.branch32(Assembler::NotEqual, temp2, Imm32(JSString::DEPENDENT_FLAGS), &noBase);
         masm.loadPtr(Address(base, JSDependentString::offsetOfBase()), temp2);
         masm.storePtr(temp1, Address(string, JSDependentString::offsetOfBase()));
         masm.bind(&noBase);
@@ -7719,7 +7718,7 @@ JitCompartment::generateStringConcatStub(JSContext* cx)
     // lhs and rhs flags, so we just have to clear the other flags and set
     // NON_ATOM_BIT to get our rope flags (Latin1 if both lhs and rhs are
     // Latin1).
-    static_assert(JSString::ROPE_FLAGS == JSString::NON_ATOM_BIT,
+    static_assert(JSString::INIT_ROPE_FLAGS == JSString::NON_ATOM_BIT,
                   "Rope type flags must be NON_ATOM_BIT only");
     masm.and32(Imm32(JSString::LATIN1_CHARS_BIT), temp1);
     masm.or32(Imm32(JSString::NON_ATOM_BIT), temp1);

@@ -194,7 +194,7 @@ JSString::dumpRepresentationHeader(FILE* fp, int indent, const char* subclass) c
     // Print the string's address as an actual C++ expression, to facilitate
     // copy-and-paste into a debugger.
     fprintf(fp, "((%s*) %p) length: %" PRIuSIZE "  flags: 0x%x", subclass, this, length(), flags);
-    if (flags & FLAT_BIT)               fputs(" FLAT", fp);
+    if (flags & LINEAR_BIT)             fputs(" LINEAR",  fp);
     if (flags & HAS_BASE_BIT)           fputs(" HAS_BASE", fp);
     if (flags & INLINE_CHARS_BIT)       fputs(" INLINE_CHARS", fp);
     if (flags & NON_ATOM_BIT)           fputs(" NON_ATOM", fp);
@@ -488,7 +488,10 @@ JSRope::flattenInternal(ExclusiveContext* maybecx)
             }
             str->setNonInlineChars(wholeChars);
             pos = wholeChars + left.d.u1.length;
-            left.d.u1.flags ^= (EXTENSIBLE_FLAGS | DEPENDENT_FLAGS);
+            if (IsSame<CharT, char16_t>::value)
+                left.d.u1.flags = DEPENDENT_FLAGS;
+            else
+                left.d.u1.flags = DEPENDENT_FLAGS | LATIN1_CHARS_BIT;
             left.d.s.u3.base = (JSLinearString*)this;  /* will be true on exit */
             BarrierMethods<JSString*>::postBarrier((JSString**)&left.d.s.u3.base, nullptr, this);
 			Nursery& nursery = zone()->group()->nursery();

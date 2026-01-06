@@ -103,7 +103,7 @@ MOZ_ALWAYS_INLINE void
 JSRope::init(js::ExclusiveContext* cx, JSString* left, JSString* right, size_t length)
 {
     d.u1.length = length;
-    d.u1.flags = ROPE_FLAGS;
+    d.u1.flags = INIT_ROPE_FLAGS;
     if (left->hasLatin1Chars() && right->hasLatin1Chars())
         d.u1.flags |= LATIN1_CHARS_BIT;
     d.s.u2.left = left;
