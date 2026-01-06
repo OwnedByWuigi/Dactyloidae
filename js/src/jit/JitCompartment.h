@@ -417,6 +417,97 @@ struct CacheIRStubKey : public DefaultHasher<CacheIRStubKey> {
     }
 };
 
+template<typename Key>
+struct IcStubCodeMapGCPolicy
+{
+    static bool needsSweep(Key*, ReadBarrieredJitCode* value) {
+        return IsAboutToBeFinalized(value);
+    }
+};
+
+class JitZone
+{
+    // Allocated space for optimized baseline stubs.
+    OptimizedICStubSpace optimizedStubSpace_;
+    // Allocated space for cached cfg.
+    CFGSpace cfgSpace_;
+
+    // Set of CacheIRStubInfo instances used by Ion stubs in this Zone.
+    using IonCacheIRStubInfoSet = HashSet<CacheIRStubKey, CacheIRStubKey, SystemAllocPolicy>;
+    IonCacheIRStubInfoSet ionCacheIRStubInfoSet_;
+
+    // Map CacheIRStubKey to shared JitCode objects.
+    using BaselineCacheIRStubCodeMap = GCHashMap<CacheIRStubKey,
+                                                 ReadBarrieredJitCode,
+                                                 CacheIRStubKey,
+                                                 SystemAllocPolicy,
+                                                 IcStubCodeMapGCPolicy<CacheIRStubKey>>;
+    BaselineCacheIRStubCodeMap baselineCacheIRStubCodes_;
+
+  public:
+    [[nodiscard]] bool init(JSContext* cx);
+    void sweep(FreeOp* fop);
+
+    void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
+                                size_t* jitZone,
+                                size_t* baselineStubsOptimized,
+                                size_t* cachedCFG) const;
+
+    OptimizedICStubSpace* optimizedStubSpace() {
+        return &optimizedStubSpace_;
+    }
+    CFGSpace* cfgSpace() {
+        return &cfgSpace_;
+    }
+
+    JitCode* getBaselineCacheIRStubCode(const CacheIRStubKey::Lookup& key,
+                                        CacheIRStubInfo** stubInfo) {
+        auto p = baselineCacheIRStubCodes_.lookup(key);
+        if (p) {
+            *stubInfo = p->key().stubInfo.get();
+            return p->value();
+        }
+        *stubInfo = nullptr;
+        return nullptr;
+    }
+    [[nodiscard]] bool putBaselineCacheIRStubCode(const CacheIRStubKey::Lookup& lookup,
+                                                 CacheIRStubKey& key,
+                                                 JitCode* stubCode)
+    {
+        auto p = baselineCacheIRStubCodes_.lookupForAdd(lookup);
+        MOZ_ASSERT(!p);
+        return baselineCacheIRStubCodes_.add(p, Move(key), stubCode);
+    }
+
+    CacheIRStubInfo* getIonCacheIRStubInfo(const CacheIRStubKey::Lookup& key) {
+        if (!ionCacheIRStubInfoSet_.initialized())
+            return nullptr;
+        IonCacheIRStubInfoSet::Ptr p = ionCacheIRStubInfoSet_.lookup(key);
+        return p ? p->stubInfo.get() : nullptr;
+    }
+    [[nodiscard]] bool putIonCacheIRStubInfo(const CacheIRStubKey::Lookup& lookup,
+                                            CacheIRStubKey& key)
+    {
+        if (!ionCacheIRStubInfoSet_.initialized() && !ionCacheIRStubInfoSet_.init())
+            return false;
+        IonCacheIRStubInfoSet::AddPtr p = ionCacheIRStubInfoSet_.lookupForAdd(lookup);
+        MOZ_ASSERT(!p);
+        return ionCacheIRStubInfoSet_.add(p, Move(key));
+    }
+    void purgeIonCacheIRStubInfo() {
+        ionCacheIRStubInfoSet_.finish();
+    }
+};
+
+enum class BailoutReturnStub {
+    GetProp,
+    GetPropSuper,
+    SetProp,
+    Call,
+    New,
+    Count
+};
+
 class JitCompartment
 {
     friend class JitActivation;
