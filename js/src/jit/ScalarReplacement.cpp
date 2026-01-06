@@ -100,8 +100,9 @@ IsObjectEscaped(MInstruction* ins, JSObject* objDefault = nullptr);
 // Returns False if the lambda is not escaped and if it is optimizable by
 // ScalarReplacementOfObject.
 static bool
-IsLambdaEscaped(MLambda* lambda, JSObject* obj)
+IsLambdaEscaped(MInstruction* lambda, JSObject* obj)
 {
+    MOZ_ASSERT(lambda->isLambda() || lambda->isLambdaArrow());
     JitSpewDef(JitSpew_Escape, "Check lambda\n", lambda);
     JitSpewIndent spewIndent(JitSpew_Escape);
 
@@ -234,10 +235,10 @@ IsObjectEscaped(MInstruction* ins, JSObject* objDefault)
             break;
           }
 
-          case MDefinition::Op_Lambda: {
-            MLambda* lambda = def->toLambda();
-            if (IsLambdaEscaped(lambda, obj)) {
-                JitSpewDef(JitSpew_Escape, "is indirectly escaped by\n", lambda);
+          case MDefinition::Opcode::Lambda:
+          case MDefinition::Opcode::LambdaArrow: {
+                if (IsLambdaEscaped(def->toInstruction(), obj)) {
+                JitSpewDef(JitSpew_Escape, "is indirectly escaped by\n", def);
                 return true;
             }
             break;
@@ -304,6 +305,7 @@ class ObjectMemoryView : public MDefinitionVisitorDefaultNoop
     void visitGuardShape(MGuardShape* ins);
     void visitFunctionEnvironment(MFunctionEnvironment* ins);
     void visitLambda(MLambda* ins);
+    void visitLambdaArrow(MLambdaArrow* ins);
     void visitStoreUnboxedScalar(MStoreUnboxedScalar* ins);
     void visitLoadUnboxedScalar(MLoadUnboxedScalar* ins);
     void visitStoreUnboxedObjectOrNull(MStoreUnboxedObjectOrNull* ins);
@@ -472,7 +474,7 @@ ObjectMemoryView::assertSuccess()
 
         // The only remaining uses would be removed by DCE, which will also
         // recover the object on bailouts.
-        MOZ_ASSERT(def->isSlots() || def->isLambda());
+        MOZ_ASSERT(def->isSlots() || def->isLambda() || def->isLambdaArrow());
         MOZ_ASSERT(!def->hasDefUses());
     }
 }
@@ -634,8 +636,15 @@ ObjectMemoryView::visitFunctionEnvironment(MFunctionEnvironment* ins)
 {
     // Skip function environment which are not aliases of the NewCallObject.
     MDefinition* input = ins->input();
-    if (!input->isLambda() || input->toLambda()->environmentChain() != obj_)
-        return;
+    if (input->isLambda()) {
+        if (input->toLambda()->environmentChain() != obj_)
+            return;
+    } else if (input->isLambdaArrow()) {
+        if (input->toLambdaArrow()->environmentChain() != obj_)
+            return;
+    } else {
+       return;
+    }
 
     // Replace the function environment by the scope chain of the lambda.
     ins->replaceAllUsesWith(obj_);
@@ -655,6 +664,14 @@ ObjectMemoryView::visitLambda(MLambda* ins)
     ins->setIncompleteObject();
 }
 
+void
+ObjectMemoryView::visitLambdaArrow(MLambdaArrow* ins)
+{
+    if (ins->environmentChain() != obj_)
+        return;
+
+    ins->setIncompleteObject();
+}
 static size_t
 GetOffsetOf(MDefinition* index, size_t width, int32_t baseOffset)
 {
