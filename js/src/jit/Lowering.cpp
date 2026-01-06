@@ -3636,10 +3636,9 @@ LIRGenerator::visitGetNameCache(MGetNameCache* ins)
 {
     MOZ_ASSERT(ins->envObj()->type() == MIRType::Object);
 
-    // Set the performs-call flag so that we don't omit the overrecursed check.
-    // This is necessary because the cache can attach a scripted getter stub
-    // that calls this script recursively.
-    gen->setPerformsCall();
+    // Emit an overrecursed check: this is necessary because the cache can
+    // attach a scripted getter stub that calls this script recursively.
+    gen->setNeedsOverrecursedCheck();
 
     LGetNameCache* lir = new(alloc()) LGetNameCache(useRegister(ins->envObj()));
     defineBox(lir, ins);
@@ -3655,6 +3654,24 @@ LIRGenerator::visitCallGetIntrinsicValue(MCallGetIntrinsicValue* ins)
 }
 
 void
+LIRGenerator::visitGetPropSuperCache(MGetPropSuperCache* ins)
+{
+    MDefinition* obj = ins->object();
+    MDefinition* receiver = ins->receiver();
+    MDefinition* id = ins->idval();
+
+    gen->setNeedsOverrecursedCheck();
+
+    bool useConstId = id->type() == MIRType::String || id->type() == MIRType::Symbol;
+
+    auto* lir = new(alloc()) LGetPropSuperCacheV(useRegister(obj),
+                                                 useBoxOrTyped(receiver),
+                                                 useBoxOrTypedOrConstant(id, useConstId));
+    defineBox(lir, ins);
+    assignSafepoint(lir, ins);
+}
+
+void
 LIRGenerator::visitGetPropertyCache(MGetPropertyCache* ins)
 {
     MOZ_ASSERT(ins->object()->type() == MIRType::Object);
@@ -3666,10 +3683,9 @@ LIRGenerator::visitGetPropertyCache(MGetPropertyCache* ins)
                id->type() == MIRType::Value);
 
     if (ins->monitoredResult()) {
-        // Set the performs-call flag so that we don't omit the overrecursed
-        // check. This is necessary because the cache can attach a scripted
-        // getter stub that calls this script recursively.
-        gen->setPerformsCall();
+        // Emit an overrecursed check: this is necessary because the cache can
+        // attach a scripted getter stub that calls this script recursively.
+        gen->setNeedsOverrecursedCheck();
     }
 
     // If this is a GETPROP, the id is a constant string. Allow passing it as a
@@ -3933,10 +3949,9 @@ LIRGenerator::visitSetPropertyCache(MSetPropertyCache* ins)
     bool useConstId = id->type() == MIRType::String || id->type() == MIRType::Symbol;
     bool useConstValue = IsNonNurseryConstant(ins->value());
 
-    // Set the performs-call flag so that we don't omit the overrecursed check.
-    // This is necessary because the cache can attach a scripted setter stub
-    // that calls this script recursively.
-    gen->setPerformsCall();
+    // Emit an overrecursed check: this is necessary because the cache can
+    // attach a scripted setter stub that calls this script recursively.
+    gen->setNeedsOverrecursedCheck();
 
     // If the index might be an integer, we need some extra temp registers for
     // the dense and typed array element stubs.
@@ -4117,8 +4132,30 @@ LIRGenerator::visitIn(MIn* ins)
     MOZ_ASSERT(lhs->type() == MIRType::Value);
     MOZ_ASSERT(rhs->type() == MIRType::Object);
 
-    LIn* lir = new(alloc()) LIn(useBoxAtStart(lhs), useRegisterAtStart(rhs));
-    defineReturn(lir, ins);
+    LInCache* lir = new(alloc()) LInCache(useBoxOrTyped(lhs), useRegister(rhs), temp());
+    define(lir, ins);
+    assignSafepoint(lir, ins);
+}
+
+void
+LIRGenerator::visitHasOwnCache(MHasOwnCache* ins)
+{
+    MDefinition* value = ins->value();
+    MOZ_ASSERT(value->type() == MIRType::Object || value->type() == MIRType::Value);
+
+    MDefinition* id = ins->idval();
+    MOZ_ASSERT(id->type() == MIRType::String ||
+               id->type() == MIRType::Symbol ||
+               id->type() == MIRType::Int32 ||
+               id->type() == MIRType::Value);
+
+    // Emit an overrecursed check: this is necessary because the cache can
+    // attach a scripted getter stub that calls this script recursively.
+    gen->setNeedsOverrecursedCheck();
+
+    LHasOwnCache* lir = new(alloc()) LHasOwnCache(useBoxOrTyped(value), useBoxOrTyped(id));
+
+    define(lir, ins);
     assignSafepoint(lir, ins);
 }
 
@@ -4386,7 +4423,6 @@ LIRGenerator::visitWasmStackArg(MWasmStackArg* ins)
 void
 LIRGenerator::visitWasmCall(MWasmCall* ins)
 {
-    gen->setPerformsCall();
 
     LAllocation* args = gen->allocate<LAllocation>(ins->numOperands());
     if (!args) {
@@ -4633,8 +4669,11 @@ LIRGenerator::visitInstruction(MInstruction* ins)
         return false;
     ins->accept(this);
 
-    if (ins->possiblyCalls())
-        gen->setPerformsCall();
+    if (ins->possiblyCalls()) {
+        gen->setNeedsStaticStackAlignment();
+        gen->setNeedsOverrecursedCheck();
+    }
+
 
     if (ins->resumePoint())
         updateResumeState(ins);

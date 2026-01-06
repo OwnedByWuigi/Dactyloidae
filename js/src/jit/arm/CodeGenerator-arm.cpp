@@ -776,7 +776,8 @@ CodeGeneratorARM::visitSoftModI(LSoftModI* ins)
     Label done;
 
     // Save the lhs in case we end up with a 0 that should be a -0.0 because lhs < 0.
-    MOZ_ASSERT(callTemp.code() > r3.code() && callTemp.code() < r12.code());
+    MOZ_ASSERT(callTemp != lhs);
+    MOZ_ASSERT(callTemp != rhs);
     masm.ma_mov(lhs, callTemp);
 
 
@@ -812,6 +813,8 @@ CodeGeneratorARM::visitSoftModI(LSoftModI* ins)
         masm.callWithABI(wasm::SymbolicAddress::aeabi_idivmod);
     else
         masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, __aeabi_idivmod));
+    MOZ_ASSERT(r1 != output);
+    masm.move32(r1, output);
 
     // If X%Y == 0 and X < 0, then we *actually* wanted to return -0.0
     if (mir->canBeNegativeDividend()) {
@@ -820,7 +823,7 @@ CodeGeneratorARM::visitSoftModI(LSoftModI* ins)
         } else {
             MOZ_ASSERT(mir->fallible());
             // See if X < 0
-            masm.as_cmp(r1, Imm8(0));
+            masm.as_cmp(output, Imm8(0));
             masm.ma_b(&done, Assembler::NotEqual);
             masm.as_cmp(callTemp, Imm8(0));
             bailoutIf(Assembler::Signed, ins->snapshot());
@@ -2874,9 +2877,7 @@ CodeGeneratorARM::visitSoftUDivOrMod(LSoftUDivOrMod* ins)
 
     MOZ_ASSERT(lhs == r0);
     MOZ_ASSERT(rhs == r1);
-    MOZ_ASSERT(ins->mirRaw()->isDiv() || ins->mirRaw()->isMod());
-    MOZ_ASSERT_IF(ins->mirRaw()->isDiv(), output == r0);
-    MOZ_ASSERT_IF(ins->mirRaw()->isMod(), output == r1);
+    MOZ_ASSERT(output == r0);
 
     Label done;
     MDiv* div = ins->mir()->isDiv() ? ins->mir()->toDiv() : nullptr;
@@ -2892,6 +2893,10 @@ CodeGeneratorARM::visitSoftUDivOrMod(LSoftUDivOrMod* ins)
         masm.callWithABI(wasm::SymbolicAddress::aeabi_uidivmod);
     else
         masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, __aeabi_uidivmod));
+    if (mod) {
+        MOZ_ASSERT(output == r0, "output should not be r1 for mod");
+        masm.move32(r1, output);
+    }
 
     // uidivmod returns the quotient in r0, and the remainder in r1.
     if (div && !div->canTruncateRemainder()) {

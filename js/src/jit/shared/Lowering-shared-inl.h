@@ -64,7 +64,8 @@ LIRGeneratorShared::define(details::LInstructionFixedDefsTempsHelper<1, X>* lir,
 }
 
 template <size_t X, size_t Y> void
-LIRGeneratorShared::defineFixed(LInstructionHelper<1, X, Y>* lir, MDefinition* mir, const LAllocation& output)
+LIRGeneratorShared::defineFixed(LInstructionHelper<1, X, Y>* lir, MDefinition* mir,
+                                const LAllocation& output)
 {
     LDefinition::Type type = LDefinition::TypeFrom(mir->type());
 
@@ -233,6 +234,7 @@ LIRGeneratorShared::defineReturn(LInstruction* lir, MDefinition* mir)
     lir->setMir(mir);
 
     MOZ_ASSERT(lir->isCall());
+    gen->setNeedsStaticStackAlignment();
 
     uint32_t vreg = getVirtualRegister();
 

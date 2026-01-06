@@ -6139,6 +6139,10 @@ class MMod : public MBinaryArithInstruction
                unsigned_ == ins->toMod()->isUnsigned();
     }
 
+    bool possiblyCalls() const override {
+        return type() == MIRType::Double;
+    }
+
     ALLOW_CLONE(MMod)
 };
 

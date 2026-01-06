@@ -141,12 +141,19 @@ class MIRGenerator
     uint32_t minWasmHeapLength() const {
         return minWasmHeapLength_;
     }
-    void setPerformsCall() {
-        performsCall_ = true;
+    void setNeedsOverrecursedCheck() {
+        needsOverrecursedCheck_ = true;
     }
-    bool performsCall() const {
-        return performsCall_;
+    bool needsOverrecursedCheck() const {
+        return needsOverrecursedCheck_;
     }
+    void setNeedsStaticStackAlignment() {
+        needsStaticStackAlignment_ = true;
+    }
+    bool needsStaticStackAlignment() const {
+        return needsOverrecursedCheck_;
+    }
+
 
     bool modifiesFrameArguments() const {
         return modifiesFrameArguments_;
@@ -176,7 +183,8 @@ class MIRGenerator
     mozilla::Atomic<bool, mozilla::Relaxed> cancelBuild_;
 
     uint32_t wasmMaxStackArgBytes_;
-    bool performsCall_;
+    bool needsOverrecursedCheck_;
+    bool needsStaticStackAlignment_;    
 
     // Keep track of whether frame arguments are modified during execution.
     // RegAlloc needs to know this as spilling values back to their register
