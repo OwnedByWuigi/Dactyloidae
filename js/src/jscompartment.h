@@ -852,6 +852,7 @@ struct JSCompartment
         compartmentStats_ = newStats;
     }
 
+    MOZ_ALWAYS_INLINE bool objectMaybeInIteration(JSObject* obj);
     // These flags help us to discover if a compartment that shouldn't be alive
     // manages to outlive a GC.
     bool scheduledForDestruction;

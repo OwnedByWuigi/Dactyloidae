@@ -7,6 +7,7 @@
 #define jscompartmentinlines_h
 
 #include "jscompartment.h"
+#include "jsiter.h"
 
 #include "gc/Barrier.h"
 
@@ -127,6 +128,23 @@ JSCompartment::wrap(JSContext* cx, JS::MutableHandleValue vp)
         return false;
     vp.setObject(*obj);
     MOZ_ASSERT_IF(cacheResult, obj == cacheResult);
+    return true;
+}
+
+MOZ_ALWAYS_INLINE bool
+JSCompartment::objectMaybeInIteration(JSObject* obj)
+{
+    MOZ_ASSERT(obj->compartment() == this);
+
+    // If the list is empty we're not iterating any objects.
+    js::NativeIterator* next = enumerators->next();
+    if (enumerators == next)
+        return false;
+
+    // If the list contains a single object, check if it's |obj|.
+    if (next->next() == enumerators)
+        return next->obj == obj;
+
     return true;
 }
 
