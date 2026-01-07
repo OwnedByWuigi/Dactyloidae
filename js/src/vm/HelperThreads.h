@@ -562,7 +562,6 @@ class MOZ_RAII AutoUnlockHelperThreadState : public UnlockGuard<Mutex>
 struct ParseTask
 {
     ParseTaskKind kind;
-    ExclusiveContext* cx;
     JS::OwningCompileOptions options;
     // Anonymous union, the only correct interpretation is provided by the
     // ParseTaskKind value, or from the virtual parse function.
