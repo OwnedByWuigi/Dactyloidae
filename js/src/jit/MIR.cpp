@@ -1662,8 +1662,10 @@ MRound::trySpecializeFloat32(TempAllocator& alloc)
 void
 MNearbyInt::trySpecializeFloat32(TempAllocator& alloc)
 {
-    if (EnsureFloatInputOrConvert(this, alloc))
+    if (EnsureFloatInputOrConvert(this, alloc)) {
         specialization_ = MIRType::Float32;
+        setResultType(MIRType::Float32);
+    }
 }
 MTableSwitch*
 MTableSwitch::New(TempAllocator& alloc, MDefinition* ins, int32_t low, int32_t high)
