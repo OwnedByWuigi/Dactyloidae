@@ -1956,6 +1956,133 @@ GCMarker::restoreValueArray(JSObject* objArg, void** vpp, void** endp)
 
 /*** Mark Stack ***********************************************************************************/
 
+static_assert(sizeof(MarkStack::TaggedPtr) == sizeof(uintptr_t),
+              "A TaggedPtr should be the same size as a pointer");
+static_assert(sizeof(MarkStack::ValueArray) == sizeof(MarkStack::SavedValueArray),
+              "ValueArray and SavedValueArray should be the same size");
+static_assert((sizeof(MarkStack::ValueArray) % sizeof(uintptr_t)) == 0,
+              "ValueArray and SavedValueArray should be multiples of the pointer size");
+
+static const size_t ValueArrayWords = sizeof(MarkStack::ValueArray) / sizeof(uintptr_t);
+
+template <typename T>
+struct MapTypeToMarkStackTag {};
+template <>
+struct MapTypeToMarkStackTag<JSObject*> { static const auto value = MarkStack::ObjectTag; };
+template <>
+struct MapTypeToMarkStackTag<ObjectGroup*> { static const auto value = MarkStack::GroupTag; };
+template <>
+struct MapTypeToMarkStackTag<jit::JitCode*> { static const auto value = MarkStack::JitCodeTag; };
+template <>
+struct MapTypeToMarkStackTag<JSScript*> { static const auto value = MarkStack::ScriptTag; };
+
+static inline bool
+TagIsArrayTag(MarkStack::Tag tag)
+{
+    return tag == MarkStack::ValueArrayTag || tag == MarkStack::SavedValueArrayTag;
+}
+
+static inline void
+CheckValueArray(const MarkStack::ValueArray& array)
+{
+    MOZ_ASSERT(array.ptr.tag() == MarkStack::ValueArrayTag);
+    MOZ_ASSERT(uintptr_t(array.start) <= uintptr_t(array.end));
+    MOZ_ASSERT((uintptr_t(array.end) - uintptr_t(array.start)) % sizeof(Value) == 0);
+}
+
+static inline void
+CheckSavedValueArray(const MarkStack::SavedValueArray& array)
+{
+    MOZ_ASSERT(array.ptr.tag() == MarkStack::SavedValueArrayTag);
+    MOZ_ASSERT(array.kind == HeapSlot::Slot || array.kind == HeapSlot::Element);
+}
+
+inline
+MarkStack::TaggedPtr::TaggedPtr(Tag tag, Cell* ptr)
+  : bits(tag | uintptr_t(ptr))
+{
+    MOZ_ASSERT(tag <= LastTag);
+    MOZ_ASSERT((uintptr_t(ptr) & CellAlignMask) == 0);
+}
+
+inline MarkStack::Tag
+MarkStack::TaggedPtr::tag() const
+{
+    auto tag = Tag(bits & TagMask);
+    MOZ_ASSERT(tag <= LastTag);
+    return tag;
+}
+
+inline Cell*
+MarkStack::TaggedPtr::ptr() const
+{
+    return reinterpret_cast<Cell*>(bits & ~TagMask);
+}
+
+template <typename T>
+inline T*
+MarkStack::TaggedPtr::as() const
+{
+    MOZ_ASSERT(tag() == MapTypeToMarkStackTag<T*>::value);
+    MOZ_ASSERT(ptr()->isTenured());
+    MOZ_ASSERT(ptr()->is<T>());
+    return static_cast<T*>(ptr());
+}
+
+inline JSObject*
+MarkStack::TaggedPtr::asValueArrayObject() const
+{
+    MOZ_ASSERT(tag() == ValueArrayTag);
+    MOZ_ASSERT(ptr()->isTenured());
+    MOZ_ASSERT(ptr()->is<JSObject>());
+    return static_cast<JSObject*>(ptr());
+}
+
+inline JSObject*
+MarkStack::TaggedPtr::asSavedValueArrayObject() const
+{
+    MOZ_ASSERT(tag() == SavedValueArrayTag);
+    MOZ_ASSERT(ptr()->isTenured());
+    MOZ_ASSERT(ptr()->is<JSObject>());
+    return static_cast<JSObject*>(ptr());
+}
+
+inline JSRope*
+MarkStack::TaggedPtr::asTempRope() const
+{
+    MOZ_ASSERT(tag() == TempRopeTag);
+    MOZ_ASSERT(ptr()->isTenured());
+    MOZ_ASSERT(ptr()->is<JSString>());
+    return static_cast<JSRope*>(ptr());
+}
+
+inline
+MarkStack::ValueArray::ValueArray(JSObject* obj, HeapSlot* startArg, HeapSlot* endArg)
+  : end(endArg), start(startArg), ptr(ValueArrayTag, obj)
+{}
+
+inline
+MarkStack::SavedValueArray::SavedValueArray(JSObject* obj, size_t indexArg, HeapSlot::Kind kindArg)
+  : kind(kindArg), index(indexArg), ptr(SavedValueArrayTag, obj)
+{}
+
+MarkStack::MarkStack(size_t maxCapacity)
+  : stack_(nullptr)
+  , tos_(nullptr)
+  , end_(nullptr)
+  , baseCapacity_(0)
+  , maxCapacity_(maxCapacity)
+#ifdef DEBUG
+  , iteratorCount_(0)
+#endif
+{}
+
+MarkStack::~MarkStack()
+{
+    MOZ_ASSERT(iteratorCount_ == 0);
+    js_free(stack_);
+}
+
 bool
 MarkStack::init(JSGCMode gcMode)
 {

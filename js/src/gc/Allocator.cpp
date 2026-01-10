@@ -6,6 +6,7 @@
 
 #include "gc/Allocator.h"
 
+
 #include "jscntxt.h"
 
 #include "gc/GCInternals.h"
@@ -209,6 +210,19 @@ js::Allocate(ExclusiveContext* cx)
 
     AllocKind kind = MapTypeToFinalizeKind<T>::kind;
     size_t thingSize = sizeof(T);
+
+    // === ADD DETAILED DIAGNOSTIC OUTPUT HERE ===
+    size_t arenaSize = Arena::thingSize(kind);
+    
+    fprintf(stderr, "\n=== GC Allocation Debug ===\n");
+    fprintf(stderr, "Type name: %s\n", typeid(T).name());
+    fprintf(stderr, "sizeof(T): %zu bytes\n", thingSize);
+    fprintf(stderr, "Arena::thingSize(kind): %zu bytes\n", arenaSize);
+    fprintf(stderr, "CellAlignBytes: %zu bytes\n", CellAlignBytes);
+    fprintf(stderr, "Match: %s\n", (thingSize == arenaSize) ? "YES" : "NO - MISMATCH!");
+    fprintf(stderr, "Size difference: %zd bytes\n", (size_t)thingSize - (size_t)arenaSize);
+    fprintf(stderr, "========================\n\n");
+
     MOZ_ASSERT(thingSize == Arena::thingSize(kind));
 
     if (cx->isJSContext()) {

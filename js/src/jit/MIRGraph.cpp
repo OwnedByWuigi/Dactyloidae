@@ -37,7 +37,7 @@ MIRGenerator::MIRGenerator(CompileCompartment* compartment, const JitCompileOpti
     instrumentedProfiling_(false),
     instrumentedProfilingIsCached_(false),
     safeForMinorGC_(true),
-    stringsCanBeInNursery_(compartment ? compartment->zone()->canNurseryAllocateStrings() : false),
+    stringsCanBeInNursery_(compartment ? GetJitContext()->compartment->zone()->canNurseryAllocateStrings() : false),
     minWasmHeapLength_(0),
     options(options),
     gs_(alloc)
