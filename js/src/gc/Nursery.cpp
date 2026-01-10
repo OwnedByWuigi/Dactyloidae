@@ -822,7 +822,7 @@ js::Nursery::doCollection(JS::gcreason::Reason reason,
     endProfile(ProfileKey::MarkDebugger);
 
     maybeStartProfile(ProfileKey::SweepCaches);
-    rt->contextFromMainThread()->gc.purgeRuntimeForMinorGC();
+    rt->gc.purgeRuntimeForMinorGC();
     maybeEndProfile(ProfileKey::SweepCaches);
 
     // Most of the work is done here. This loop iterates over objects that have
