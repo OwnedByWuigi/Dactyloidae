@@ -9096,7 +9096,7 @@ jit::NeedsPostBarrier(MDefinition* value)
         return false;
     if (value->mightBeType(MIRType::Object))
         return true;
-    if (value->mightBeType(MIRType::String) && runtime->canNurseryAllocateStrings())
+    if (value->mightBeType(MIRType::String) && zone->canNurseryAllocateStrings())
         return true;
     return false;
 }

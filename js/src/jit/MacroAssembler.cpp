@@ -931,6 +931,7 @@ MacroAssembler::allocateString(Register result, Register temp, gc::AllocKind all
 
     freeListAllocate(result, temp, allocKind, fail);
 }
+void
 MacroAssembler::newGCString(Register result, Register temp, Label* fail, bool attemptNursery)
 {
 	allocateString(result, temp, js::gc::AllocKind::STRING,
