@@ -1175,8 +1175,7 @@ BaselineCacheIRCompiler::emitStoreTypedObjectReferenceProperty()
 
     emitStoreTypedObjectReferenceProp(val, type, dest, scratch2);
 
-    if (type != ReferenceTypeDescr::TYPE_STRING)
-        emitPostBarrierSlot(obj, val, scratch1);
+    emitPostBarrierSlot(obj, val, scratch1);
 
     return true;
 }
