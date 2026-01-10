@@ -107,7 +107,7 @@ class TenuringTracer : public JSTracer
 
     inline JSObject* movePlainObjectToTenured(PlainObject* src);
     JSObject* moveToTenuredSlow(JSObject* src);
-	JSString* moveToTenuredSlow(JSString* src);
+	JSString* moveToTenured(JSString* src);
     size_t moveElementsToTenured(NativeObject* dst, NativeObject* src, gc::AllocKind dstKind);
     size_t moveSlotsToTenured(NativeObject* dst, NativeObject* src, gc::AllocKind dstKind);
     size_t moveStringToTenured(JSString* dst, JSString* src, gc::AllocKind dstKind);

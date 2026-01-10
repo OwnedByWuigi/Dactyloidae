@@ -2954,7 +2954,7 @@ IsMarkedInternal(JSRuntime* rt, JSObject** thingp)
     if (IsInsideNursery(*thingp)) {
         MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
 		Cell** cellp = reinterpret_cast<Cell**>(thingp);
-        return rt->gc.nursery.getForwardedPointer(cellp);
+        return Nursery::getForwardedPointer(cellp);
     }
     return IsMarkedInternalCommon(thingp);
 }
