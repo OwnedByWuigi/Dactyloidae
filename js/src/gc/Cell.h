@@ -420,7 +420,8 @@ static MOZ_ALWAYS_INLINE void
 AssertValidToSkipBarrier(TenuredCell* thing)
 {
     MOZ_ASSERT(!IsInsideNursery(thing));
-    MOZ_ASSERT_IF(thing, MapAllocToTraceKind(thing->getAllocKind()) != JS::TraceKind::Object);
+    MOZ_ASSERT_IF(thing, MapAllocToTraceKind(thing->getAllocKind()) != JS::TraceKind::Object &&
+                         MapAllocToTraceKind(thing->getAllocKind()) != JS::TraceKind::String);
 }
 
 /* static */ MOZ_ALWAYS_INLINE void

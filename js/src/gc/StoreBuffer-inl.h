@@ -10,6 +10,7 @@
 
 #include "gc/Cell.h"
 #include "gc/Heap.h"
+#include "gc/Cell.h"
 
 namespace js {
 namespace gc {
