@@ -125,7 +125,148 @@ NativeObject::markDenseElementsNotPacked(ExclusiveContext* cx)
 }
 
 inline void
-NativeObject::ensureDenseInitializedLengthNoPackedCheck(ExclusiveContext* cx, uint32_t index,
+NativeObject::elementsRangeWriteBarrierPost(uint32_t start, uint32_t count)
+{
+    for (size_t i = 0; i < count; i++) {
+        const Value& v = elements_[start + i];
+        if ((v.isObject() || v.isString()) && IsInsideNursery(v.toGCThing())) {
+            zone()->group()->storeBuffer().putSlot(this, HeapSlot::Element,
+                                                   unshiftedIndex(start + i),
+                                                   count - i);
+            return;
+        }
+    }
+}
+
+inline void
+NativeObject::copyDenseElements(uint32_t dstStart, const Value* src, uint32_t count)
+{
+    MOZ_ASSERT(dstStart + count <= getDenseCapacity());
+    MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+    MOZ_ASSERT(!denseElementsAreFrozen());
+#ifdef DEBUG
+    for (uint32_t i = 0; i < count; ++i)
+        checkStoredValue(src[i]);
+#endif
+    if (JS::shadow::Zone::asShadowZone(zone())->needsIncrementalBarrier()) {
+        uint32_t numShifted = getElementsHeader()->numShiftedElements();
+        for (uint32_t i = 0; i < count; ++i) {
+            elements_[dstStart + i].set(this, HeapSlot::Element,
+                                        dstStart + i + numShifted,
+                                        src[i]);
+        }
+    } else {
+        memcpy(&elements_[dstStart], src, count * sizeof(HeapSlot));
+        elementsRangeWriteBarrierPost(dstStart, count);
+    }
+}
+
+inline void
+NativeObject::initDenseElements(uint32_t dstStart, const Value* src, uint32_t count)
+{
+    MOZ_ASSERT(dstStart + count <= getDenseCapacity());
+    MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+    MOZ_ASSERT(!denseElementsAreFrozen());
+#ifdef DEBUG
+    for (uint32_t i = 0; i < count; ++i)
+        checkStoredValue(src[i]);
+#endif
+    memcpy(&elements_[dstStart], src, count * sizeof(HeapSlot));
+    elementsRangeWriteBarrierPost(dstStart, count);
+}
+
+inline bool
+NativeObject::tryShiftDenseElements(uint32_t count)
+{
+    ObjectElements* header = getElementsHeader();
+    if (header->isCopyOnWrite() ||
+        header->isFrozen() ||
+        header->hasNonwritableArrayLength() ||
+        header->initializedLength == count)
+    {
+        return false;
+    }
+
+    shiftDenseElementsUnchecked(count);
+    return true;
+}
+
+inline void
+NativeObject::shiftDenseElementsUnchecked(uint32_t count)
+{
+    ObjectElements* header = getElementsHeader();
+    MOZ_ASSERT(count > 0);
+    MOZ_ASSERT(count < header->initializedLength);
+    MOZ_ASSERT(count <= ObjectElements::MaxShiftedElements);
+
+    if (MOZ_UNLIKELY(header->numShiftedElements() + count > ObjectElements::MaxShiftedElements)) {
+        moveShiftedElements();
+        header = getElementsHeader();
+    }
+
+    prepareElementRangeForOverwrite(0, count);
+    header->addShiftedElements(count);
+
+    elements_ += count;
+    ObjectElements* newHeader = getElementsHeader();
+    memmove(newHeader, header, sizeof(ObjectElements));
+}
+
+inline void
+NativeObject::moveDenseElements(uint32_t dstStart, uint32_t srcStart, uint32_t count)
+{
+    MOZ_ASSERT(dstStart + count <= getDenseCapacity());
+    MOZ_ASSERT(srcStart + count <= getDenseInitializedLength());
+    MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+    MOZ_ASSERT(!denseElementsAreFrozen());
+
+    /*
+     * Using memmove here would skip write barriers. Also, we need to consider
+     * an array containing [A, B, C], in the following situation:
+     *
+     * 1. Incremental GC marks slot 0 of array (i.e., A), then returns to JS code.
+     * 2. JS code moves slots 1..2 into slots 0..1, so it contains [B, C, C].
+     * 3. Incremental GC finishes by marking slots 1 and 2 (i.e., C).
+     *
+     * Since normal marking never happens on B, it is very important that the
+     * write barrier is invoked here on B, despite the fact that it exists in
+     * the array before and after the move.
+     */
+    if (JS::shadow::Zone::asShadowZone(zone())->needsIncrementalBarrier()) {
+        uint32_t numShifted = getElementsHeader()->numShiftedElements();
+        if (dstStart < srcStart) {
+            HeapSlot* dst = elements_ + dstStart;
+            HeapSlot* src = elements_ + srcStart;
+            for (uint32_t i = 0; i < count; i++, dst++, src++)
+                dst->set(this, HeapSlot::Element, dst - elements_ + numShifted, *src);
+        } else {
+            HeapSlot* dst = elements_ + dstStart + count - 1;
+            HeapSlot* src = elements_ + srcStart + count - 1;
+            for (uint32_t i = 0; i < count; i++, dst--, src--)
+                dst->set(this, HeapSlot::Element, dst - elements_ + numShifted, *src);
+        }
+    } else {
+        memmove(elements_ + dstStart, elements_ + srcStart, count * sizeof(HeapSlot));
+        elementsRangeWriteBarrierPost(dstStart, count);
+    }
+}
+
+inline void
+NativeObject::moveDenseElementsNoPreBarrier(uint32_t dstStart, uint32_t srcStart, uint32_t count)
+{
+    MOZ_ASSERT(!shadowZone()->needsIncrementalBarrier());
+
+    MOZ_ASSERT(dstStart + count <= getDenseCapacity());
+    MOZ_ASSERT(srcStart + count <= getDenseCapacity());
+    MOZ_ASSERT(!denseElementsAreCopyOnWrite());
+    MOZ_ASSERT(!denseElementsAreFrozen());
+
+    memmove(elements_ + dstStart, elements_ + srcStart, count * sizeof(Value));
+    elementsRangeWriteBarrierPost(dstStart, count);
+}
+
+inline void
+NativeObject::ensureDenseInitializedLengthNoPackedCheck(JSContext* cx, uint32_t index,
                                                         uint32_t extra)
 {
     MOZ_ASSERT(!denseElementsAreCopyOnWrite());
