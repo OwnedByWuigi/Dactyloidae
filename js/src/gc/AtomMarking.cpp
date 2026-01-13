@@ -95,8 +95,9 @@ AtomMarkingRuntime::computeBitmapFromChunkMarkBits(JSRuntime* runtime, DenseBitm
 }
 
 void
-AtomMarkingRuntime::updateZoneBitmap(Zone* zone, const DenseBitmap& bitmap)
+AtomMarkingRuntime::refineZoneBitmapForCollectedZone(Zone* zone, const DenseBitmap& bitmap)
 {
+    MOZ_ASSERT(zone->isCollectingFromAnyThread());
     if (zone->isAtomsZone())
         return;
 
@@ -109,7 +110,7 @@ AtomMarkingRuntime::updateZoneBitmap(Zone* zone, const DenseBitmap& bitmap)
 // Set any bits in the chunk mark bitmaps for atoms which are marked in bitmap.
 template <typename Bitmap>
 static void
-AddBitmapToChunkMarkBits(JSRuntime* runtime, Bitmap& bitmap)
+BitwiseOrIntoChunkMarkBits(JSRuntime* runtime, Bitmap& bitmap)
 {
     // Make sure that by copying the mark bits for one arena in word sizes we
     // do not affect the mark bits for other arenas.
@@ -127,7 +128,7 @@ AddBitmapToChunkMarkBits(JSRuntime* runtime, Bitmap& bitmap)
 }
 
 void
-AtomMarkingRuntime::updateChunkMarkBits(JSRuntime* runtime)
+AtomMarkingRuntime::markAtomsUsedByUncollectedZones(JSRuntime* runtime)
 {
     MOZ_ASSERT(runtime->currentThreadHasExclusiveAccess());
 
@@ -143,11 +144,11 @@ AtomMarkingRuntime::updateChunkMarkBits(JSRuntime* runtime)
             if (!zone->isCollectingFromAnyThread())
                 zone->markedAtoms().bitwiseOrInto(markedUnion);
         }
-        AddBitmapToChunkMarkBits(runtime, markedUnion);
+        BitwiseOrIntoChunkMarkBits(runtime, markedUnion);
     } else {
         for (ZonesIter zone(runtime, SkipAtoms); !zone.done(); zone.next()) {
             if (!zone->isCollectingFromAnyThread())
-                AddBitmapToChunkMarkBits(runtime, zone->markedAtoms());
+                BitwiseOrIntoChunkMarkBits(runtime, zone->markedAtoms());
         }
     }
 }
@@ -211,6 +212,21 @@ AtomMarkingRuntime::atomIsMarked(Zone* zone, T* thing)
 
     MOZ_ASSERT(thing);
     MOZ_ASSERT(!IsInsideNursery(thing));
+    
+        if (!thing->zoneFromAnyThread()->isAtomsZone()) {
+        js::gc::AllocKind kind = thing->asTenured().getAllocKind();
+        
+        fprintf(stderr, "WRONG ZONE: ptr=%p kind=%d ", (void*)thing, (int)kind);
+        
+        if (kind == js::gc::AllocKind::SYMBOL || (int)kind == 29) {
+            JS::Symbol* sym = reinterpret_cast<JS::Symbol*>(thing);
+            fprintf(stderr, "SYMBOL code=%u", (unsigned int)sym->code());
+        }
+        
+        fprintf(stderr, "\n");
+        fflush(stderr);
+    }
+    
     MOZ_ASSERT(thing->zoneFromAnyThread()->isAtomsZone());
 
     if (!zone->runtimeFromAnyThread()->permanentAtoms)

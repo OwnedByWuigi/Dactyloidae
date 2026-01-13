@@ -946,7 +946,8 @@ const char* gc::ZealModeHelpText =
     "   14: (Compact) Perform a shrinking collection every N allocations\n"
     "   15: (CheckHeapAfterGC) Walk the heap to check its integrity after every GC\n"
     "   16: (CheckNursery) Check nursery integrity on minor GC\n"
-    "   17: (IncrementalSweepThenFinish) Incremental GC in two slices: 1) start sweeping 2) finish collection\n";
+    "   17: (IncrementalSweepThenFinish) Incremental GC in two slices: 1) start sweeping 2) finish collection\n"
+    "   18: (CheckGrayMarking) Check gray marking invariants after every GC\n";
 
 // The set of zeal modes that control incremental slices. These modes are
 // mutually exclusive.
@@ -5014,11 +5015,17 @@ class SweepWeakCacheTask : public GCSweepTask<SweepWeakCacheTask>
     }
 };
 
-#define MAKE_GC_SWEEP_TASK(name)                                              \
-    class name : public GCSweepTask<name> {                                   \
-      public:                                                                 \
-        void run();                                                           \
-        explicit name (JSRuntime* rt) : GCSweepTask(rt) {}                    \
+static void
+UpdateAtomsBitmap(JSRuntime* runtime)
+{
+    DenseBitmap marked;
+    if (runtime->gc.atomMarking.computeBitmapFromChunkMarkBits(runtime, marked)) {
+        for (GCZonesIter zone(runtime); !zone.done(); zone.next())
+            runtime->gc.atomMarking.refineZoneBitmapForCollectedZone(zone, marked);
+    } else {
+        // Ignore OOM in computeBitmapFromChunkMarkBits. The
+        // refineZoneBitmapForCollectedZone call can only remove atoms from the
+        // zone bitmap, so it is conservative to just not call it.
     }
 MAKE_GC_SWEEP_TASK(SweepAtomsTask);
 MAKE_GC_SWEEP_TASK(SweepCCWrappersTask);
@@ -5029,10 +5036,11 @@ MAKE_GC_SWEEP_TASK(SweepRegExpsTask);
 MAKE_GC_SWEEP_TASK(SweepMiscTask);
 #undef MAKE_GC_SWEEP_TASK
 
-/* virtual */ void
-SweepAtomsTask::run()
-{
-    runtime->sweepAtoms();
+    runtime->gc.atomMarking.markAtomsUsedByUncollectedZones(runtime);
+
+    // For convenience sweep these tables non-incrementally as part of bitmap
+    // sweeping; they are likely to be much smaller than the main atoms table.
+    runtime->unsafeSymbolRegistry().sweep();
     for (CompartmentsIter comp(runtime, SkipAtoms); !comp.done(); comp.next())
         comp->sweepVarNames();
 }
@@ -5340,6 +5348,14 @@ GCRuntime::beginSweepingSweepGroup(FreeOp* fop, SliceBudget& budget)
             }
         }
     }
+	
+	// Updating the atom marking bitmaps. This marks atoms referenced by
+    // uncollected zones so cannot be done in parallel with the other sweeping
+    // work below.
+    if (sweepingAtoms) {
+        AutoPhase ap(stats(), PHASE_UPDATE_ATOMS_BITMAP);
+        UpdateAtomsBitmap(rt);
+    }
 
     if (sweepingAtoms) {
         AutoLockHelperThreadState helperLock;
@@ -5348,10 +5364,6 @@ GCRuntime::beginSweepingSweepGroup(FreeOp* fop, SliceBudget& budget)
 
     {
         AutoLockHelperThreadState lock;
-
-        Maybe<AutoRunParallelTask> updateAtomsBitmap;
-        if (sweepingAtoms)
-            updateAtomsBitmap.emplace(rt, UpdateAtomsBitmap, PHASE_UPDATE_ATOMS_BITMAP, lock);
 
         AutoPhase ap(stats(), PHASE_SWEEP_COMPARTMENTS);
         AutoSCC scc(stats(), sweepGroupIndex);

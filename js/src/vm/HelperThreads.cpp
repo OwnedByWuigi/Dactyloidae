@@ -137,8 +137,9 @@ GetSelectorRuntime(CompilationSelector selector)
 {
     struct Matcher
     {
-        JSRuntime* match(JSScript* script)    { return script->runtimeFromMainThread(); }
-        JSRuntime* match(JSCompartment* comp) { return comp->runtimeFromMainThread(); }
+        JSRuntime* match(JSScript* script)    { return script->runtimeFromActiveCooperatingThread(); }
+        JSRuntime* match(JSCompartment* comp) { return comp->runtimeFromActiveCooperatingThread(); }
+        JSRuntime* match(Zone* zone)          { return zone->runtimeFromActiveCooperatingThread(); }
         JSRuntime* match(ZonesInState zbs)    { return zbs.runtime; }
         JSRuntime* match(JSRuntime* runtime)  { return runtime; }
         JSRuntime* match(AllCompilations all) { return nullptr; }
@@ -154,8 +155,9 @@ JitDataStructuresExist(CompilationSelector selector)
     {
         bool match(JSScript* script)    { return !!script->compartment()->jitCompartment(); }
         bool match(JSCompartment* comp) { return !!comp->jitCompartment(); }
-        bool match(ZonesInState zbs)    { return !!zbs.runtime->jitRuntime(); }
-        bool match(JSRuntime* runtime)  { return !!runtime->jitRuntime(); }
+        bool match(Zone* zone)          { return !!zone->jitZone(); }
+        bool match(ZonesInState zbs)    { return zbs.runtime->hasJitRuntime(); }
+        bool match(JSRuntime* runtime)  { return runtime->hasJitRuntime(); }
         bool match(AllCompilations all) { return true; }
     };
 
@@ -169,9 +171,10 @@ CompiledScriptMatches(CompilationSelector selector, JSScript* target)
     {
         JSScript* target_;
 
-        bool match(JSScript* script)    { return script == target_; }
-        bool match(JSCompartment* comp) { return comp == target_->compartment(); }
-        bool match(JSRuntime* runtime)  { return runtime == target_->runtimeFromAnyThread(); }
+        bool match(JSScript* script)    { return script == builder_->script(); }
+        bool match(JSCompartment* comp) { return comp == builder_->script()->compartment(); }
+        bool match(Zone* zone)          { return zone == builder_->script()->zone(); }
+        bool match(JSRuntime* runtime)  { return runtime == builder_->script()->runtimeFromAnyThread(); }
         bool match(AllCompilations all) { return true; }
         bool match(ZonesInState zbs)    {
             return zbs.runtime == target_->runtimeFromAnyThread() &&

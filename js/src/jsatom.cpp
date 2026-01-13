@@ -276,6 +276,30 @@ AtomIsPinned(JSContext* cx, JSAtom* atom)
     return p->isPinned();
 }
 
+#ifdef DEBUG
+
+bool
+AtomIsPinnedInRuntime(JSRuntime* rt, JSAtom* atom)
+{
+    Maybe<AutoLockForExclusiveAccess> lock;
+    if (!rt->currentThreadHasExclusiveAccess())
+        lock.emplace(rt);
+
+    AtomHasher::Lookup lookup(atom);
+
+    AtomSet::Ptr p = LookupAtomState(rt, lookup);
+    MOZ_ASSERT(p);
+
+    return p->isPinned();
+}
+
+#endif // DEBUG
+
+template <typename CharT>
+MOZ_ALWAYS_INLINE
+static JSAtom*
+AtomizeAndCopyCharsInner(JSContext* cx, const CharT* tbchars, size_t length, PinningBehavior pin,
+                         const AtomHasher::Lookup& lookup);
 /* |tbchars| must not point into an inline or short string. */
 template <typename CharT>
 MOZ_ALWAYS_INLINE
@@ -286,6 +310,24 @@ AtomizeAndCopyChars(ExclusiveContext* cx, const CharT* tbchars, size_t length, P
          return s;
 
     AtomHasher::Lookup lookup(tbchars, length);
+
+    // Try the per-Zone cache first. If we find the atom there we can avoid the
+    // atoms lock, the markAtom call, and the multiple HashSet lookups below.
+    // We don't use the per-Zone cache if we want a pinned atom: handling that
+    // is more complicated and pinning atoms is relatively uncommon.
+    Zone* zone = cx->zone();
+    Maybe<AtomSet::AddPtr> zonePtr;
+    if (MOZ_LIKELY(zone && pin == DoNotPinAtom)) {
+        zonePtr.emplace(zone->atomCache().lookupForAdd(lookup));
+        if (zonePtr.ref()) {
+            // The cache is purged on GC so if we're in the middle of an
+            // incremental GC we should have barriered the atom when we put
+            // it in the cache.
+            JSAtom* atom = zonePtr.ref()->asPtrUnbarriered();
+            MOZ_ASSERT(AtomIsMarked(zone, atom));
+            return atom;
+        }
+    }
 
     // Note: when this function is called while the permanent atoms table is
     // being initialized (in initializeAtoms()), |permanentAtoms| is not yet
@@ -298,6 +340,29 @@ AtomizeAndCopyChars(ExclusiveContext* cx, const CharT* tbchars, size_t length, P
             return pp->asPtr(cx);
     }
 
+    // Validate the length before taking the exclusive access lock, as throwing
+    // an exception here may reenter this code.
+    if (MOZ_UNLIKELY(!JSString::validateLength(cx, length)))
+        return nullptr;
+
+    JSAtom* atom = AtomizeAndCopyCharsInner(cx, tbchars, length, pin, lookup);
+    if (!atom)
+        return nullptr;
+
+    cx->atomMarking().inlinedMarkAtom(cx, atom);
+
+    if (zonePtr)
+        mozilla::Unused << zone->atomCache().add(*zonePtr, AtomStateEntry(atom, false));
+
+    return atom;
+}
+
+template <typename CharT>
+MOZ_ALWAYS_INLINE
+static JSAtom*
+AtomizeAndCopyCharsInner(JSContext* cx, const CharT* tbchars, size_t length, PinningBehavior pin,
+                          const AtomHasher::Lookup& lookup)
+{
     AutoLockForExclusiveAccess lock(cx);
 
     AtomSet& atoms = cx->atoms(lock);
@@ -308,7 +373,9 @@ AtomizeAndCopyChars(ExclusiveContext* cx, const CharT* tbchars, size_t length, P
         return atom;
     }
 
-    AutoCompartment ac(cx, cx->atomsCompartment(lock), &lock);
+    JSAtom* atom;
+    {
+        AutoAtomsCompartment ac(cx, lock);
 
     JSFlatString* flat = NewStringCopyN<NoGC>(cx, tbchars, length);
     if (!flat) {
@@ -329,7 +396,6 @@ AtomizeAndCopyChars(ExclusiveContext* cx, const CharT* tbchars, size_t length, P
         ReportOutOfMemory(cx); /* SystemAllocPolicy does not report OOM. */
         return nullptr;
     }
-
     return atom;
 }
 

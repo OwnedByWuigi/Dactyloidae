@@ -444,6 +444,7 @@ struct ZonesInState { JSRuntime* runtime; JS::Zone::GCState state; };
 
 using CompilationSelector = mozilla::Variant<JSScript*,
                                              JSCompartment*,
+											 Zone*,
                                              ZonesInState,
                                              JSRuntime*,
                                              AllCompilations>;
@@ -464,6 +465,12 @@ inline void
 CancelOffThreadIonCompile(JSCompartment* comp)
 {
     CancelOffThreadIonCompile(CompilationSelector(comp), true);
+}
+
+inline void
+CancelOffThreadIonCompile(Zone* zone)
+{
+    CancelOffThreadIonCompile(CompilationSelector(zone), true);
 }
 
 inline void
