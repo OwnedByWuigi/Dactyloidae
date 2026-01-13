@@ -1713,8 +1713,7 @@ Evaluate(JSContext* cx, unsigned argc, Value* vp)
            .setFileAndLine("@evaluate", 1);
 
     global = JS_GetGlobalForObject(cx, &args.callee());
-    if (!global)
-        return false;
+    MOZ_ASSERT(global);
 
     if (args.length() == 2) {
         RootedObject opts(cx, &args[1].toObject());
@@ -1752,6 +1751,41 @@ Evaluate(JSContext* cx, unsigned argc, Value* vp)
                                           "\"global\" passed to evaluate()", "not a global object");
                 return false;
             }
+        }
+		
+		if (!JS_GetProperty(cx, opts, "zoneGroup", &v))
+            return false;
+        if (!v.isUndefined()) {
+            if (global != JS_GetGlobalForObject(cx, &args.callee())) {
+                JS_ReportErrorASCII(cx, "zoneGroup and global cannot both be specified.");
+                return false;
+            }
+
+            // Find all eligible globals to execute in: any global in another
+            // zone group which has not been entered by a cooperative thread.
+            JS::AutoObjectVector eligibleGlobals(cx);
+            for (CompartmentsIter c(cx->runtime(), SkipAtoms); !c.done(); c.next()) {
+                if (!c->zone()->group()->ownerContext().context() &&
+                    c->maybeGlobal() &&
+                    !cx->runtime()->isSelfHostingGlobal(c->maybeGlobal()))
+                {
+                    if (!eligibleGlobals.append(c->maybeGlobal()))
+                        return false;
+                }
+            }
+
+            if (eligibleGlobals.empty()) {
+                JS_ReportErrorASCII(cx, "zoneGroup can only be used if another"
+                                    " cooperative thread has called cooperativeYield(true).");
+                return false;
+            }
+
+            // Pick an eligible global to use based on the value of the zoneGroup property.
+            int32_t which;
+            if (!ToInt32(cx, v, &which))
+                return false;
+            which = Min<int32_t>(Max(which, 0), eligibleGlobals.length() - 1);
+            global = eligibleGlobals[which];
         }
 
         if (!JS_GetProperty(cx, opts, "catchTermination", &v))
@@ -3440,6 +3474,137 @@ EvalInContext(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+struct CooperationState
+{
+    CooperationState()
+      : lock(mutexid::ShellThreadCooperation)
+      , idle(false)
+      , numThreads(0)
+      , yieldCount(0)
+      , singleThreaded(false)
+    {}
+
+    Mutex lock;
+    ConditionVariable cvar;
+    bool idle;
+    size_t numThreads;
+    uint64_t yieldCount;
+    bool singleThreaded;
+};
+static CooperationState* cooperationState = nullptr;
+
+static void
+CooperativeBeginWait(JSContext* cx)
+{
+    MOZ_ASSERT(cx == TlsContext.get());
+    JS_YieldCooperativeContext(cx);
+}
+
+static void
+CooperativeEndWait(JSContext* cx)
+{
+    MOZ_ASSERT(cx == TlsContext.get());
+    LockGuard<Mutex> lock(cooperationState->lock);
+
+    cooperationState->cvar.wait(lock, [&] { return cooperationState->idle; });
+
+    JS_ResumeCooperativeContext(cx);
+    cooperationState->idle = false;
+    cooperationState->yieldCount++;
+    cooperationState->cvar.notify_all();
+}
+
+static void
+CooperativeYield()
+{
+    LockGuard<Mutex> lock(cooperationState->lock);
+    MOZ_ASSERT(!cooperationState->idle);
+    cooperationState->idle = true;
+    cooperationState->cvar.notify_all();
+
+    // Wait until another thread takes over control before returning, if there
+    // is another thread to do so.
+    if (cooperationState->numThreads) {
+        uint64_t count = cooperationState->yieldCount;
+        cooperationState->cvar.wait(lock, [&] { return cooperationState->yieldCount != count; });
+    }
+}
+
+static bool
+CooperativeYieldThread(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (!cx->runtime()->gc.canChangeActiveContext(cx)) {
+        JS_ReportErrorASCII(cx, "Cooperating multithreading context switches are not currently allowed");
+        return false;
+    }
+
+    if (GetShellContext(cx)->isWorker) {
+        JS_ReportErrorASCII(cx, "Worker threads cannot yield");
+        return false;
+    }
+
+    if (cooperationState->singleThreaded) {
+        JS_ReportErrorASCII(cx, "Yielding is not allowed while single threaded");
+        return false;
+    }
+    // To avoid contention issues between threads, yields are not allowed while
+    // a thread has access to zone groups other than its original one, i.e. if
+    // the thread is inside an evaluate() call with a different zone group.
+    // This is not a limit which the browser has, but is necessary in the
+    // shell: the shell can have arbitrary interleavings between cooperative
+    // threads, whereas the browser has more control over which threads are
+    // running at different times.
+    for (ZoneGroupsIter group(cx->runtime()); !group.done(); group.next()) {
+        if (group->ownerContext().context() == cx && group != cx->zone()->group()) {
+            JS_ReportErrorASCII(cx, "Yielding is not allowed while owning multiple zone groups");
+            return false;
+        }
+    }
+
+    {
+        Maybe<JS::AutoRelinquishZoneGroups> artzg;
+        if ((args.length() > 0) && ToBoolean(args[0]))
+            artzg.emplace(cx);
+
+        CooperativeBeginWait(cx);
+        CooperativeYield();
+        CooperativeEndWait(cx);
+    }
+
+    args.rval().setUndefined();
+    return true;
+}
+
+static void
+CooperativeBeginSingleThreadedExecution(JSContext* cx)
+{
+    MOZ_ASSERT(!cooperationState->singleThreaded);
+
+    // Yield until all other threads have exited any zone groups they are in.
+    while (true) {
+        bool done = true;
+        for (ZoneGroupsIter group(cx->runtime()); !group.done(); group.next()) {
+            if (!group->ownedByCurrentThread() && group->ownerContext().context())
+                done = false;
+        }
+        if (done)
+            break;
+        CooperativeBeginWait(cx);
+        CooperativeYield();
+        CooperativeEndWait(cx);
+    }
+
+    cooperationState->singleThreaded = true;
+}
+
+static void
+CooperativeEndSingleThreadedExecution(JSContext* cx)
+{
+    if (cooperationState)
+        cooperationState->singleThreaded = false;
+}
 struct WorkerInput
 {
     JSContext* context;
@@ -6270,6 +6435,16 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
     JS_FN_HELP("evalInWorker", EvalInWorker, 1, 0,
 "evalInWorker(str)",
 "  Evaluate 'str' in a separate thread with its own runtime.\n"),
+
+   JS_FN_HELP("evalInCooperativeThread", EvalInCooperativeThread, 1, 0,
+"evalInCooperativeThread(str)",
+"  Evaluate 'str' in a separate cooperatively scheduled thread using the same runtime.\n"),
+
+    JS_FN_HELP("cooperativeYield", CooperativeYieldThread, 1, 0,
+"cooperativeYield(leaveZoneGroup)",
+"  Yield execution to another cooperatively scheduled thread using the same runtime.\n"
+"  If leaveZoneGroup is specified then other threads may execute code in the\n"
+"  current thread's zone group via evaluate(..., {zoneGroup:N}).\n"),
 
     JS_FN_HELP("getSharedArrayBuffer", GetSharedArrayBuffer, 0, 0,
 "getSharedArrayBuffer()",

@@ -329,8 +329,16 @@ Wrapper::wrappedObject(JSObject* wrapper)
 {
     MOZ_ASSERT(wrapper->is<WrapperObject>());
     JSObject* target = wrapper->as<ProxyObject>().target();
-    if (target)
-        JS::ExposeObjectToActiveJS(target);
+    // Eagerly unmark gray wrapper targets so we can assert that we don't create
+    // black to gray edges. An incremental GC will eventually mark the targets
+    // of black wrappers black but while it is in progress we can observe gray
+    // targets. Expose rather than returning a gray object in this case.
+    if (target) {
+        if (wrapper->isMarkedAny() && !wrapper->isMarkedGray())
+            MOZ_ASSERT(JS::ObjectIsNotGray(target));
+        if (!wrapper->isMarkedGray())
+            JS::ExposeObjectToActiveJS(target);
+    }
     return target;
 }
 

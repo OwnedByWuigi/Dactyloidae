@@ -1242,9 +1242,13 @@ MarkActiveBaselineScripts(JSRuntime* rt, const JitActivationIterator& activation
 void
 jit::MarkActiveBaselineScripts(Zone* zone)
 {
-    JSRuntime* rt = zone->runtimeFromMainThread();
-    for (JitActivationIterator iter(rt); !iter.done(); ++iter) {
-        if (iter->compartment()->zone() == zone)
-            MarkActiveBaselineScripts(rt, iter);
+    if (zone->isAtomsZone())
+        return;
+    JSContext* cx = TlsContext.get();
+    for (const CooperatingContext& target : cx->runtime()->cooperatingContexts()) {
+        for (JitActivationIterator iter(cx, target); !iter.done(); ++iter) {
+            if (iter->compartment()->zone() == zone)
+                MarkActiveBaselineScripts(cx, iter);
+        }
     }
 }

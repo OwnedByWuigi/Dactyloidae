@@ -1,4 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sw=4 et tw=78:
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -198,7 +199,7 @@ class Nursery
      * sets |*ref| to the new location of the object and returns true. Otherwise
      * returns false and leaves |*ref| unset.
      */
-    MOZ_ALWAYS_INLINE MOZ_MUST_USE bool getForwardedPointer(JSObject** ref) const;
+    MOZ_ALWAYS_INLINE [[nodiscard]] static bool getForwardedPointer(JSObject** ref);
 
     /* Forward a slots/elements pointer stored in an Ion frame. */
     void forwardBufferPointer(HeapSlot** pSlotsElems);
@@ -244,7 +245,6 @@ class Nursery
 
     // Free space remaining, not counting chunk trailers.
     MOZ_ALWAYS_INLINE size_t freeSpace() const {
-        MOZ_ASSERT(isEnabled());
         MOZ_ASSERT(currentEnd_ - position_ <= NurseryChunkUsableSize);
         return (currentEnd_ - position_) +
                (numChunks() - currentChunk_ - 1) * NurseryChunkUsableSize;
@@ -252,6 +252,17 @@ class Nursery
 
     /* Print total profile times on shutdown. */
     void printTotalProfileTimes();
+
+    void* addressOfCurrentEnd() const { return (void*)&currentEnd_; }
+    void* addressOfPosition() const { return (void*)&position_; }
+
+    void requestMinorGC(JS::gcreason::Reason reason) const;
+
+    bool minorGCRequested() const { return minorGCTriggerReason_ != JS::gcreason::NO_REASON; }
+    JS::gcreason::Reason minorGCTriggerReason() const { return minorGCTriggerReason_; }
+    void clearMinorGCRequest() { minorGCTriggerReason_ = JS::gcreason::NO_REASON; }
+
+    bool enableProfiling() const { return enableProfiling_; }
 
   private:
     /* The amount of space in the mapped nursery available to allocations. */
@@ -324,12 +335,18 @@ class Nursery
     ProfileTimes totalTimes_;
     uint64_t minorGcCount_;
 
+    struct {
+        JS::gcreason::Reason reason;
+        uint64_t nurseryUsedBytes;
+        uint64_t tenuredBytes;
+    } previousGC;
+
     /*
      * The set of externally malloced buffers potentially kept live by objects
      * stored in the nursery. Any external buffers that do not belong to a
      * tenured thing at the end of a minor GC must be freed.
      */
-    typedef HashSet<void*, PointerHasher<void*, 3>, SystemAllocPolicy> MallocedBuffersSet;
+    typedef HashSet<void*, PointerHasher<void*>, SystemAllocPolicy> MallocedBuffersSet;
     MallocedBuffersSet mallocedBuffers;
 
     /* A task structure used to free the malloced bufers on a background thread. */
@@ -343,7 +360,7 @@ class Nursery
      * buffers might overlap each other. For these, an entry in the following
      * table is used.
      */
-    typedef HashMap<void*, void*, PointerHasher<void*, 1>, SystemAllocPolicy> ForwardedBufferMap;
+    typedef HashMap<void*, void*, PointerHasher<void*>, SystemAllocPolicy> ForwardedBufferMap;
     ForwardedBufferMap forwardedBuffers;
 
     /*
@@ -421,7 +438,7 @@ class Nursery
 
     void setSlotsForwardingPointer(HeapSlot* oldSlots, HeapSlot* newSlots, uint32_t nslots);
     void setElementsForwardingPointer(ObjectElements* oldHeader, ObjectElements* newHeader,
-                                      uint32_t nelems);
+                                      uint32_t capacity);
 
     /* Free malloced pointers owned by freed things in the nursery. */
     void freeMallocedBuffers();
@@ -438,16 +455,13 @@ class Nursery
     /* Change the allocable space provided by the nursery. */
     void maybeResizeNursery(JS::gcreason::Reason reason, double promotionRate);
     void growAllocableSpace();
-    void shrinkAllocableSpace();
+    void shrinkAllocableSpace(unsigned removeNumChunks);
     void minimizeAllocableSpace();
 
     /* Profile recording and printing. */
     void startProfile(ProfileKey key);
     void endProfile(ProfileKey key);
-    void maybeStartProfile(ProfileKey key);
-    void maybeEndProfile(ProfileKey key);
-    static void printProfileHeader();
-    static void printProfileTimes(const ProfileTimes& times);
+    static void printProfileDurations(const ProfileDurations& times);
 
     friend class TenuringTracer;
     friend class gc::MinorCollectionTracer;

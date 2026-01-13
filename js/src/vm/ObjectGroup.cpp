@@ -412,12 +412,9 @@ struct ObjectGroupCompartment::NewEntry
     }
 
     static inline HashNumber hash(const Lookup& lookup) {
-        MOZ_ASSERT(lookup.proto.hasUniqueId());
-        MOZ_ASSERT(lookup.hasAssocId());
-        HashNumber hash = uintptr_t(lookup.clasp);
-        hash = mozilla::RotateLeft(hash, 4) ^ Zone::UniqueIdToHash(lookup.proto.uniqueId());
-        hash = mozilla::RotateLeft(hash, 4) ^ Zone::UniqueIdToHash(lookup.getAssocId());
-        return hash;
+        HashNumber hash = MovableCellHasher<TaggedProto>::hash(lookup.proto);
+        hash = mozilla::AddToHash(hash, MovableCellHasher<JSObject*>::hash(lookup.associated));
+        return mozilla::AddToHash(hash, mozilla::HashGeneric(lookup.clasp));
     }
 
     static inline bool match(const ObjectGroupCompartment::NewEntry& key, const Lookup& lookup) {
@@ -1116,8 +1113,8 @@ struct ObjectGroupCompartment::PlainObjectKey
     };
 
     static inline HashNumber hash(const Lookup& lookup) {
-        return (HashNumber) (HashId(lookup.properties[lookup.nproperties - 1].id) ^
-                             lookup.nproperties);
+        HashNumber hash = HashId(lookup.properties[lookup.nproperties - 1].id);
+           return mozilla::AddToHash(hash, lookup.nproperties);
     }
 
     static inline bool match(const PlainObjectKey& v, const Lookup& lookup) {

@@ -1,4 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -253,8 +254,8 @@ GCRuntime::checkIncrementalZoneState(ExclusiveContext* cx, T* t)
     if (!cx->isJSContext())
         return;
 
-    Zone* zone = cx->asJSContext()->zone();
-    MOZ_ASSERT_IF(t && zone->wasGCStarted() && (zone->shouldMarkInZone() || zone->isGCSweeping()),
+    Zone* zone = cx->zone();
+    MOZ_ASSERT_IF(t && zone->wasGCStarted() && (zone->isGCMarking() || zone->isGCSweeping()),
                   t->asTenured().arena()->allocatedDuringIncremental);
 #endif
 }

@@ -1,4 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sts=4 et sw=4 tw=99:
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,23 +29,31 @@ JS::Zone::Zone(JSRuntime* rt)
     suppressAllocationMetadataBuilder(false),
     arenas(rt),
     types(this),
-    compartments(),
-    gcGrayRoots(),
-    gcWeakKeys(SystemAllocPolicy(), rt->randomHashCodeScrambler()),
-    typeDescrObjects(this, SystemAllocPolicy()),
-    gcMallocBytes(0),
-    gcMallocGCTriggered(false),
+    gcWeakMapList_(group),
+    compartments_(),
+    gcGrayRoots_(group),
+    gcWeakRefs_(group),
+    weakCaches_(group),
+    gcWeakKeys_(group, SystemAllocPolicy(), rt->randomHashCodeScrambler()),
+    gcSweepGroupEdges_(group),
+    typeDescrObjects_(group, this),
+    regExps(this),
+    markedAtoms_(group),
+    atomCache_(group),
+    externalStringCache_(group),
+    functionToStringCache_(group),
     usage(&rt->gc.usage),
     gcDelayBytes(0),
-    propertyTree(this),
-    baseShapes(this, BaseShapeSet()),
-    initialShapes(this, InitialShapeSet()),
-    data(nullptr),
-    isSystem(false),
-    usedByExclusiveThread(false),
-    active(false),
-    jitZone_(nullptr),
-    gcState_(NoGC),
+    propertyTree_(group, this),
+    baseShapes_(group, this),
+    initialShapes_(group, this),
+    nurseryShapes_(group),
+    data(group, nullptr),
+    isSystem(group, false),
+#ifdef DEBUG
+    gcLastSweepGroupIndex(group, 0),
+#endif
+    jitZone_(group, nullptr),
     gcScheduled_(false),
     gcPreserveCode_(false),
     jitUsingBarriers_(false),
@@ -58,6 +67,7 @@ JS::Zone::Zone(JSRuntime* rt)
     AutoLockGC lock(rt);
     threshold.updateAfterGC(8192, GC_NORMAL, rt->gc.tunables, rt->gc.schedulingState, lock);
     setGCMaxMallocBytes(rt->gc.maxMallocBytesAllocated() * 0.9);
+    jitCodeCounter.setMax(jit::MaxCodeBytesPerProcess * 0.8);
 }
 
 Zone::~Zone()
@@ -79,10 +89,13 @@ Zone::~Zone()
 bool Zone::init(bool isSystemArg)
 {
     isSystem = isSystemArg;
-    return uniqueIds_.init() &&
-           gcZoneGroupEdges.init() &&
-           gcWeakKeys.init() &&
-           typeDescrObjects.init();
+    return uniqueIds().init() &&
+           gcSweepGroupEdges().init() &&
+           gcWeakKeys().init() &&
+           typeDescrObjects().init() &&
+           markedAtoms().init() &&
+           atomCache().init() &&
+           regExps.init();
 }
 
 void
@@ -179,13 +192,13 @@ Zone::sweepBreakpoints(FreeOp* fop)
                 GCPtrNativeObject& dbgobj = bp->debugger->toJSObjectRef();
 
                 // If we are sweeping, then we expect the script and the
-                // debugger object to be swept in the same zone group, except if
-                // the breakpoint was added after we computed the zone
+                // debugger object to be swept in the same sweep group, except
+                // if the breakpoint was added after we computed the sweep
                 // groups. In this case both script and debugger object must be
                 // live.
                 MOZ_ASSERT_IF(isGCSweeping() && dbgobj->zone()->isCollecting(),
                               dbgobj->zone()->isGCSweeping() ||
-                              (!scriptGone && dbgobj->asTenured().isMarked()));
+                              (!scriptGone && dbgobj->asTenured().isMarkedAny()));
 
                 bool dying = scriptGone || IsAboutToBeFinalized(&dbgobj);
                 MOZ_ASSERT_IF(!dying, !IsAboutToBeFinalized(&bp->getHandlerRef()));
@@ -230,12 +243,13 @@ Zone::discardJitCode(FreeOp* fop, bool discardBaselineCode)
         for (auto script = cellIter<JSScript>(); !script.done(); script.next())  {
             jit::FinishInvalidation(fop, script);
 
-            /*
-             * Discard baseline script if it's not marked as active. Note that
-             * this also resets the active flag.
-             */
-            if (discardBaselineCode)
-                jit::FinishDiscardBaselineScript(fop, script);
+        /*
+         * Make it impossible to use the control flow graphs cached on the
+         * BaselineScript. They get deleted.
+         */
+        if (script->hasBaselineScript())
+            script->baselineScript()->setControlFlowGraph(nullptr);
+    }
 
             /*
              * Warm-up counter for scripts are reset on GC. After discarding code we
@@ -375,15 +389,30 @@ Zone::addTypeDescrObject(JSContext* cx, HandleObject obj)
     // Type descriptor objects are always tenured so we don't need post barriers
     // on the set.
     MOZ_ASSERT(!IsInsideNursery(obj));
-    
-    if (!typeDescrObjects.put(obj)) {
+
+    if (!typeDescrObjects().put(obj)) {
         ReportOutOfMemory(cx);
         return false;
     }
-    
+
     return true;
 }
-    
+
+void
+Zone::deleteEmptyCompartment(JSCompartment* comp)
+{
+    MOZ_ASSERT(comp->zone() == this);
+    MOZ_ASSERT(arenas.checkEmptyArenaLists());
+    for (auto& i : compartments()) {
+        if (i == comp) {
+            compartments().erase(&i);
+            comp->destroy(runtimeFromActiveCooperatingThread()->defaultFreeOp());
+            return;
+        }
+    }
+    MOZ_CRASH("Compartment not found");
+}
+
 ZoneList::ZoneList()
   : head(nullptr), tail(nullptr)
 {}

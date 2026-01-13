@@ -476,14 +476,14 @@ Arena::finalize(FreeOp* fop, AllocKind thingKind, size_t thingSize)
     if (MOZ_UNLIKELY(MemProfiler::enabled())) {
         for (ArenaCellIterUnderFinalize i(this); !i.done(); i.next()) {
             T* t = i.get<T>();
-            if (t->asTenured().isMarked())
+            if (t->asTenured().isMarkedAny())
                 MemProfiler::MarkTenured(reinterpret_cast<void*>(t));
         }
     }
 
     for (ArenaCellIterUnderFinalize i(this); !i.done(); i.next()) {
         T* t = i.get<T>();
-        if (t->asTenured().isMarked()) {
+        if (t->asTenured().isMarkedAny()) {
             uint_fast16_t thing = uintptr_t(t) & ArenaMask;
             if (thing != firstThingOrSuccessorOfLastMarkedThing) {
                 // We just finished passing over one or more free things,
@@ -874,12 +874,10 @@ GCRuntime::GCRuntime(JSRuntime* rt) :
     incrementalState(gc::State::NotActive),
     lastMarkSlice(false),
     sweepOnBackgroundThread(false),
-    blocksToFreeAfterSweeping(JSRuntime::TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
-    blocksToFreeAfterMinorGC(JSRuntime::TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
-    zoneGroupIndex(0),
-    zoneGroups(nullptr),
-    currentZoneGroup(nullptr),
-    sweepPhaseIndex(0),
+    blocksToFreeAfterSweeping((size_t) JSContext::TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
+    sweepGroupIndex(0),
+    sweepGroups(nullptr),
+    currentSweepGroup(nullptr),
     sweepZone(nullptr),
     sweepActionIndex(0),
     abortSweepAfterCurrentGroup(false),
@@ -1304,28 +1302,27 @@ GCRuntime::callFinalizeCallbacks(FreeOp* fop, JSFinalizeStatus status) const
 }
 
 bool
-GCRuntime::addWeakPointerZoneGroupCallback(JSWeakPointerZoneGroupCallback callback, void* data)
+GCRuntime::addWeakPointerZonesCallback(JSWeakPointerZonesCallback callback, void* data)
 {
-    return updateWeakPointerZoneGroupCallbacks.append(
-            Callback<JSWeakPointerZoneGroupCallback>(callback, data));
+    return updateWeakPointerZonesCallbacks.ref().append(
+            Callback<JSWeakPointerZonesCallback>(callback, data));
 }
 
 void
-GCRuntime::removeWeakPointerZoneGroupCallback(JSWeakPointerZoneGroupCallback callback)
+GCRuntime::removeWeakPointerZonesCallback(JSWeakPointerZonesCallback callback)
 {
-    for (auto& p : updateWeakPointerZoneGroupCallbacks) {
+    for (auto& p : updateWeakPointerZonesCallbacks.ref()) {
         if (p.op == callback) {
-            updateWeakPointerZoneGroupCallbacks.erase(&p);
+            updateWeakPointerZonesCallbacks.ref().erase(&p);
             break;
         }
     }
 }
 
-void
-GCRuntime::callWeakPointerZoneGroupCallbacks() const
+GCRuntime::callWeakPointerZonesCallbacks() const
 {
-    for (auto const& p : updateWeakPointerZoneGroupCallbacks)
-        p.op(rt->contextFromMainThread(), p.data);
+    for (auto const& p : updateWeakPointerZonesCallbacks.ref())
+        p.op(TlsContext.get(), p.data);
 }
 
 bool
@@ -1843,8 +1840,8 @@ RelocateArena(Arena* arena, SliceBudget& sliceBudget)
         TenuredCell* src = i.getCell();
         MOZ_ASSERT(RelocationOverlay::isCellForwarded(src));
         TenuredCell* dest = Forwarded(src);
-        MOZ_ASSERT(src->isMarked(BLACK) == dest->isMarked(BLACK));
-        MOZ_ASSERT(src->isMarked(GRAY) == dest->isMarked(GRAY));
+        MOZ_ASSERT(src->isMarkedAny() == dest->isMarkedAny());
+        MOZ_ASSERT(src->isMarkedGray() == dest->isMarkedGray());
     }
 #endif
 }
@@ -2426,11 +2423,7 @@ GCRuntime::updatePointersToRelocatedCells(Zone* zone, AutoLockForExclusiveAccess
     blocksToFreeAfterSweeping.freeAll();
 
     // Call callbacks to get the rest of the system to fixup other untraced pointers.
-    callWeakPointerZoneGroupCallbacks();
-    for (CompartmentsInZoneIter comp(zone); !comp.done(); comp.next())
-        callWeakPointerCompartmentCallbacks(comp);
-    if (rt->sweepZoneCallback)
-        rt->sweepZoneCallback(zone);
+    callWeakPointerZonesCallbacks();
 }
 
 void
@@ -3411,7 +3404,7 @@ ArenaLists::checkEmptyArenaList(AllocKind kind)
         for (Arena* current = arenaLists[kind].head(); current; current = current->next) {
             for (ArenaCellIterUnderGC i(current); !i.done(); i.next()) {
                 TenuredCell* t = i.getCell();
-                MOZ_ASSERT(t->isMarked(), "unmarked cells should have been finalized");
+                MOZ_ASSERT(t->isMarkedAny(), "unmarked cells should have been finalized");
                 if (++num_live <= max_cells) {
                     fprintf(stderr, "ERROR: GC found live Cell %p of kind %s at shutdown\n",
                             t, AllocKindToAscii(kind));
@@ -3879,7 +3872,7 @@ GCRuntime::markWeakReferences(gcstats::Phase phase)
 void
 GCRuntime::markWeakReferencesInCurrentGroup(gcstats::Phase phase)
 {
-    markWeakReferences<GCZoneGroupIter>(phase);
+    markWeakReferences<GCSweepGroupIter>(phase);
 }
 
 template <class ZoneIterT, class CompartmentIterT>
@@ -3902,7 +3895,7 @@ GCRuntime::markGrayReferences(gcstats::Phase phase)
 void
 GCRuntime::markGrayReferencesInCurrentGroup(gcstats::Phase phase)
 {
-    markGrayReferences<GCZoneGroupIter, GCCompartmentGroupIter>(phase);
+    markGrayReferences<GCSweepGroupIter, GCCompartmentGroupIter>(phase);
 }
 
 void
@@ -3917,6 +3910,300 @@ GCRuntime::markAllGrayReferences(gcstats::Phase phase)
     markGrayReferences<GCZonesIter, GCCompartmentsIter>(phase);
 }
 
+#ifdef JS_GC_ZEAL
+
+struct GCChunkHasher {
+    typedef gc::Chunk* Lookup;
+
+    /*
+     * Strip zeros for better distribution after multiplying by the golden
+     * ratio.
+     */
+    static HashNumber hash(gc::Chunk* chunk) {
+        MOZ_ASSERT(!(uintptr_t(chunk) & gc::ChunkMask));
+        return HashNumber(uintptr_t(chunk) >> gc::ChunkShift);
+    }
+
+    static bool match(gc::Chunk* k, gc::Chunk* l) {
+        MOZ_ASSERT(!(uintptr_t(k) & gc::ChunkMask));
+        MOZ_ASSERT(!(uintptr_t(l) & gc::ChunkMask));
+        return k == l;
+    }
+};
+
+class js::gc::MarkingValidator
+{
+  public:
+    explicit MarkingValidator(GCRuntime* gc);
+    ~MarkingValidator();
+    void nonIncrementalMark(AutoLockForExclusiveAccess& lock);
+    void validate();
+
+  private:
+    GCRuntime* gc;
+    bool initialized;
+
+    typedef HashMap<Chunk*, ChunkBitmap*, GCChunkHasher, SystemAllocPolicy> BitmapMap;
+    BitmapMap map;
+};
+
+js::gc::MarkingValidator::MarkingValidator(GCRuntime* gc)
+  : gc(gc),
+    initialized(false)
+{}
+
+js::gc::MarkingValidator::~MarkingValidator()
+{
+    if (!map.initialized())
+        return;
+
+    for (BitmapMap::Range r(map.all()); !r.empty(); r.popFront())
+        js_delete(r.front().value());
+}
+
+void
+js::gc::MarkingValidator::nonIncrementalMark(AutoLockForExclusiveAccess& lock)
+{
+    /*
+     * Perform a non-incremental mark for all collecting zones and record
+     * the results for later comparison.
+     *
+     * Currently this does not validate gray marking.
+     */
+
+    if (!map.init())
+        return;
+
+    JSRuntime* runtime = gc->rt;
+    GCMarker* gcmarker = &gc->marker;
+
+    gc->waitBackgroundSweepEnd();
+
+    /* Save existing mark bits. */
+    {
+        AutoLockGC lock(runtime);
+        for (auto chunk = gc->allNonEmptyChunks(lock); !chunk.done(); chunk.next()) {
+            ChunkBitmap* bitmap = &chunk->bitmap;
+            ChunkBitmap* entry = js_new<ChunkBitmap>();
+            if (!entry)
+                return;
+
+            memcpy((void*)entry->bitmap, (void*)bitmap->bitmap, sizeof(bitmap->bitmap));
+            if (!map.putNew(chunk, entry))
+                return;
+        }
+    }
+
+    /*
+     * Temporarily clear the weakmaps' mark flags for the compartments we are
+     * collecting.
+     */
+
+    WeakMapSet markedWeakMaps;
+    if (!markedWeakMaps.init())
+        return;
+
+    /*
+     * For saving, smush all of the keys into one big table and split them back
+     * up into per-zone tables when restoring.
+     */
+    gc::WeakKeyTable savedWeakKeys(SystemAllocPolicy(), runtime->randomHashCodeScrambler());
+    if (!savedWeakKeys.init())
+        return;
+
+    for (GCZonesIter zone(runtime); !zone.done(); zone.next()) {
+        if (!WeakMapBase::saveZoneMarkedWeakMaps(zone, markedWeakMaps))
+            return;
+
+        AutoEnterOOMUnsafeRegion oomUnsafe;
+        for (gc::WeakKeyTable::Range r = zone->gcWeakKeys().all(); !r.empty(); r.popFront()) {
+            if (!savedWeakKeys.put(Move(r.front().key), Move(r.front().value)))
+                oomUnsafe.crash("saving weak keys table for validator");
+        }
+
+        if (!zone->gcWeakKeys().clear())
+            oomUnsafe.crash("clearing weak keys table for validator");
+    }
+
+    /*
+     * After this point, the function should run to completion, so we shouldn't
+     * do anything fallible.
+     */
+    initialized = true;
+
+    /* Re-do all the marking, but non-incrementally. */
+    js::gc::State state = gc->incrementalState;
+    gc->incrementalState = State::MarkRoots;
+
+    {
+        gcstats::AutoPhase ap(gc->stats(), gcstats::PHASE_MARK);
+        {
+            gcstats::AutoPhase ap(gc->stats(), gcstats::PHASE_UNMARK);
+
+            for (GCZonesIter zone(runtime); !zone.done(); zone.next())
+                WeakMapBase::unmarkZone(zone);
+
+            MOZ_ASSERT(gcmarker->isDrained());
+            gcmarker->reset();
+
+            AutoLockGC lock(runtime);
+            for (auto chunk = gc->allNonEmptyChunks(lock); !chunk.done(); chunk.next())
+                chunk->bitmap.clear();
+        }
+
+        gc->traceRuntimeForMajorGC(gcmarker, lock);
+
+        gc->incrementalState = State::Mark;
+        auto unlimited = SliceBudget::unlimited();
+        MOZ_RELEASE_ASSERT(gc->marker.drainMarkStack(unlimited));
+    }
+
+    gc->incrementalState = State::Sweep;
+    {
+        gcstats::AutoPhase ap1(gc->stats(), gcstats::PHASE_SWEEP);
+        gcstats::AutoPhase ap2(gc->stats(), gcstats::PHASE_SWEEP_MARK);
+
+        gc->markAllWeakReferences(gcstats::PHASE_SWEEP_MARK_WEAK);
+
+        /* Update zone state for gray marking. */
+        for (GCZonesIter zone(runtime); !zone.done(); zone.next()) {
+            MOZ_ASSERT(zone->isGCMarkingBlack());
+            zone->setGCState(Zone::MarkGray);
+        }
+        gc->marker.setMarkColorGray();
+
+        gc->markAllGrayReferences(gcstats::PHASE_SWEEP_MARK_GRAY);
+        gc->markAllWeakReferences(gcstats::PHASE_SWEEP_MARK_GRAY_WEAK);
+
+        /* Restore zone state. */
+        for (GCZonesIter zone(runtime); !zone.done(); zone.next()) {
+            MOZ_ASSERT(zone->isGCMarkingGray());
+            zone->setGCState(Zone::Mark);
+        }
+        MOZ_ASSERT(gc->marker.isDrained());
+        gc->marker.setMarkColorBlack();
+    }
+
+    /* Take a copy of the non-incremental mark state and restore the original. */
+    {
+        AutoLockGC lock(runtime);
+        for (auto chunk = gc->allNonEmptyChunks(lock); !chunk.done(); chunk.next()) {
+            ChunkBitmap* bitmap = &chunk->bitmap;
+            ChunkBitmap* entry = map.lookup(chunk)->value();
+            Swap(*entry, *bitmap);
+        }
+    }
+
+    for (GCZonesIter zone(runtime); !zone.done(); zone.next()) {
+        WeakMapBase::unmarkZone(zone);
+        AutoEnterOOMUnsafeRegion oomUnsafe;
+        if (!zone->gcWeakKeys().clear())
+            oomUnsafe.crash("clearing weak keys table for validator");
+    }
+
+    WeakMapBase::restoreMarkedWeakMaps(markedWeakMaps);
+
+    for (gc::WeakKeyTable::Range r = savedWeakKeys.all(); !r.empty(); r.popFront()) {
+        AutoEnterOOMUnsafeRegion oomUnsafe;
+        Zone* zone = gc::TenuredCell::fromPointer(r.front().key.asCell())->zone();
+        if (!zone->gcWeakKeys().put(Move(r.front().key), Move(r.front().value)))
+            oomUnsafe.crash("restoring weak keys table for validator");
+    }
+
+    gc->incrementalState = state;
+}
+
+void
+js::gc::MarkingValidator::validate()
+{
+    /*
+     * Validates the incremental marking for a single compartment by comparing
+     * the mark bits to those previously recorded for a non-incremental mark.
+     */
+
+    if (!initialized)
+        return;
+
+    gc->waitBackgroundSweepEnd();
+
+    AutoLockGC lock(gc->rt);
+    for (auto chunk = gc->allNonEmptyChunks(lock); !chunk.done(); chunk.next()) {
+        BitmapMap::Ptr ptr = map.lookup(chunk);
+        if (!ptr)
+            continue;  /* Allocated after we did the non-incremental mark. */
+
+        ChunkBitmap* bitmap = ptr->value();
+        ChunkBitmap* incBitmap = &chunk->bitmap;
+
+        for (size_t i = 0; i < ArenasPerChunk; i++) {
+            if (chunk->decommittedArenas.get(i))
+                continue;
+            Arena* arena = &chunk->arenas[i];
+            if (!arena->allocated())
+                continue;
+            if (!arena->zone->isGCSweeping())
+                continue;
+            if (arena->allocatedDuringIncremental)
+                continue;
+
+            AllocKind kind = arena->getAllocKind();
+            uintptr_t thing = arena->thingsStart();
+            uintptr_t end = arena->thingsEnd();
+            while (thing < end) {
+                Cell* cell = (Cell*)thing;
+
+                /*
+                 * If a non-incremental GC wouldn't have collected a cell, then
+                 * an incremental GC won't collect it.
+                 */
+                if (bitmap->isMarkedAny(cell))
+                    MOZ_RELEASE_ASSERT(incBitmap->isMarkedAny(cell));
+
+                /*
+                 * If the cycle collector isn't allowed to collect an object
+                 * after a non-incremental GC has run, then it isn't allowed to
+                 * collected it after an incremental GC.
+                 */
+                if (!bitmap->isMarkedGray(cell))
+                    MOZ_RELEASE_ASSERT(!incBitmap->isMarkedGray(cell));
+
+                thing += Arena::thingSize(kind);
+            }
+        }
+    }
+}
+
+#endif // JS_GC_ZEAL
+
+void
+GCRuntime::computeNonIncrementalMarkingForValidation(AutoLockForExclusiveAccess& lock)
+{
+#ifdef JS_GC_ZEAL
+    MOZ_ASSERT(!markingValidator);
+    if (isIncremental && hasZealMode(ZealMode::IncrementalMarkingValidator))
+        markingValidator = js_new<MarkingValidator>(this);
+    if (markingValidator)
+        markingValidator->nonIncrementalMark(lock);
+#endif
+}
+
+void
+GCRuntime::validateIncrementalMarking()
+{
+#ifdef JS_GC_ZEAL
+    if (markingValidator)
+        markingValidator->validate();
+#endif
+}
+
+void
+GCRuntime::finishMarkingValidation()
+{
+#ifdef JS_GC_ZEAL
+    js_delete(markingValidator.ref());
+    markingValidator = nullptr;
+#endif
+}
 static void
 DropStringWrappers(JSRuntime* rt)
 {
@@ -3983,7 +4270,7 @@ JSCompartment::findOutgoingEdges(ZoneComponentFinder& finder)
         bool needsEdge = true;
         if (key.is<JSObject*>()) {
             TenuredCell& other = key.as<JSObject*>()->asTenured();
-            needsEdge = !other.isMarked(BLACK) || other.isMarked(GRAY);
+            needsEdge = !other.isMarkedAny() || other.isMarkedGray();
         }
         key.applyToWrapped(AddOutgoingEdgeFunctor(needsEdge, finder));
     }
@@ -4004,7 +4291,7 @@ Zone::findOutgoingEdges(ZoneComponentFinder& finder)
     for (CompartmentsInZoneIter comp(this); !comp.done(); comp.next())
         comp->findOutgoingEdges(finder);
 
-    for (ZoneSet::Range r = gcZoneGroupEdges.all(); !r.empty(); r.popFront()) {
+    for (ZoneSet::Range r = gcSweepGroupEdges().all(); !r.empty(); r.popFront()) {
         if (r.front()->shouldMarkInZone())
             finder.addEdgeTo(r.front());
     }
@@ -4034,11 +4321,11 @@ GCRuntime::findInterZoneEdges()
 }
 
 void
-GCRuntime::findZoneGroups(AutoLockForExclusiveAccess& lock)
+GCRuntime::groupZonesForSweeping(JS::gcreason::Reason reason, AutoLockForExclusiveAccess& lock)
 {
 #ifdef DEBUG
     for (ZonesIter zone(rt, WithAtoms); !zone.done(); zone.next())
-        MOZ_ASSERT(zone->gcZoneGroupEdges.empty());
+        MOZ_ASSERT(zone->gcSweepGroupEdges().empty());
 #endif
 
     JSContext* cx = rt->contextFromMainThread();
@@ -4050,22 +4337,22 @@ GCRuntime::findZoneGroups(AutoLockForExclusiveAccess& lock)
         MOZ_ASSERT(zone->shouldMarkInZone());
         finder.addNode(zone);
     }
-    zoneGroups = finder.getResultsList();
-    currentZoneGroup = zoneGroups;
-    zoneGroupIndex = 0;
+    sweepGroups = finder.getResultsList();
+    currentSweepGroup = sweepGroups;
+    sweepGroupIndex = 0;
 
     for (GCZonesIter zone(rt); !zone.done(); zone.next())
-        zone->gcZoneGroupEdges.clear();
+        zone->gcSweepGroupEdges().clear();
 
 #ifdef DEBUG
-    for (Zone* head = currentZoneGroup; head; head = head->nextGroup()) {
+    for (Zone* head = currentSweepGroup; head; head = head->nextGroup()) {
         for (Zone* zone = head; zone; zone = zone->nextNodeInGroup())
             MOZ_ASSERT(zone->shouldMarkInZone());
     }
 
-    MOZ_ASSERT_IF(!isIncremental, !currentZoneGroup->nextGroup());
+    MOZ_ASSERT_IF(!isIncremental, !currentSweepGroup->nextGroup());
     for (ZonesIter zone(rt, WithAtoms); !zone.done(); zone.next())
-        MOZ_ASSERT(zone->gcZoneGroupEdges.empty());
+        MOZ_ASSERT(zone->gcSweepGroupEdges().empty());
 #endif
 }
 
@@ -4073,26 +4360,26 @@ static void
 ResetGrayList(JSCompartment* comp);
 
 void
-GCRuntime::getNextZoneGroup()
+GCRuntime::getNextSweepGroup()
 {
-    currentZoneGroup = currentZoneGroup->nextGroup();
-    ++zoneGroupIndex;
-    if (!currentZoneGroup) {
+    currentSweepGroup = currentSweepGroup->nextGroup();
+    ++sweepGroupIndex;
+    if (!currentSweepGroup) {
         abortSweepAfterCurrentGroup = false;
         return;
     }
 
-    for (Zone* zone = currentZoneGroup; zone; zone = zone->nextNodeInGroup()) {
+    for (Zone* zone = currentSweepGroup; zone; zone = zone->nextNodeInGroup()) {
         MOZ_ASSERT(zone->shouldMarkInZone());
         MOZ_ASSERT(!zone->isQueuedForBackgroundSweep());
     }
 
     if (!isIncremental)
-        ZoneComponentFinder::mergeGroups(currentZoneGroup);
+        ZoneComponentFinder::mergeGroups(currentSweepGroup);
 
     if (abortSweepAfterCurrentGroup) {
         MOZ_ASSERT(!isIncremental);
-        for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
+        for (GCSweepGroupIter zone(rt); !zone.done(); zone.next()) {
             MOZ_ASSERT(!zone->gcNextGraphComponent);
             MOZ_ASSERT(zone->shouldMarkInZone());
             zone->setNeedsIncrementalBarrier(false, Zone::UpdateJit);
@@ -4104,7 +4391,7 @@ GCRuntime::getNextZoneGroup()
             ResetGrayList(comp);
 
         abortSweepAfterCurrentGroup = false;
-        currentZoneGroup = nullptr;
+        currentSweepGroup = nullptr;
     }
 }
 
@@ -4250,11 +4537,11 @@ MarkIncomingCrossCompartmentPointers(JSRuntime* rt, const uint32_t color)
             MOZ_ASSERT(dst->compartment() == c);
 
             if (color == GRAY) {
-                if (IsMarkedUnbarriered(rt, &src) && src->asTenured().isMarked(GRAY))
+                if (IsMarkedUnbarriered(rt, &src) && src->asTenured().isMarkedGray())
                     TraceManuallyBarrieredEdge(&rt->gc.marker, &dst,
                                                "cross-compartment gray pointer");
             } else {
-                if (IsMarkedUnbarriered(rt, &src) && !src->asTenured().isMarked(GRAY))
+                if (IsMarkedUnbarriered(rt, &src) && !src->asTenured().isMarkedGray())
                     TraceManuallyBarrieredEdge(&rt->gc.marker, &dst,
                                                "cross-compartment black pointer");
             }
@@ -4350,8 +4637,8 @@ js::NotifyGCPostSwap(JSObject* a, JSObject* b, unsigned removedFlags)
         DelayCrossCompartmentGrayMarking(a);
 }
 
-void
-GCRuntime::endMarkingZoneGroup()
+IncrementalProgress
+GCRuntime::endMarkingSweepGroup(FreeOp* fop, SliceBudget& budget)
 {
     gcstats::AutoPhase ap(stats, gcstats::PHASE_SWEEP_MARK);
 
@@ -4369,7 +4656,7 @@ GCRuntime::endMarkingZoneGroup()
      * these will be marked through, as they are not marked with
      * MarkCrossCompartmentXXX.
      */
-    for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
+    for (GCSweepGroupIter zone(rt); !zone.done(); zone.next()) {
         MOZ_ASSERT(zone->isGCMarkingBlack());
         zone->setGCState(Zone::MarkGray);
     }
@@ -4383,7 +4670,7 @@ GCRuntime::endMarkingZoneGroup()
     markWeakReferencesInCurrentGroup(gcstats::PHASE_SWEEP_MARK_GRAY_WEAK);
 
     /* Restore marking state. */
-    for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
+    for (GCSweepGroupIter zone(rt); !zone.done(); zone.next()) {
         MOZ_ASSERT(zone->isGCMarkingGray());
         zone->setGCState(Zone::Mark);
     }
@@ -4479,6 +4766,58 @@ SweepMiscTask::run()
     }
 }
 
+static void
+SweepCompressionTasks(JSRuntime* runtime)
+{
+    AutoLockHelperThreadState lock;
+
+    // Attach finished compression tasks.
+    auto& finished = HelperThreadState().compressionFinishedList(lock);
+    for (size_t i = 0; i < finished.length(); i++) {
+        if (finished[i]->runtimeMatches(runtime)) {
+            UniquePtr<SourceCompressionTask> task(Move(finished[i]));
+            HelperThreadState().remove(finished, &i);
+            task->complete();
+		}
+    }
+
+    // Sweep pending tasks that are holding onto should-be-dead ScriptSources.
+    auto& pending = HelperThreadState().compressionPendingList(lock);
+    for (size_t i = 0; i < pending.length(); i++) {
+        if (pending[i]->shouldCancel())
+            HelperThreadState().remove(pending, &i);
+    }
+}
+
+static void
+SweepWeakMaps(JSRuntime* runtime)
+{
+    for (GCSweepGroupIter zone(runtime); !zone.done(); zone.next()) {
+        /* Clear all weakrefs that point to unmarked things. */
+        for (auto edge : zone->gcWeakRefs()) {
+            /* Edges may be present multiple times, so may already be nulled. */
+            if (*edge && IsAboutToBeFinalizedDuringSweep(**edge))
+                *edge = nullptr;
+        }
+        zone->gcWeakRefs().clear();
+
+        /* No need to look up any more weakmap keys from this sweep group. */
+        AutoEnterOOMUnsafeRegion oomUnsafe;
+        if (!zone->gcWeakKeys().clear())
+            oomUnsafe.crash("clearing weak keys in beginSweepingSweepGroup()");
+
+        zone->sweepWeakMaps();
+    }
+}
+
+static void
+SweepUniqueIds(JSRuntime* runtime)
+{
+    FreeOp fop(nullptr);
+    for (GCSweepGroupIter zone(runtime); !zone.done(); zone.next())
+        zone->sweepUniqueIds(&fop);
+}
+
 void
 GCRuntime::startTask(GCParallelTask& task, gcstats::Phase phase,
                      AutoLockHelperThreadState& locked)
@@ -4498,7 +4837,127 @@ GCRuntime::joinTask(GCParallelTask& task, gcstats::Phase phase,
     task.joinWithLockHeld(locked);
 }
 
-using WeakCacheTaskVector = mozilla::Vector<SweepWeakCacheTask, 0, SystemAllocPolicy>;
+void
+GCRuntime::sweepDebuggerOnMainThread(FreeOp* fop)
+{
+    // Detach unreachable debuggers and global objects from each other.
+    // This can modify weakmaps and so must happen before weakmap sweeping.
+    Debugger::sweepAll(fop);
+
+    gcstats::AutoPhase ap(stats(), gcstats::PHASE_SWEEP_COMPARTMENTS);
+
+    // Sweep debug environment information. This performs lookups in the Zone's
+    // unique IDs table and so must not happen in parallel with sweeping that
+    // table.
+    {
+         gcstats::AutoPhase ap2(stats(), gcstats::PHASE_SWEEP_MISC);
+        for (GCCompartmentGroupIter c(rt); !c.done(); c.next())
+            c->sweepDebugEnvironments();
+    }
+
+    // Sweep breakpoints. This is done here to be with the other debug sweeping,
+    // although note that it can cause JIT code to be patched.
+    {
+        gcstats::AutoPhase ap(stats(), gcstats::PHASE_SWEEP_BREAKPOINT);
+        for (GCSweepGroupIter zone(rt); !zone.done(); zone.next())
+            zone->sweepBreakpoints(fop);
+    }
+}
+
+void
+GCRuntime::sweepJitDataOnMainThread(FreeOp* fop)
+{
+
+    {
+        gcstats::AutoPhase ap(stats(), gcstats::PHASE_SWEEP_JIT_DATA);
+
+        // Cancel any active or pending off thread compilations.
+        js::CancelOffThreadIonCompile(rt, JS::Zone::Sweep);
+
+        for (GCCompartmentGroupIter c(rt); !c.done(); c.next())
+            c->sweepJitCompartment(fop);
+
+        for (GCSweepGroupIter zone(rt); !zone.done(); zone.next()) {
+            if (jit::JitZone* jitZone = zone->jitZone())
+                jitZone->sweep(fop);
+        }
+        // Bug 1071218: the following method has not yet been refactored to
+        // work on a single zone-group at once.
+
+        // Sweep entries containing about-to-be-finalized JitCode and
+        // update relocated TypeSet::Types inside the JitcodeGlobalTable.
+        jit::JitRuntime::SweepJitcodeGlobalTable(rt);
+    }
+
+    {
+        gcstats::AutoPhase apdc(stats(), gcstats::PHASE_SWEEP_DISCARD_CODE);
+        for (GCSweepGroupIter zone(rt); !zone.done(); zone.next())
+            zone->discardJitCode(fop);
+    }
+
+    {
+        gcstats::AutoPhase ap1(stats(), gcstats::PHASE_SWEEP_TYPES);
+        gcstats::AutoPhase ap2(stats(), gcstats::PHASE_SWEEP_TYPES_BEGIN);
+        for (GCSweepGroupIter zone(rt); !zone.done(); zone.next())
+            zone->beginSweepTypes(fop, releaseObservedTypes && !zone->isPreservingCode());
+    }
+}
+
+using WeakCacheTaskVector = mozilla::Vector<ImmediateSweepWeakCacheTask, 0, SystemAllocPolicy>;
+
+enum WeakCacheLocation
+{
+    RuntimeWeakCache,
+    ZoneWeakCache
+};
+
+// Call a functor for all weak caches that need to be swept in the current
+// sweep group.
+template <typename Functor>
+static inline bool
+IterateWeakCaches(JSRuntime* rt, Functor f)
+{
+    for (GCSweepGroupIter zone(rt); !zone.done(); zone.next()) {
+        for (JS::detail::WeakCacheBase* cache : zone->weakCaches()) {
+            if (!f(cache, ZoneWeakCache))
+                return false;
+        }
+    }
+
+    for (JS::detail::WeakCacheBase* cache : rt->weakCaches()) {
+        if (!f(cache, RuntimeWeakCache))
+            return false;
+    }
+
+    return true;
+}
+
+static bool
+PrepareWeakCacheTasks(JSRuntime* rt, WeakCacheTaskVector* immediateTasks)
+{
+    // Start incremental sweeping for caches that support it or add to a vector
+    // of sweep tasks to run on a helper thread.
+
+    MOZ_ASSERT(immediateTasks->empty());
+
+    bool ok = IterateWeakCaches(rt, [&] (JS::detail::WeakCacheBase* cache,
+                                         WeakCacheLocation location)
+    {
+        if (!cache->needsSweep())
+            return true;
+
+        // Caches that support incremental sweeping will be swept later.
+        if (location == ZoneWeakCache && cache->setNeedsIncrementalBarrier(true))
+            return true;
+
+        return immediateTasks->emplaceBack(rt, *cache);
+    });
+
+    if (!ok)
+        immediateTasks->clearAndFree();
+
+    return ok;
+}
 
 static void
 SweepWeakCachesFromMainThread(JSRuntime* rt)
@@ -4526,8 +4985,17 @@ PrepareWeakCacheTasks(JSRuntime* rt)
     return out;
 }
 
-void
-GCRuntime::beginSweepingZoneGroup(AutoLockForExclusiveAccess& lock)
+    ~AutoRunParallelTask() {
+        runtime()->gc.joinTask(*this, phase_, lock_);
+    }
+
+    void run() override {
+        func_(runtime());
+    }
+};
+
+IncrementalProgress
+GCRuntime::beginSweepingSweepGroup(FreeOp* fop, SliceBudget& budget)
 {
     /*
      * Begin sweeping the group of zones in gcCurrentZoneGroup,
@@ -4535,7 +5003,7 @@ GCRuntime::beginSweepingZoneGroup(AutoLockForExclusiveAccess& lock)
      */
 
     bool sweepingAtoms = false;
-    for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
+    for (GCSweepGroupIter zone(rt); !zone.done(); zone.next()) {
         /* Set the GC state to sweeping. */
         MOZ_ASSERT(zone->shouldMarkInZone());
         zone->setGCState(Zone::Sweep);
@@ -4550,7 +5018,7 @@ GCRuntime::beginSweepingZoneGroup(AutoLockForExclusiveAccess& lock)
             rt->sweepZoneCallback(zone);
 
 #ifdef DEBUG
-        zone->gcLastZoneGroupIndex = zoneGroupIndex;
+        zone->gcLastSweepGroupIndex = sweepGroupIndex;
 #endif
     }
 
@@ -4581,12 +5049,12 @@ GCRuntime::beginSweepingZoneGroup(AutoLockForExclusiveAccess& lock)
         gcstats::AutoPhase ap(stats, gcstats::PHASE_FINALIZE_START);
         callFinalizeCallbacks(&fop, JSFINALIZE_GROUP_START);
         {
-            gcstats::AutoPhase ap2(stats, gcstats::PHASE_WEAK_ZONEGROUP_CALLBACK);
-            callWeakPointerZoneGroupCallbacks();
+            AutoPhase ap2(stats(), PHASE_WEAK_ZONEGROUP_CALLBACK);
+            callWeakPointerZonesCallbacks();
         }
         {
-            gcstats::AutoPhase ap2(stats, gcstats::PHASE_WEAK_COMPARTMENT_CALLBACK);
-            for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
+            AutoPhase ap2(stats(), PHASE_WEAK_COMPARTMENT_CALLBACK);
+            for (GCSweepGroupIter zone(rt); !zone.done(); zone.next()) {
                 for (CompartmentsInZoneIter comp(zone); !comp.done(); comp.next())
                     callWeakPointerCompartmentCallbacks(comp);
             }
@@ -4700,17 +5168,10 @@ GCRuntime::beginSweepingZoneGroup(AutoLockForExclusiveAccess& lock)
      * Objects are finalized immediately but this may change in the future.
      */
 
-    for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
-        gcstats::AutoSCC scc(stats, zoneGroupIndex);
-        zone->arenas.queueForegroundObjectsForSweep(&fop);
-    }
-    for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
-        gcstats::AutoSCC scc(stats, zoneGroupIndex);
-        for (unsigned i = 0; i < ArrayLength(IncrementalFinalizePhases); ++i)
-            zone->arenas.queueForForegroundSweep(&fop, IncrementalFinalizePhases[i]);
-    }
-    for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
-        gcstats::AutoSCC scc(stats, zoneGroupIndex);
+    for (GCSweepGroupIter zone(rt); !zone.done(); zone.next()) {
+        gcstats::AutoSCC scc(stats(), sweepGroupIndex);
+        zone->arenas.queueForForegroundSweep(fop, ForegroundObjectFinalizePhase);
+        zone->arenas.queueForForegroundSweep(fop, ForegroundNonObjectFinalizePhase);
         for (unsigned i = 0; i < ArrayLength(BackgroundFinalizePhases); ++i)
             zone->arenas.queueForBackgroundSweep(&fop, BackgroundFinalizePhases[i]);
     }
@@ -4724,7 +5185,19 @@ GCRuntime::beginSweepingZoneGroup(AutoLockForExclusiveAccess& lock)
     sweepActionIndex = 0;
 
     {
-        gcstats::AutoPhase ap(stats, gcstats::PHASE_FINALIZE_END);
+        return NotFinished;
+    }
+
+    return Finished;
+}
+#endif
+
+IncrementalProgress
+GCRuntime::endSweepingSweepGroup(FreeOp* fop, SliceBudget& budget)
+{
+     {
+        gcstats::AutoPhase ap(stats(), gcstats::PHASE_FINALIZE_END);
+        FreeOp fop(rt);
         callFinalizeCallbacks(&fop, JSFINALIZE_GROUP_END);
     }
 }
@@ -4733,7 +5206,7 @@ void
 GCRuntime::endSweepingZoneGroup()
 {
     /* Update the GC state for zones we have swept. */
-    for (GCZoneGroupIter zone(rt); !zone.done(); zone.next()) {
+    for (GCSweepGroupIter zone(rt); !zone.done(); zone.next()) {
         MOZ_ASSERT(zone->isGCSweeping());
         AutoLockGC lock(rt);
         zone->setGCState(Zone::Finished);
@@ -4743,7 +5216,7 @@ GCRuntime::endSweepingZoneGroup()
 
     /* Start background thread to sweep zones if required. */
     ZoneList zones;
-    for (GCZoneGroupIter zone(rt); !zone.done(); zone.next())
+    for (GCSweepGroupIter zone(rt); !zone.done(); zone.next())
         zones.append(zone);
     if (sweepOnBackgroundThread)
         queueZonesForBackgroundSweep(zones);
@@ -4826,7 +5299,7 @@ GCRuntime::drainMarkStack(SliceBudget& sliceBudget, gcstats::Phase phase)
 static void
 SweepThing(Shape* shape)
 {
-    if (!shape->isMarked())
+    if (!shape->isMarkedAny())
         shape->sweep();
 }
 
@@ -4981,7 +5454,44 @@ GCRuntime::initializeSweepActions()
     AddSweepPhase(&ok);
     AddSweepAction(&ok, GCRuntime::sweepShapeTree);
 
-    return ok;
+    using Action = typename RemoveLastTemplateParameter<
+        SweepActionForEach<ContainerIter<AllocKinds>, AllocKinds, Args...>>::Type;
+    return js::MakeUnique<Action>(kinds, Move(action));
+}
+
+} // namespace sweepaction
+
+bool
+GCRuntime::initSweepActions()
+{
+    using namespace sweepaction;
+    using sweepaction::Call;
+   
+    sweepActions.ref() =
+        RepeatForZoneGroup(rt,
+            Sequence(
+                Call(&GCRuntime::endMarkingSweepGroup),
+                Call(&GCRuntime::beginSweepingSweepGroup),
+#ifdef JS_GC_ZEAL
+                Call(&GCRuntime::maybeYieldForSweepingZeal),
+#endif
+                Call(&GCRuntime::sweepAtomsTable),
+                Call(&GCRuntime::sweepWeakCaches),
+                ForEachZoneInZoneGroup(rt,
+                    ForEachAllocKind(ForegroundObjectFinalizePhase.kinds,
+                        Call(&GCRuntime::finalizeAllocKind))),
+                ForEachZoneInZoneGroup(rt,
+                    Sequence(
+                        Call(&GCRuntime::sweepTypeInformation),
+                        Call(&GCRuntime::mergeSweptObjectArenas))),
+                ForEachZoneInZoneGroup(rt,
+                    ForEachAllocKind(ForegroundNonObjectFinalizePhase.kinds,
+                        Call(&GCRuntime::finalizeAllocKind))),
+                ForEachZoneInZoneGroup(rt,
+                    Call(&GCRuntime::sweepShapeTree)),
+                Call(&GCRuntime::endSweepingSweepGroup)));
+
+    return sweepActions != nullptr;
 }
 
 IncrementalProgress
@@ -5816,7 +6326,7 @@ GCRuntime::maybeDoCycleCollection()
     for (CompartmentsIter c(rt, SkipAtoms); !c.done(); c.next()) {
         ++compartmentsTotal;
         GlobalObject* global = c->unsafeUnbarrieredMaybeGlobal();
-        if (global && global->asTenured().isMarked(GRAY))
+        if (global && global->asTenured().isMarkedGray())
             ++compartmentsGray;
     }
     double grayFraction = double(compartmentsGray) / double(compartmentsTotal);

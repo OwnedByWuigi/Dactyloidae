@@ -540,7 +540,7 @@ public:
                                  JSFinalizeStatus status,
                                  bool isZoneGC,
                                  void* data);
-    static void WeakPointerZoneGroupCallback(JSContext* cx, void* data);
+    static void WeakPointerZonesCallback(JSContext* cx, void* data);
     static void WeakPointerCompartmentCallback(JSContext* cx, JSCompartment* comp, void* data);
 
     inline void AddVariantRoot(XPCTraceableVariant* variant);
@@ -953,11 +953,11 @@ public:
 
     typedef js::HashMap<JSAddonId*,
                         nsCOMPtr<nsIAddonInterposition>,
-                        js::PointerHasher<JSAddonId*, 3>,
+                        js::PointerHasher<JSAddonId*>,
                         js::SystemAllocPolicy> InterpositionMap;
 
     typedef js::HashSet<JSAddonId*,
-                        js::PointerHasher<JSAddonId*, 3>,
+                        js::PointerHasher<JSAddonId*>,
                         js::SystemAllocPolicy> AddonSet;
 
     // Gets the appropriate scope object for XBL in this scope. The context

@@ -64,6 +64,20 @@ static const uint32_t BLACK = 0;
 static const uint32_t GRAY = 1;
 
 /*
+ * Two bits determine the mark color as follows:
+ *    BlackBit      GrayOrBlackBit   color
+ *       0               0           white
+ *       0               1           gray
+ *       1               0           black
+ *       1               1           black
+ */
+enum class ColorBit : uint32_t
+{
+    BlackBit = 0,
+    GrayOrBlackBit = 1
+};
+
+/*
  * The "location" field in the Chunk trailer is a enum indicating various roles
  * of the chunk.
  */

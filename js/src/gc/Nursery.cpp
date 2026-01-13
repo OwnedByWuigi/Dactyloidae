@@ -1,4 +1,5 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+ * vim: set ts=8 sw=4 et tw=78:
  *
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -153,7 +154,7 @@ js::Nursery::init(uint32_t maxNurseryBytes, AutoLockGC& lock)
             exit(0);
         }
         enableProfiling_ = true;
-        profileThreshold_ = atoi(env);
+        profileThreshold_ = TimeDuration::FromMicroseconds(atoi(env));
     }
 
     env = getenv("JS_GC_REPORT_TENURING");
@@ -197,8 +198,7 @@ js::Nursery::enable()
     setCurrentChunk(0);
     setStartPosition();
 
-    MOZ_ALWAYS_TRUE(runtime()->gc.storeBuffer.enable());
-    return;
+    MOZ_ALWAYS_TRUE(runtime()->gc.storeBuffer().enable());
 }
 
 void
@@ -209,8 +209,7 @@ js::Nursery::disable()
         return;
     updateNumChunks(0);
     currentEnd_ = 0;
-    position_ = 0;
-    runtime()->gc.storeBuffer.disable();
+    runtime()->gc.storeBuffer().disable();
 }
 
 bool
@@ -383,11 +382,11 @@ Nursery::setSlotsForwardingPointer(HeapSlot* oldSlots, HeapSlot* newSlots, uint3
 
 void
 Nursery::setElementsForwardingPointer(ObjectElements* oldHeader, ObjectElements* newHeader,
-                                      uint32_t nelems)
+                                      uint32_t capacity)
 {
     // Only use a direct forwarding pointer if there is enough space for one.
     setForwardingPointer(oldHeader->elements(), newHeader->elements(),
-                         nelems > ObjectElements::VALUES_PER_HEADER);
+                         capacity > 0);
 }
 
 #ifdef DEBUG
@@ -433,9 +432,57 @@ js::TenuringTracer::TenuringTracer(JSRuntime* rt, Nursery* nursery)
 {
 }
 
+void
+js::Nursery::renderProfileJSON(JSONPrinter& json) const
+{
+    if (!isEnabled()) {
+        json.beginObject();
+        json.property("status", "nursery disabled");
+        json.endObject();
+        return;
+    }
+
+    if (previousGC.reason == JS::gcreason::NO_REASON) {
+        // If the nursery was empty when the last minorGC was requested, then
+        // no nursery collection will have been performed but JSON may still be
+        // requested. (And as a public API, this function should not crash in
+        // such a case.)
+        json.beginObject();
+        json.property("status", "no collection");
+        json.endObject();
+        return;
+    }
+
+    json.beginObject();
+
+    json.property("reason", JS::gcreason::ExplainReason(previousGC.reason));
+    json.property("bytes_tenured", previousGC.tenuredBytes);
+    json.floatProperty("promotion_rate",
+                       100.0 * previousGC.tenuredBytes / double(previousGC.nurseryUsedBytes), 2);
+    json.property("nursery_bytes", previousGC.nurseryUsedBytes);
+    json.property("new_nursery_bytes", numChunks() * ChunkSize);
+
+    json.beginObjectProperty("timings");
+
+#define EXTRACT_NAME(name, text) #name,
+    static const char* names[] = {
+FOR_EACH_NURSERY_PROFILE_TIME(EXTRACT_NAME)
+#undef EXTRACT_NAME
+    "" };
+
+    size_t i = 0;
+    for (auto time : profileDurations_)
+        json.property(names[i++], time, json.MICROSECONDS);
+
+    json.endObject(); // timings value
+
+    json.endObject();
+}
+
 /* static */ void
 js::Nursery::printProfileHeader()
 {
+    fprintf(stderr, "MinorGC:               Reason  PRate Size        ");
 #define PRINT_HEADER(name, text)                                              \
     fprintf(stderr, " %6s", text);
 FOR_EACH_NURSERY_PROFILE_TIME(PRINT_HEADER)
@@ -455,9 +502,16 @@ void
 js::Nursery::printTotalProfileTimes()
 {
     if (enableProfiling_) {
-        fprintf(stderr, "MinorGC TOTALS: %7" PRIu64 " collections:      ", minorGcCount_);
-        printProfileTimes(totalTimes_);
+        fprintf(stderr, "MinorGC TOTALS: %7" PRIu64 " collections:             ", minorGcCount_);
+        printProfileDurations(totalDurations_);
     }
+}
+
+void
+js::Nursery::maybeClearProfileDurations()
+{
+    for (auto& duration : profileDurations_)
+        duration = mozilla::TimeDuration();
 }
 
 inline void
@@ -471,20 +525,6 @@ js::Nursery::endProfile(ProfileKey key)
 {
     profileTimes_[key] = PRMJ_Now() - startTimes_[key];
     totalTimes_[key] += profileTimes_[key];
-}
-
-inline void
-js::Nursery::maybeStartProfile(ProfileKey key)
-{
-    if (enableProfiling_)
-        startProfile(key);
-}
-
-inline void
-js::Nursery::maybeEndProfile(ProfileKey key)
-{
-    if (enableProfiling_)
-        endProfile(key);
 }
 
 void
@@ -520,37 +560,45 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
 
     TenureCountCache tenureCounts;
     double promotionRate = 0;
+    previousGC.reason = JS::gcreason::NO_REASON;
     if (!isEmpty())
         promotionRate = doCollection(rt, reason, tenureCounts);
 
     // Resize the nursery.
-    maybeStartProfile(ProfileKey::Resize);
+    startProfile(ProfileKey::Resize);
     maybeResizeNursery(reason, promotionRate);
-    maybeEndProfile(ProfileKey::Resize);
+    endProfile(ProfileKey::Resize);
 
     // If we are promoting the nursery, or exhausted the store buffer with
     // pointers to nursery things, which will force a collection well before
     // the nursery is full, look for object groups that are getting promoted
     // excessively and try to pretenure them.
-    maybeStartProfile(ProfileKey::Pretenure);
-    if (promotionRate > 0.8 || reason == JS::gcreason::FULL_STORE_BUFFER) {
-        JSContext* cx = rt->contextFromMainThread();
+    startProfile(ProfileKey::Pretenure);
+    uint32_t pretenureCount = 0;
+    if (promotionRate > 0.8 || IsFullStoreBufferReason(reason)) {
+        JSContext* cx = TlsContext.get();
         for (auto& entry : tenureCounts.entries) {
             if (entry.count >= 3000) {
                 ObjectGroup* group = entry.group;
                 if (group->canPreTenure()) {
                     AutoCompartment ac(cx, group->compartment());
                     group->setShouldPreTenure(cx);
+                    pretenureCount++;
                 }
             }
         }
     }
-    maybeEndProfile(ProfileKey::Pretenure);
+    endProfile(ProfileKey::Pretenure);
 
     // We ignore gcMaxBytes when allocating for minor collection. However, if we
     // overflowed, we disable the nursery. The next time we allocate, we'll fail
     // because gcBytes >= gcMaxBytes.
     if (rt->gc.usage.gcBytes() >= rt->gc.tunables.gcMaxBytes())
+        disable();
+    // Disable the nursery if the user changed the configuration setting.  The
+    // nursery can only be re-enabled by resetting the configurationa and
+    // restarting firefox.
+    if (maxNurseryChunks_ == 0)
         disable();
 
     endProfile(ProfileKey::Total);
@@ -568,7 +616,7 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
             printProfileHeader();
         }
 
-        fprintf(stderr, "MinorGC: %20s %5.1f%% %4u ",
+        fprintf(stderr, "MinorGC: %20s %5.1f%% %4u        ",
                 JS::gcreason::ExplainReason(reason),
                 promotionRate * 100,
                 numChunks());
@@ -603,87 +651,96 @@ js::Nursery::doCollection(JSRuntime* rt, JS::gcreason::Reason reason,
     StoreBuffer& sb = rt->gc.storeBuffer;
 
     // The MIR graph only contains nursery pointers if cancelIonCompilations()
-    // is set on the store buffer, in which case we cancel all compilations.
-    maybeStartProfile(ProfileKey::CancelIonCompilations);
+    // is set on the store buffer, in which case we cancel all compilations
+    // of such graphs.
+    startProfile(ProfileKey::CancelIonCompilations);
     if (sb.cancelIonCompilations())
-        js::CancelOffThreadIonCompile(rt);
-    maybeEndProfile(ProfileKey::CancelIonCompilations);
+        js::CancelOffThreadIonCompilesUsingNurseryPointers(rt);
+    endProfile(ProfileKey::CancelIonCompilations);
 
-    maybeStartProfile(ProfileKey::TraceValues);
+    startProfile(ProfileKey::TraceValues);
     sb.traceValues(mover);
-    maybeEndProfile(ProfileKey::TraceValues);
+    endProfile(ProfileKey::TraceValues);
 
-    maybeStartProfile(ProfileKey::TraceCells);
+    startProfile(ProfileKey::TraceCells);
     sb.traceCells(mover);
-    maybeEndProfile(ProfileKey::TraceCells);
+    endProfile(ProfileKey::TraceCells);
 
-    maybeStartProfile(ProfileKey::TraceSlots);
+    startProfile(ProfileKey::TraceSlots);
     sb.traceSlots(mover);
-    maybeEndProfile(ProfileKey::TraceSlots);
+    endProfile(ProfileKey::TraceSlots);
 
-    maybeStartProfile(ProfileKey::TraceWholeCells);
+    startProfile(ProfileKey::TraceWholeCells);
     sb.traceWholeCells(mover);
-    maybeEndProfile(ProfileKey::TraceWholeCells);
+    endProfile(ProfileKey::TraceWholeCells);
 
-    maybeStartProfile(ProfileKey::TraceGenericEntries);
+    startProfile(ProfileKey::TraceGenericEntries);
     sb.traceGenericEntries(&mover);
-    maybeEndProfile(ProfileKey::TraceGenericEntries);
+    endProfile(ProfileKey::TraceGenericEntries);
 
-    maybeStartProfile(ProfileKey::MarkRuntime);
+    startProfile(ProfileKey::MarkRuntime);
     rt->gc.traceRuntimeForMinorGC(&mover, session.lock);
-    maybeEndProfile(ProfileKey::MarkRuntime);
+    endProfile(ProfileKey::MarkRuntime);
 
-    maybeStartProfile(ProfileKey::MarkDebugger);
+    startProfile(ProfileKey::MarkDebugger);
     {
         gcstats::AutoPhase ap(rt->gc.stats, gcstats::PHASE_MARK_ROOTS);
         Debugger::markAll(&mover);
     }
-    maybeEndProfile(ProfileKey::MarkDebugger);
+    endProfile(ProfileKey::MarkDebugger);
 
-    maybeStartProfile(ProfileKey::ClearNewObjectCache);
-    rt->contextFromMainThread()->caches.newObjectCache.clearNurseryObjects(rt);
-    maybeEndProfile(ProfileKey::ClearNewObjectCache);
+    startProfile(ProfileKey::ClearNewObjectCache);
+    rt->caches().newObjectCache.clearNurseryObjects(rt);
+    endProfile(ProfileKey::ClearNewObjectCache);
 
     // Most of the work is done here. This loop iterates over objects that have
     // been moved to the major heap. If these objects have any outgoing pointers
     // to the nursery, then those nursery objects get moved as well, until no
     // objects are left to move. That is, we iterate to a fixed point.
-    maybeStartProfile(ProfileKey::CollectToFP);
+    startProfile(ProfileKey::CollectToFP);
     collectToFixedPoint(mover, tenureCounts);
-    maybeEndProfile(ProfileKey::CollectToFP);
+    endProfile(ProfileKey::CollectToFP);
 
     // Sweep compartments to update the array buffer object's view lists.
-    maybeStartProfile(ProfileKey::SweepArrayBufferViewList);
+    startProfile(ProfileKey::SweepArrayBufferViewList);
     for (CompartmentsIter c(rt, SkipAtoms); !c.done(); c.next())
         c->sweepAfterMinorGC(&mover);
-    maybeEndProfile(ProfileKey::SweepArrayBufferViewList);
+    endProfile(ProfileKey::SweepArrayBufferViewList);
 
     // Update any slot or element pointers whose destination has been tenured.
-    maybeStartProfile(ProfileKey::UpdateJitActivations);
+    startProfile(ProfileKey::UpdateJitActivations);
     js::jit::UpdateJitActivationsForMinorGC(rt, &mover);
     forwardedBuffers.finish();
-    maybeEndProfile(ProfileKey::UpdateJitActivations);
+    endProfile(ProfileKey::UpdateJitActivations);
 
-    maybeStartProfile(ProfileKey::ObjectsTenuredCallback);
+    startProfile(ProfileKey::ObjectsTenuredCallback);
     rt->gc.callObjectsTenuredCallback();
-    maybeEndProfile(ProfileKey::ObjectsTenuredCallback);
+    endProfile(ProfileKey::ObjectsTenuredCallback);
 
     // Sweep.
-    maybeStartProfile(ProfileKey::FreeMallocedBuffers);
+    startProfile(ProfileKey::FreeMallocedBuffers);
     freeMallocedBuffers();
-    maybeEndProfile(ProfileKey::FreeMallocedBuffers);
+    endProfile(ProfileKey::FreeMallocedBuffers);
 
-    maybeStartProfile(ProfileKey::Sweep);
+    startProfile(ProfileKey::Sweep);
     sweep();
-    maybeEndProfile(ProfileKey::Sweep);
+    endProfile(ProfileKey::Sweep);
 
-    maybeStartProfile(ProfileKey::ClearStoreBuffer);
-    rt->gc.storeBuffer.clear();
-    maybeEndProfile(ProfileKey::ClearStoreBuffer);
+    startProfile(ProfileKey::ClearStoreBuffer);
+    runtime()->gc.storeBuffer().clear();
+    endProfile(ProfileKey::ClearStoreBuffer);
 
     // Make sure hashtables have been updated after the collection.
-    maybeStartProfile(ProfileKey::CheckHashTables);
-    maybeEndProfile(ProfileKey::CheckHashTables);
+    startProfile(ProfileKey::CheckHashTables);
+#ifdef JS_GC_ZEAL
+    if (rt->hasZealMode(ZealMode::CheckHashTablesOnMinorGC))
+        CheckHashTablesAfterMovingGC(rt);
+#endif
+    endProfile(ProfileKey::CheckHashTables);
+
+    previousGC.reason = reason;
+    previousGC.nurseryUsedBytes = initialNurserySize;
+    previousGC.tenuredBytes = mover.tenuredSize;
 
     // Calculate and return the promotion rate.
     return mover.tenuredSize / double(initialNurserySize);
@@ -743,8 +800,8 @@ void
 js::Nursery::sweep()
 {
     /* Sweep unique id's in all in-use chunks. */
-    for (CellsWithUniqueIdSet::Enum e(cellsWithUid_); !e.empty(); e.popFront()) {
-        JSObject* obj = static_cast<JSObject*>(e.front());
+    for (Cell* cell : cellsWithUid_) {
+        JSObject* obj = static_cast<JSObject*>(cell);
         if (!IsForwarded(obj))
             obj->zone()->removeUniqueId(obj);
         else
@@ -752,8 +809,12 @@ js::Nursery::sweep()
     }
     cellsWithUid_.clear();
 
-    runSweepActions();
     sweepDictionaryModeObjects();
+
+#ifdef JS_GC_ZEAL
+    /* Poison the nursery contents so touching a freed object will crash. */
+    for (unsigned i = 0; i < numChunks(); i++)
+        chunk(i).poisonAndInit(runtime(), JS_SWEPT_NURSERY_PATTERN);
 
     {
 #ifdef JS_CRASH_DIAGNOSTICS
@@ -807,6 +868,7 @@ js::Nursery::maybeResizeNursery(JS::gcreason::Reason reason, double promotionRat
 {
     static const double GrowThreshold   = 0.05;
     static const double ShrinkThreshold = 0.01;
+    unsigned newMaxNurseryChunks;
 
     // Shrink the nursery to its minimum size of we ran out of memory or
     // received a memory pressure event.
@@ -815,10 +877,30 @@ js::Nursery::maybeResizeNursery(JS::gcreason::Reason reason, double promotionRat
         return;
     }
 
+#ifdef JS_GC_ZEAL
+    // This zeal mode disabled nursery resizing.
+    if (runtime()->hasZealMode(ZealMode::GenerationalGC))
+        return;
+#endif
+
+    newMaxNurseryChunks = runtime()->gc.tunables.gcMaxNurseryBytes() >> ChunkShift;
+    if (newMaxNurseryChunks != maxNurseryChunks_) {
+        maxNurseryChunks_ = newMaxNurseryChunks;
+        /* The configured maximum nursery size is changing */
+        int extraChunks = numChunks() - newMaxNurseryChunks;
+        if (extraChunks > 0) {
+            /* We need to shrink the nursery */
+            shrinkAllocableSpace(extraChunks);
+
+            previousPromotionRate_ = promotionRate;
+            return;
+        }
+    }
+
     if (promotionRate > GrowThreshold)
         growAllocableSpace();
     else if (promotionRate < ShrinkThreshold && previousPromotionRate_ < ShrinkThreshold)
-        shrinkAllocableSpace();
+        shrinkAllocableSpace(1);
 
     previousPromotionRate_ = promotionRate;
 }
@@ -830,9 +912,13 @@ js::Nursery::growAllocableSpace()
 }
 
 void
-js::Nursery::shrinkAllocableSpace()
+js::Nursery::shrinkAllocableSpace(unsigned removeNumChunks)
 {
-    updateNumChunks(Max(numChunks() - 1, 1u));
+#ifdef JS_GC_ZEAL
+    if (runtime()->hasZealMode(ZealMode::GenerationalGC))
+        return;
+#endif
+    updateNumChunks(Max(numChunks() - removeNumChunks, 1u));
 }
 
 void

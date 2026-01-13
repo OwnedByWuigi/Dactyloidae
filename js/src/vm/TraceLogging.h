@@ -328,8 +328,19 @@ class TraceLoggerThreadState
     bool offThreadEnabled;
     bool graphSpewingEnabled;
     bool spewErrors;
-    ThreadLoggerHashMap threadLoggers;
-    mozilla::LinkedList<TraceLoggerMainThread> traceLoggerMainThreadList;
+    mozilla::LinkedList<TraceLoggerThread> threadLoggers;
+
+    typedef HashMap<const void*,
+                    TraceLoggerEventPayload*,
+                    PointerHasher<const void*>,
+                    SystemAllocPolicy> PointerHashMap;
+    typedef HashMap<uint32_t,
+                    TraceLoggerEventPayload*,
+                    DefaultHasher<uint32_t>,
+                    SystemAllocPolicy> TextIdHashMap;
+    PointerHashMap pointerMap;
+    TextIdHashMap textIdPayloads;
+    uint32_t nextTextId;
 
   public:
     uint64_t startupTime;
