@@ -445,6 +445,7 @@ class BufferGrayRootsTracer : public JS::CallbackTracer
     void onStringEdge(JSString** stringp) override { bufferRoot(*stringp); }
     void onScriptEdge(JSScript** scriptp) override { bufferRoot(*scriptp); }
     void onSymbolEdge(JS::Symbol** symbolp) override { bufferRoot(*symbolp); }
+    void onBigIntEdge(JS::BigInt** bip) override { bufferRoot(*bip); }
 
     void onChild(const JS::GCCellPtr& thing) override {
         MOZ_CRASH("Unexpected gray root kind");

@@ -197,6 +197,7 @@ class JSLinearString;
 
 namespace JS {
 class Symbol;
+class BigInt;
 } // namespace JS
 
 namespace js {

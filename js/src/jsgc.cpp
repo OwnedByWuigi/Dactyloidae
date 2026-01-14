@@ -4150,7 +4150,7 @@ GCRuntime::markGrayReferences(gcstats::Phase phase)
 void
 GCRuntime::markGrayReferencesInCurrentGroup(gcstats::Phase phase)
 {
-    markGrayReferences<GCSweepGroupIter, GCCompartmentGroupIter>(phase);
+    markGrayReferences<GCSweepGroupIter, SweepGroupCompartmentsIter>(phase);
 }
 
 void
@@ -4646,7 +4646,7 @@ GCRuntime::getNextSweepGroup()
             zone->gcGrayRoots.clearAndFree();
         }
 
-        for (GCCompartmentGroupIter comp(rt); !comp.done(); comp.next())
+        for (SweepGroupCompartmentsIter comp(rt); !comp.done(); comp.next())
             ResetGrayList(comp);
 
         abortSweepAfterCurrentGroup = false;
@@ -4783,7 +4783,7 @@ MarkIncomingCrossCompartmentPointers(JSRuntime* rt, const uint32_t color)
 
     bool unlinkList = color == GRAY;
 
-    for (GCCompartmentGroupIter c(rt); !c.done(); c.next()) {
+    for (SweepGroupCompartmentsIter c(rt); !c.done(); c.next()) {
         MOZ_ASSERT_IF(color == GRAY, c->zone()->isGCMarkingGray());
         MOZ_ASSERT_IF(color == BLACK, c->zone()->isGCMarkingBlack());
         MOZ_ASSERT_IF(c->gcIncomingGrayPointers, IsGrayListObject(c->gcIncomingGrayPointers));
@@ -4997,28 +4997,30 @@ SweepAtomsTask::run()
 /* virtual */ void
 SweepCCWrappersTask::run()
 {
-    for (GCCompartmentGroupIter c(runtime); !c.done(); c.next())
+    for (SweepGroupCompartmentsIter c(runtime); !c.done(); c.next())
         c->sweepCrossCompartmentWrappers();
 }
 
 /* virtual */ void
 SweepObjectGroupsTask::run()
 {
-    for (GCCompartmentGroupIter c(runtime); !c.done(); c.next())
+    for (SweepGroupCompartmentsIter c(runtime); !c.done(); c.next())
         c->objectGroups.sweep(runtime->defaultFreeOp());
 }
 
 /* virtual */ void
 SweepRegExpsTask::run()
 {
-    for (GCCompartmentGroupIter c(runtime); !c.done(); c.next())
+    for (SweepGroupCompartmentsIter c(runtime); !c.done(); c.next())
         c->sweepRegExps();
 }
 
 /* virtual */ void
 SweepMiscTask::run()
 {
-    for (GCCompartmentGroupIter c(runtime); !c.done(); c.next()) {
+    for (SweepGroupCompartmentsIter c(runtime); !c.done(); c.next()) {
+        c->sweepGlobalObject();
+        c->sweepTemplateObjects();
         c->sweepSavedStacks();
         c->sweepSelfHostingScriptSource();
         c->sweepNativeIterators();
@@ -5110,7 +5112,7 @@ GCRuntime::sweepDebuggerOnMainThread(FreeOp* fop)
     // table.
     {
          gcstats::AutoPhase ap2(stats(), gcstats::PHASE_SWEEP_MISC);
-        for (GCCompartmentGroupIter c(rt); !c.done(); c.next())
+        for (SweepGroupCompartmentsIter c(rt); !c.done(); c.next())
             c->sweepDebugEnvironments();
     }
 
@@ -5133,7 +5135,7 @@ GCRuntime::sweepJitDataOnMainThread(FreeOp* fop)
         // Cancel any active or pending off thread compilations.
         js::CancelOffThreadIonCompile(rt, JS::Zone::Sweep);
 
-        for (GCCompartmentGroupIter c(rt); !c.done(); c.next())
+        for (SweepGroupCompartmentsIter c(rt); !c.done(); c.next())
             c->sweepJitCompartment(fop);
 
         for (GCSweepGroupIter zone(rt); !zone.done(); zone.next()) {

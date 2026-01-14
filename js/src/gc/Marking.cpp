@@ -1643,7 +1643,8 @@ ObjectDenseElementsMayBeMarkable(NativeObject* nobj)
         return true;
 
     static const uint32_t flagMask =
-        TYPE_FLAG_STRING | TYPE_FLAG_SYMBOL | TYPE_FLAG_LAZYARGS | TYPE_FLAG_ANYOBJECT;
+        TYPE_FLAG_STRING | TYPE_FLAG_SYMBOL | TYPE_FLAG_LAZYARGS | TYPE_FLAG_ANYOBJECT |
+        TYPE_FLAG_BIGINT;
     bool mayBeMarkable = typeSet->hasAnyFlag(flagMask) || typeSet->getObjectCount() != 0;
 
 #ifdef DEBUG
@@ -2653,6 +2654,7 @@ js::TenuringTracer::moveToTenuredSlow(JSObject* src)
     overlay->forwardTo(dst);
     insertIntoFixupList(overlay);
 
+    MemProfiler::MoveNurseryToTenured(src, dst);
     TracePromoteToTenured(src, dst);
     return dst;
 }
@@ -2685,6 +2687,7 @@ js::TenuringTracer::movePlainObjectToTenured(PlainObject* src)
     overlay->forwardTo(dst);
     insertIntoFixupList(overlay);
 
+    MemProfiler::MoveNurseryToTenured(src, dst);
     TracePromoteToTenured(src, dst);
     return dst;
 }

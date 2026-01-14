@@ -7,6 +7,7 @@
 #ifndef gc_Marking_inl_h
 #define gc_Marking_inl_h
 
+#include "vm/BigIntType.h"
 #include "gc/Marking.h"
 
 #include "gc/RelocationOverlay.h"
@@ -26,6 +27,7 @@ struct MightBeForwarded
                               mozilla::IsBaseOf<Shape, T>::value ||
                               mozilla::IsBaseOf<BaseShape, T>::value ||
                               mozilla::IsBaseOf<JSString, T>::value ||
+                              mozilla::IsBaseOf<JS::BigInt, T>::value ||
                               mozilla::IsBaseOf<JSScript, T>::value ||
                               mozilla::IsBaseOf<js::LazyScript, T>::value ||
                               mozilla::IsBaseOf<js::Scope, T>::value ||
