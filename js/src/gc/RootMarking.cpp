@@ -10,7 +10,6 @@
 #endif
 
 #include "jscntxt.h"
-#include "jsgc.h"
 #include "jsprf.h"
 #include "jstypes.h"
 
@@ -25,6 +24,9 @@
 
 #include "jsgcinlines.h"
 #include "jsobjinlines.h"
+
+#include "gc/Iteration-inl.h"
+#include "gc/Nursery-inl.h"
 
 using namespace js;
 using namespace js::gc;

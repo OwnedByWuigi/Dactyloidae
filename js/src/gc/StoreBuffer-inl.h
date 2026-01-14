@@ -8,6 +8,7 @@
 
 #include "gc/StoreBuffer.h"
 
+#include "gc/Cell.h"
 #include "gc/Heap.h"
 
 namespace js {

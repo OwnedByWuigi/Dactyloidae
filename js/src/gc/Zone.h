@@ -28,6 +28,9 @@ class JitZone;
 
 namespace gc {
 
+class GCSchedulingState;
+class GCSchedulingTunables;
+
 // This class encapsulates the data that determines when we need to do a zone GC.
 class ZoneHeapThreshold
 {
@@ -196,7 +199,7 @@ struct Zone : public JS::shadow::Zone,
     bool isPreservingCode() const { return gcPreserveCode_; }
 
     bool canCollect();
-	
+
     void notifyObservingDebuggers();
 
     void setGCState(GCState state) {

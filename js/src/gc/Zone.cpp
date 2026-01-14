@@ -6,8 +6,6 @@
 
 #include "gc/Zone.h"
 
-#include "jsgc.h"
-
 #include "gc/Policy.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
@@ -17,6 +15,7 @@
 
 #include "jscompartmentinlines.h"
 #include "jsgcinlines.h"
+#include "gc/Marking-inl.h"
 
 using namespace js;
 using namespace js::gc;

@@ -10,14 +10,16 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/EnumSet.h"
 
-#include "jsfriendapi.h"
-#include "jsgc.h"
+#include "jsatom.h"
 
-#include "gc/Heap.h"
+#include "gc/ArenaList.h"
+#include "gc/AtomMarking.h"
+#include "gc/GCHelperState.h"
+#include "gc/GCMarker.h"
+#include "gc/GCParallelTask.h"
 #include "gc/Nursery.h"
 #include "gc/Statistics.h"
 #include "gc/StoreBuffer.h"
-#include "gc/Tracer.h"
 #include "js/GCAnnotations.h"
 
 namespace js {
@@ -38,6 +40,7 @@ class AutoTraceSession;
 class MarkingValidator;
 class AutoTraceSession;
 struct MovingTracer;
+enum class ShouldCheckThresholds;
 class SweepGroupsIter;
 class WeakCacheSweepIterator;
 
@@ -703,6 +706,34 @@ class MemoryCounter
     void reset();
 };
 
+// A singly linked list of zones.
+class ZoneList
+{
+    static Zone * const End;
+
+    Zone* head;
+    Zone* tail;
+
+  public:
+    ZoneList();
+    ~ZoneList();
+
+    bool isEmpty() const;
+    Zone* front() const;
+
+    void append(Zone* zone);
+    void transferFrom(ZoneList& other);
+    void removeFront();
+    void clear();
+
+  private:
+    explicit ZoneList(Zone* singleZone);
+    void check() const;
+
+    ZoneList(const ZoneList& other) = delete;
+    ZoneList& operator=(const ZoneList& other) = delete;
+};
+
 class GCRuntime
 {
   public:
@@ -1182,11 +1213,12 @@ class GCRuntime
     MemProfiler mMemProfiler;
 
   private:
-    // When empty, chunks reside in the emptyChunks pool and are re-used as
-    // needed or eventually expired if not re-used. The emptyChunks pool gets
-    // refilled from the background allocation task heuristically so that empty
-    // chunks should always available for immediate allocation without syscalls.
-    ChunkPool             emptyChunks_;
+    // When chunks are empty, they reside in the emptyChunks pool and are
+    // re-used as needed or eventually expired if not re-used. The emptyChunks
+    // pool gets refilled from the background allocation task heuristically so
+    // that empty chunks should always be available for immediate allocation
+    // without syscalls.
+    GCLockData<ChunkPool> emptyChunks_;
 
     // Chunks which have had some, but not all, of their arenas allocated live
     // in the available chunk lists. When all available arenas in a chunk have
@@ -1477,7 +1509,8 @@ class GCRuntime
 
     BackgroundAllocTask allocTask;
     BackgroundDecommitTask decommitTask;
-    GCHelperState helperState;
+
+    js::GCHelperState helperState;
 
     /*
      * During incremental sweeping, this field temporarily holds the arenas of

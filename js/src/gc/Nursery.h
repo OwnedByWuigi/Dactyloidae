@@ -10,19 +10,10 @@
 
 #include "mozilla/EnumeratedArray.h"
 
-#include "jsalloc.h"
-#include "jspubtd.h"
-
-#include "ds/BitArray.h"
-#include "gc/Heap.h"
-#include "gc/Memory.h"
 #include "js/Class.h"
-#include "js/GCAPI.h"
-#include "js/HashTable.h"
 #include "js/HeapAPI.h"
-#include "js/Value.h"
+#include "js/TracingAPI.h"
 #include "js/Vector.h"
-#include "vm/SharedMem.h"
 
 #define FOR_EACH_NURSERY_PROFILE_TIME(_)                                      \
    /* Key                       Header text */                                \
@@ -44,8 +35,9 @@
     _(FreeMallocedBuffers,      "frSlts")                                     \
     _(ClearStoreBuffer,         "clrSB")                                      \
     _(ClearNursery,             "clear")                                      \
-    _(Resize,                   "resize")                                     \
     _(Pretenure,                "pretnr")
+
+template<typename T> class SharedMem;
 
 namespace JS {
 struct Zone;
@@ -53,10 +45,12 @@ struct Zone;
 
 namespace js {
 
+class AutoLockGCBgAlloc;
 class ObjectElements;
 class PlainObject;
 class NativeObject;
 class Nursery;
+struct NurseryChunk;
 class HeapSlot;
 
 namespace gc {
@@ -65,6 +59,8 @@ struct Cell;
 class MinorCollectionTracer;
 class RelocationOverlay;
 struct TenureCountCache;
+enum class AllocKind : uint8_t;
+class TenuredCell;
 } /* namespace gc */
 
 namespace jit {
@@ -97,7 +93,7 @@ class TenuringTracer : public JSTracer
     // The store buffers need to be able to call these directly.
     void traceObject(JSObject* src);
     void traceObjectSlots(NativeObject* nobj, uint32_t start, uint32_t length);
-    void traceSlots(JS::Value* vp, uint32_t nslots) { traceSlots(vp, vp + nslots); }
+    void traceSlots(JS::Value* vp, uint32_t nslots);
 
   private:
     Nursery& nursery() { return nursery_; }
@@ -139,15 +135,22 @@ class Nursery
 
     [[nodiscard]] bool init(uint32_t maxNurseryBytes, AutoLockGCBgAlloc& lock);
 
-    unsigned maxChunks() const { return maxNurseryChunks_; }
-    unsigned numChunks() const { return chunks_.length(); }
+    unsigned chunkCountLimit() const { return chunkCountLimit_; }
 
-    bool exists() const { return maxChunks() != 0; }
-    size_t nurserySize() const { return maxChunks() << ChunkShift; }
+    // Number of allocated (ready to use) chunks.
+    unsigned allocatedChunkCount() const { return chunks_.length(); }
+
+    // Total number of chunks and the capacity of the nursery. Chunks will be
+    // lazilly allocated and added to the chunks array up to this limit, after
+    // that the nursery must be collected, this limit may be raised during
+    // collection.
+    unsigned maxChunkCount() const { return maxChunkCount_; }
+
+    bool exists() const { return chunkCountLimit() != 0; }
 
     void enable();
     void disable();
-    bool isEnabled() const { return numChunks() != 0; }
+    bool isEnabled() const { return maxChunkCount() != 0; }
 
     /* Return true if no allocations have been made since the last collection. */
     bool isEmpty() const;
@@ -159,15 +162,14 @@ class Nursery
     MOZ_ALWAYS_INLINE bool isInside(gc::Cell* cellp) const = delete;
     MOZ_ALWAYS_INLINE bool isInside(const void* p) const {
         for (auto chunk : chunks_) {
-            if (uintptr_t(p) - chunk->start() < gc::ChunkSize)
+            if (uintptr_t(p) - uintptr_t(chunk) < gc::ChunkSize)
                 return true;
         }
         return false;
     }
+
     template<typename T>
-    bool isInside(const SharedMem<T>& p) const {
-        return isInside(p.unwrap(/*safe - used for value in comparison above*/));
-    }
+    inline bool isInside(const SharedMem<T>& p) const;
 
     /*
      * Allocate and return a pointer to a new GC object with its |slots|
@@ -238,7 +240,7 @@ class Nursery
     MOZ_MUST_USE bool queueDictionaryModeObjectToSweep(NativeObject* obj);
 
     size_t sizeOfHeapCommitted() const {
-        return numChunks() * gc::ChunkSize;
+        return allocatedChunkCount() * gc::ChunkSize;
     }
     size_t sizeOfMallocedBuffers(mozilla::MallocSizeOf mallocSizeOf) const {
         size_t total = 0;
@@ -249,13 +251,16 @@ class Nursery
     }
 
     // The number of bytes from the start position to the end of the nursery.
-    size_t spaceToEnd() const;
+    // pass maxChunkCount(), allocatedChunkCount() or chunkCountLimit()
+    // to calculate the nursery size, current lazy-allocated size or nursery
+    // limit respectively.
+    size_t spaceToEnd(unsigned chunkCount) const;
 
     // Free space remaining, not counting chunk trailers.
     MOZ_ALWAYS_INLINE size_t freeSpace() const {
         MOZ_ASSERT(currentEnd_ - position_ <= NurseryChunkUsableSize);
         return (currentEnd_ - position_) +
-               (numChunks() - currentChunk_ - 1) * NurseryChunkUsableSize;
+               (maxChunkCount() - currentChunk_ - 1) * NurseryChunkUsableSize;
     }
 
     /* Print total profile times on shutdown. */
@@ -270,24 +275,19 @@ class Nursery
     JS::gcreason::Reason minorGCTriggerReason() const { return minorGCTriggerReason_; }
     void clearMinorGCRequest() { minorGCTriggerReason_ = JS::gcreason::NO_REASON; }
 
+    bool needIdleTimeCollection() const {
+        return minorGCRequested() ||
+               (freeSpace() < kIdleTimeCollectionThreshold);
+    }
+
     bool enableProfiling() const { return enableProfiling_; }
 
   private:
     /* The amount of space in the mapped nursery available to allocations. */
-    static const size_t NurseryChunkUsableSize = gc::ChunkSize - sizeof(gc::ChunkTrailer);
+    static const size_t NurseryChunkUsableSize = gc::ChunkSize - gc::ChunkTrailerSize;
 
-    struct NurseryChunk {
-        char data[NurseryChunkUsableSize];
-        gc::ChunkTrailer trailer;
-        static NurseryChunk* fromChunk(gc::Chunk* chunk);
-        void init(JSRuntime* rt);
-        void poisonAndInit(JSRuntime* rt, uint8_t poison);
-        uintptr_t start() const { return uintptr_t(&data); }
-        uintptr_t end() const { return uintptr_t(&trailer); }
-        gc::Chunk* toChunk(JSRuntime* rt);
-    };
-    static_assert(sizeof(NurseryChunk) == gc::ChunkSize,
-                  "Nursery chunk size must match gc::Chunk size.");
+    /* Attemp to run a minor GC in the idle time if the free space falls below this threshold. */
+    static constexpr size_t kIdleTimeCollectionThreshold = NurseryChunkUsableSize / 4;
 
     /*
      * The start and end pointers are stored under the runtime so that we can
@@ -312,8 +312,20 @@ class Nursery
     /* The index of the chunk that is currently being allocated from. */
     unsigned currentChunk_;
 
-    /* Maximum number of chunks to allocate for the nursery. */
-    unsigned maxNurseryChunks_;
+    /*
+     * The nursery may grow the chunks_ vector up to this size without a
+     * collection.  This allows the nursery to grow lazilly.  This limit may
+     * change during maybeResizeNursery() each collection.
+     */
+    unsigned maxChunkCount_;
+
+    /*
+     * This limit is fixed by configuration.  It represents the maximum size
+     * the nursery is permitted to tune itself to in maybeResizeNursery();
+     */
+    unsigned chunkCountLimit_;
+
+    mozilla::TimeDuration timeInChunkAlloc_;
 
     /* Promotion rate for the previous minor collection. */
     float previousPromotionRate_;
@@ -350,6 +362,7 @@ class Nursery
     struct {
         JS::gcreason::Reason reason;
         size_t nurseryCapacity;
+        size_t nurseryLazyCapacity;
         size_t nurseryUsedBytes;
         size_t tenuredBytes;
     } previousGC;
@@ -408,7 +421,10 @@ class Nursery
     using NativeObjectVector = Vector<NativeObject*, 0, SystemAllocPolicy>;
     NativeObjectVector dictionaryModeObjects_;
 
-    NurseryChunk* allocChunk();
+#ifdef JS_GC_ZEAL
+    struct Canary;
+    Canary* lastCanary_;
+#endif
 
     NurseryChunk& chunk(unsigned index) const {
         return *chunks_[index];
@@ -417,24 +433,14 @@ class Nursery
     void setCurrentChunk(unsigned chunkno);
     void setStartPosition();
 
-    void updateNumChunks(unsigned newCount);
-    void updateNumChunksLocked(unsigned newCount,
-                               AutoLockGCBgAlloc& lock);
+    /*
+     * Allocate the next chunk, or the first chunk for initialization.
+     * Callers will probably want to call setCurrentChunk(0) next.
+     */
+    [[nodiscard]] bool allocateNextChunk(unsigned chunkno,
+        AutoLockGCBgAlloc& lock);
 
-    MOZ_ALWAYS_INLINE uintptr_t allocationEnd() const {
-        MOZ_ASSERT(numChunks() > 0);
-        return chunks_.back()->end();
-    }
-
-    MOZ_ALWAYS_INLINE uintptr_t currentEnd() const {
-        MOZ_ASSERT(runtime_);
-        MOZ_ASSERT(currentEnd_ == chunk(currentChunk_).end());
-        return currentEnd_;
-    }
-    void* addressOfCurrentEnd() const {
-        MOZ_ASSERT(runtime_);
-        return (void*)&currentEnd_;
-    }
+    MOZ_ALWAYS_INLINE uintptr_t currentEnd() const;
 
     uintptr_t position() const { return position_; }
     void* addressOfPosition() const { return (void*)&position_; }
@@ -487,8 +493,12 @@ class Nursery
     /* Change the allocable space provided by the nursery. */
     void maybeResizeNursery(JS::gcreason::Reason reason);
     void growAllocableSpace();
-    void shrinkAllocableSpace(unsigned removeNumChunks);
+    void shrinkAllocableSpace(unsigned newCount);
     void minimizeAllocableSpace();
+
+    // Free the chunks starting at firstFreeChunk until the end of the chunks
+    // vector. Shrinks the vector but does not update maxChunkCount().
+    void freeChunksFrom(unsigned firstFreeChunk);
 
     /* Profile recording and printing. */
     void startProfile(ProfileKey key);
@@ -498,6 +508,7 @@ class Nursery
     friend class TenuringTracer;
     friend class gc::MinorCollectionTracer;
     friend class jit::MacroAssembler;
+    friend struct NurseryChunk;
 };
 
 } /* namespace js */

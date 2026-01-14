@@ -8,9 +8,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/SizePrintfMacros.h"
 
-#include "jsapi.h"
 #include "jsfun.h"
-#include "jsgc.h"
 #include "jsprf.h"
 #include "jsscript.h"
 #include "jsutil.h"
@@ -438,3 +436,10 @@ JS_GetTraceThingInfo(char* buf, size_t bufsize, JSTracer* trc, void* thing,
 JS::CallbackTracer::CallbackTracer(JSContext* cx, WeakMapTraceKind weakTraceKind)
   : CallbackTracer(cx->runtime(), weakTraceKind)
 {}
+
+uint32_t
+JSTracer::gcNumberForMarking() const
+{
+    MOZ_ASSERT(isMarkingTracer());
+    return runtime()->gc.gcNumber();
+}

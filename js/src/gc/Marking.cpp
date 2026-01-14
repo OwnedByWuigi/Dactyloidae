@@ -4,7 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gc/Marking.h"
+#include "gc/Marking-inl.h"
 
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerRange.h"
@@ -12,7 +12,6 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/TypeTraits.h"
 
-#include "jsgc.h"
 #include "jsprf.h"
 
 #include "builtin/ModuleObject.h"
@@ -36,8 +35,8 @@
 
 #include "jscompartmentinlines.h"
 #include "jsgcinlines.h"
-#include "jsobjinlines.h"
 
+#include "gc/Iteration-inl.h"
 #include "gc/Nursery-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/String-inl.h"
@@ -975,15 +974,25 @@ js::GCMarker::traverseEdge(S source, const T& thing)
     DispatchTyped(TraverseEdgeFunctor<T, S>(), thing, this, source);
 }
 
+namespace {
+
+template <typename T> struct ParticipatesInCC {};
+#define EXPAND_PARTICIPATES_IN_CC(_, type, addToCCKind) \
+    template <> struct ParticipatesInCC<type> { static const bool value = addToCCKind; };
+JS_FOR_EACH_TRACEKIND(EXPAND_PARTICIPATES_IN_CC)
+#undef EXPAND_PARTICIPATES_IN_CC
+
+} // namespace
+
 template <typename T>
 bool
 js::GCMarker::mark(T* thing)
 {
     AssertShouldMarkInZone(thing);
-    MOZ_ASSERT(!IsInsideNursery(gc::TenuredCell::fromPointer(thing)));
-    return gc::ParticipatesInCC<T>::value
-           ? gc::TenuredCell::fromPointer(thing)->markIfUnmarked(markColor())
-           : gc::TenuredCell::fromPointer(thing)->markIfUnmarked(gc::MarkColor::Black);
+    MOZ_ASSERT(!IsInsideNursery(TenuredCell::fromPointer(thing)));
+    return ParticipatesInCC<T>::value
+           ? TenuredCell::fromPointer(thing)->markIfUnmarked(markColor())
+           : TenuredCell::fromPointer(thing)->markIfUnmarked(MarkColor::Black);
 }
 
 
@@ -2521,6 +2530,12 @@ js::TenuringTracer::traceSlots(Value* vp, Value* end)
 {
     for (; vp != end; ++vp)
         traverse(vp);
+}
+
+inline void
+js::TenuringTracer::traceSlots(JS::Value* vp, uint32_t nslots)
+{
+    traceSlots(vp, vp + nslots);
 }
 
 #ifdef DEBUG
