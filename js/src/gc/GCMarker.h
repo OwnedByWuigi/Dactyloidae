@@ -136,22 +136,22 @@ class MarkStack
 
     void setStack(TaggedPtr* stack, size_t tosIndex, size_t capacity);
 
-    MOZ_MUST_USE bool init(JSGCMode gcMode);
+    [[nodiscard]] bool init(JSGCMode gcMode);
 
     void setBaseCapacity(JSGCMode mode);
     size_t maxCapacity() const { return maxCapacity_; }
     void setMaxCapacity(size_t maxCapacity);
 
     template <typename T>
-    MOZ_MUST_USE bool push(T* ptr);
+    [[nodiscard]] bool push(T* ptr);
 
-    MOZ_MUST_USE bool push(JSObject* obj, HeapSlot* start, HeapSlot* end);
-    MOZ_MUST_USE bool push(const ValueArray& array);
-    MOZ_MUST_USE bool push(const SavedValueArray& array);
+    [[nodiscard]] bool push(JSObject* obj, HeapSlot* start, HeapSlot* end);
+    [[nodiscard]] bool push(const ValueArray& array);
+    [[nodiscard]] bool push(const SavedValueArray& array);
 
     // GCMarker::eagerlyMarkChildren uses unused marking stack as temporary
     // storage to hold rope pointers.
-    MOZ_MUST_USE bool pushTempRope(JSRope* ptr);
+    [[nodiscard]] bool pushTempRope(JSRope* ptr);
 
     bool isEmpty() const {
         return tos_ == stack_;
@@ -169,13 +169,13 @@ class MarkStack
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
   private:
-    MOZ_MUST_USE bool ensureSpace(size_t count);
+    [[nodiscard]] bool ensureSpace(size_t count);
 
     /* Grow the stack, ensuring there is space for at least count elements. */
-    MOZ_MUST_USE bool enlarge(size_t count);
+    [[nodiscard]] bool enlarge(size_t count);
 
     const TaggedPtr& peekPtr() const;
-    MOZ_MUST_USE bool pushTaggedPtr(Tag tag, Cell* ptr);
+    [[nodiscard]] bool pushTaggedPtr(Tag tag, Cell* ptr);
 
     ActiveThreadData<TaggedPtr*> stack_;
     ActiveThreadData<TaggedPtr*> tos_;
@@ -222,7 +222,7 @@ class GCMarker : public JSTracer
 {
   public:
     explicit GCMarker(JSRuntime* rt);
-    MOZ_MUST_USE bool init(JSGCMode gcMode);
+    [[nodiscard]] bool init(JSGCMode gcMode);
 
     void setMaxCapacity(size_t maxCap) { stack.setMaxCapacity(maxCap); }
     size_t maxCapacity() const { return stack.maxCapacity(); }
@@ -270,7 +270,7 @@ class GCMarker : public JSTracer
     void delayMarkingArena(gc::Arena* arena);
     void delayMarkingChildren(const void* thing);
     void markDelayedChildren(gc::Arena* arena);
-    MOZ_MUST_USE bool markDelayedChildren(SliceBudget& budget);
+    [[nodiscard]] bool markDelayedChildren(SliceBudget& budget);
     bool hasDelayedChildren() const {
         return !!unmarkedArenaStackTop;
     }
@@ -279,7 +279,7 @@ class GCMarker : public JSTracer
         return isMarkStackEmpty() && !unmarkedArenaStackTop;
     }
 
-    MOZ_MUST_USE bool drainMarkStack(SliceBudget& budget);
+    [[nodiscard]] bool drainMarkStack(SliceBudget& budget);
 
     void setGCMode(JSGCMode mode) { stack.setGCMode(mode); }
 
@@ -331,7 +331,7 @@ class GCMarker : public JSTracer
     // Mark the given GC thing, but do not trace its children. Return true
     // if the thing became marked.
     template <typename T>
-    MOZ_MUST_USE bool mark(T* thing);
+    [[nodiscard]] bool mark(T* thing);
 
     template <typename T>
     inline void pushTaggedPtr(T* ptr);
@@ -342,7 +342,7 @@ class GCMarker : public JSTracer
         return stack.isEmpty();
     }
 
-    MOZ_MUST_USE bool restoreValueArray(const gc::MarkStack::SavedValueArray& array,
+    [[nodiscard]] bool restoreValueArray(const gc::MarkStack::SavedValueArray& array,
                                         HeapSlot** vpp, HeapSlot** endp);
     void saveValueRanges();
     inline void processMarkStackTop(SliceBudget& budget);

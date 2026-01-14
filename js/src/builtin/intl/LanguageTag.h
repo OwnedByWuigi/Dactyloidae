@@ -23,7 +23,6 @@
 #include "jsalloc.h"
 #include "js/Result.h"
 
-#include "js/GCAPI.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
 

@@ -73,7 +73,6 @@
 #include "js/CompileOptions.h"
 #include "js/Debug.h"
 #include "js/Equality.h"  // JS::SameValue
-#include "js/GCAPI.h"
 #include "js/Initialization.h"
 #include "js/SourceBufferHolder.h"
 #include "js/StructuredClone.h"

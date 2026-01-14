@@ -13,7 +13,6 @@
 #include "jsfriendapi.h"
 #include "jstypes.h"
 
-#include "js/GCAPI.h"
 #include "js/Value.h"
 #include "vm/String.h"
 

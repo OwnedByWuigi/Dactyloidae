@@ -323,13 +323,6 @@ bool
 TryConvertToUnboxedLayout(ExclusiveContext* cx, AutoEnterAnalysis& enter, Shape* templateShape,
                           ObjectGroup* group, PreliminaryObjectArray* objects);
 
-inline gc::AllocKind
-UnboxedLayout::getAllocKind() const
-{
-    MOZ_ASSERT(size());
-    return gc::GetGCObjectKindForBytes(UnboxedPlainObject::offsetOfData() + size());
-}
-
 // Class for an array object using an unboxed representation.
 class UnboxedArrayObject : public JSObject
 {

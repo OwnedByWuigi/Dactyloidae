@@ -10,7 +10,6 @@
 #include "jsobj.h"
 
 #include "ds/OrderedHashTable.h"
-#include "gc/Marking.h"
 #include "js/Utility.h"
 #include "vm/EqualityOperations.h"  // js::SameValue
 #include "vm/GlobalObject.h"
@@ -18,8 +17,7 @@
 #include "vm/SelfHosting.h"
 #include "vm/Symbol.h"
 
-#include "jsobjinlines.h"
-
+#include "gc/Marking-inl.h"
 #include "vm/Interpreter-inl.h"
 #include "vm/NativeObject-inl.h"
 

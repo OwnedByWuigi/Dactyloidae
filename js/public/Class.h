@@ -495,12 +495,6 @@ typedef bool
  */
 typedef void
 (* JSFinalizeOp)(JSFreeOp* fop, JSObject* obj);
-
-/** Finalizes external strings created by JS_NewExternalString. */
-struct JSStringFinalizer {
-    void (*finalize)(JS::Zone* zone, const JSStringFinalizer* fin, char16_t* chars);
-};
-
 /**
  * Check whether v is an instance of obj.  Return false on error or exception,
  * true on success with true in *bp if v is an instance of obj, false in

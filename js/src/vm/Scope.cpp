@@ -13,6 +13,7 @@
 #include "vm/EnvironmentObject.h"
 #include "vm/Runtime.h"
 
+#include "gc/ObjectKind-inl.h"
 #include "vm/Shape-inl.h"
 
 using namespace js;

@@ -37,7 +37,6 @@
 #include "jswrapper.h"
 
 #include "gc/Barrier.h"
-#include "gc/Marking.h"
 #include "gc/Memory.h"
 #include "js/Conversions.h"
 #include "js/MemoryMetrics.h"
@@ -51,6 +50,8 @@
 
 #include "jsatominlines.h"
 
+#include "gc/Marking-inl.h"
+#include "gc/Nursery-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/Shape-inl.h"
 

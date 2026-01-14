@@ -19,6 +19,7 @@
 #define wasm_instance_h
 
 #include "gc/Barrier.h"
+#include "vm/SharedMem.h"
 #include "wasm/WasmCode.h"
 #include "wasm/WasmTable.h"
 

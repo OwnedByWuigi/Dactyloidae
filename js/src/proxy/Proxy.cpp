@@ -13,7 +13,6 @@
 #include "jsgc.h"
 #include "jswrapper.h"
 
-#include "gc/Marking.h"
 #include "proxy/DeadObjectProxy.h"
 #include "proxy/ScriptedProxyHandler.h"
 #include "vm/WrapperObject.h"
@@ -21,6 +20,7 @@
 #include "jsatominlines.h"
 #include "jsobjinlines.h"
 
+#include "gc/Marking-inl.h"
 #include "vm/NativeObject-inl.h"
 
 using namespace js;

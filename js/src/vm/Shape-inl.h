@@ -18,7 +18,7 @@
 
 #include "jsatominlines.h"
 #include "jscntxtinlines.h"
-#include "jsgcinlines.h"
+#include "gc/Marking-inl.h"
 
 namespace js {
 

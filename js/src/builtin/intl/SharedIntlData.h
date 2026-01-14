@@ -12,7 +12,6 @@
 
 #include "jsalloc.h"
 #include "js/CharacterEncoding.h"
-#include "js/GCAPI.h"
 #include "js/GCHashTable.h"
 #include "js/RootingAPI.h"
 #include "js/Utility.h"
@@ -156,7 +155,7 @@ class SharedIntlData
      * isn't a valid IANA time zone name, |result| remains unchanged.
      */
     bool validateTimeZoneName(JSContext* cx, JS::HandleString timeZone,
-                              JS::MutableHandleString result);
+                              MutableHandleAtom result);
 
     /**
      * Returns the canonical time zone name in |result|. If no canonical name
@@ -166,7 +165,7 @@ class SharedIntlData
      * by ICU when compared to IANA.
      */
     bool tryCanonicalizeTimeZoneConsistentWithIANA(JSContext* cx, JS::HandleString timeZone,
-                                                   JS::MutableHandleString result);
+                                                   MutableHandleAtom result);
   private:
     using Locale = JSAtom*;
 
@@ -233,9 +232,9 @@ class SharedIntlData
     * Sets |supported| to true if |locale| is supported by the requested Intl
     * service constructor. Otherwise sets |supported| to false.
     */
-    MOZ_MUST_USE bool isSupportedLocale(JSContext* cx, SupportedLocaleKind kind,
-                                        JS::Handle<JSString*> locale,
-                                        bool* supported);
+    [[nodiscard]] bool isSupportedLocale(JSContext* cx, SupportedLocaleKind kind,
+                                         JS::Handle<JSString*> locale,
+                                         bool* supported);
 
   private:
     /**

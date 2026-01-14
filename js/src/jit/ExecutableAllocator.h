@@ -42,7 +42,6 @@
 #include "jit/mips32/Simulator-mips32.h"
 #include "jit/mips64/Simulator-mips64.h"
 #include "jit/ProcessExecutableMemory.h"
-#include "js/GCAPI.h"
 #include "js/HashTable.h"
 #include "js/Vector.h"
 
@@ -68,6 +67,8 @@ extern  "C" void sync_instruction_memory(caddr_t v, u_int len);
      (!defined(JS_SIMULATOR_MIPS32) && !defined(JS_SIMULATOR_MIPS64))
 #include <sys/cachectl.h>
 #endif
+
+struct JSRuntime;
 
 namespace JS {
     struct CodeSizes;

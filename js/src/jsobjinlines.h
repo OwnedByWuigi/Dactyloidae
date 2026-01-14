@@ -26,8 +26,9 @@
 
 #include "jsatominlines.h"
 #include "jscompartmentinlines.h"
-#include "jsgcinlines.h"
 
+#include "gc/Marking-inl.h"
+#include "gc/ObjectKind-inl.h"
 #include "vm/ShapedObject-inl.h"
 #include "vm/TypeInference-inl.h"
 
@@ -117,6 +118,24 @@ js::NativeObject::sweepDictionaryListPointer()
     // not try to access the dead object.
     if (shape_->listp == &shape_)
         shape_->listp = nullptr;
+}
+
+MOZ_ALWAYS_INLINE void
+js::NativeObject::updateDictionaryListPointerAfterMinorGC(NativeObject* old)
+{
+    MOZ_ASSERT(this == Forwarded(old));
+
+    // Dictionary objects can be allocated in the nursery and when they are
+    // tenured the shape's pointer into the object needs to be updated.
+    if (shape_->listp == &old->shape_)
+        shape_->listp = &shape_;
+}
+
+inline void
+js::gc::MakeAccessibleAfterMovingGC(JSObject* obj)
+{
+    if (obj->isNative())
+        obj->as<NativeObject>().updateShapeAfterMovingGC();
 }
 
 /* static */ inline bool

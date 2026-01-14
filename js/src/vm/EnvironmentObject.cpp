@@ -24,7 +24,6 @@
 #include "wasm/WasmInstance.h"
 
 #include "jsatominlines.h"
-#include "jsobjinlines.h"
 #include "jsscriptinlines.h"
 
 #include "vm/Stack-inl.h"

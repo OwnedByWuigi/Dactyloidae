@@ -7,10 +7,16 @@
 
 #include "jscompartment.h"
 
+#include "gc/Allocator.h"
+#include "gc/GCTrace.h"
+
 #include "proxy/DeadObjectProxy.h"
 #include "proxy/ScriptedProxyHandler.h"
 
 #include "jsobjinlines.h"
+
+#include "gc/ObjectKind-inl.h"
+#include "vm/TypeInference-inl.h"
 
 using namespace js;
 

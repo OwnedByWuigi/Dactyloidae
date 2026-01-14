@@ -9,7 +9,6 @@
 #include "jshashutil.h"
 #include "jsobj.h"
 
-#include "gc/Marking.h"
 #include "gc/Policy.h"
 #include "gc/StoreBuffer.h"
 #include "gc/Zone.h"
@@ -17,10 +16,8 @@
 #include "vm/ArrayObject.h"
 #include "vm/Shape.h"
 #include "vm/TaggedProto.h"
-#include "vm/UnboxedObject.h"
 
-#include "jsobjinlines.h"
-
+#include "gc/Marking-inl.h"
 #include "vm/UnboxedObject-inl.h"
 
 using namespace js;

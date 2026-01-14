@@ -436,7 +436,7 @@ struct IonScript
     }
     MOZ_MUST_USE bool addTraceLoggerEvent(TraceLoggerEvent& event) {
         MOZ_ASSERT(event.hasPayload());
-        return traceLoggerEvents_.append(Move(event));
+        return traceLoggerEvents_.append(mozilla::Move(event));
     }
     const uint8_t* snapshots() const {
         return reinterpret_cast<const uint8_t*>(this) + snapshots_;
