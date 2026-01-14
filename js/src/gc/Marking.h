@@ -113,8 +113,10 @@ class MarkStack
         TaggedPtr ptr;
     };
 
-    explicit MarkStack(size_t maxCapacity);
+    explicit MarkStack(size_t maxCapacity = DefaultCapacity);
     ~MarkStack();
+
+    static const size_t DefaultCapacity = SIZE_MAX;
 
     size_t capacity() { return end_ - stack_; }
 
@@ -400,9 +402,6 @@ class GCMarker : public JSTracer
 // the marking phase of incremental GC.
 bool
 IsBufferGrayRootsTracer(JSTracer* trc);
-
-bool
-IsUnmarkGrayTracer(JSTracer* trc);
 #endif
 
 namespace gc {
