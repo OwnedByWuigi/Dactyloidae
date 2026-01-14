@@ -192,12 +192,16 @@ gc::GCRuntime::startVerifyPreBarriers()
     if (!trc)
         return;
 
-    AutoPrepareForTracing prep(TlsContext.get(), WithAtoms);
+    JSContext* cx = TlsContext.get();
+    AutoPrepareForTracing prep(cx, WithAtoms);
 
-    for (auto chunk = allNonEmptyChunks(); !chunk.done(); chunk.next())
-        chunk->bitmap.clear();
+    {
+        AutoLockGC lock(cx->runtime());
+        for (auto chunk = allNonEmptyChunks(lock); !chunk.done(); chunk.next())
+            chunk->bitmap.clear();
+    }
 
-    gcstats::AutoPhase ap(stats(), gcstats::PHASE_TRACE_HEAP);
+    gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::TRACE_HEAP);
 
     const size_t size = 64 * 1024 * 1024;
     trc->root = (VerifyNode*)js_malloc(size);
@@ -452,7 +456,18 @@ class HeapCheckTracerBase : public JS::CallbackTracer
   public:
     explicit CheckHeapTracer(JSRuntime* rt);
     bool init();
-    void check(AutoLockForExclusiveAccess& lock);
+    bool traceHeap(AutoLockForExclusiveAccess& lock);
+    virtual void checkCell(Cell* cell) = 0;
+
+  protected:
+    void dumpCellInfo(Cell* cell);
+    void dumpCellPath();
+
+    Cell* parentCell() {
+        return parentIndex == -1 ? nullptr : stack[parentIndex].thing.asCell();
+    }
+
+    size_t failures;
 
   private:
     void onChild(const JS::GCCellPtr& thing) override;
@@ -512,19 +527,13 @@ CheckHeapTracer::onChild(const JS::GCCellPtr& thing)
         return;
     }
 
-    if (!IsValidGCThingPointer(cell) || !IsGCThingValidAfterMovingGC(cell))
-    {
-        failures++;
-        fprintf(stderr, "Bad pointer %p\n", cell);
-        const char* name = contextName();
-        for (int index = parentIndex; index != -1; index = stack[index].parentIndex) {
-            const WorkItem& parent = stack[index];
-            cell = parent.thing.asCell();
-            fprintf(stderr, "  from %s %p %s edge\n",
-                    GCTraceKindToAscii(cell->getTraceKind()), cell, name);
-            name = parent.name;
-        }
-        fprintf(stderr, "  from root %s\n", name);
+    // Don't trace into GC things owned by another runtime.
+    if (cell->runtimeFromAnyThread() != rt)
+        return;
+
+    // Don't trace into GC in zones being used by helper threads.
+    Zone* zone = thing.is<JSObject>() ? thing.as<JSObject>().zone() : cell->asTenured().zone();
+    if (zone->group() && zone->group()->usedByHelperThread())
         return;
     }
 
@@ -552,7 +561,72 @@ CheckHeapTracer::check(AutoLockForExclusiveAccess& lock)
         }
     }
 
-    if (oom)
+    return !oom;
+}
+
+void
+HeapCheckTracerBase::dumpCellInfo(Cell* cell)
+{
+    auto kind = cell->getTraceKind();
+    fprintf(stderr, "%s", GCTraceKindToAscii(kind));
+    if (kind == JS::TraceKind::Object)
+        fprintf(stderr, " %s", static_cast<JSObject*>(cell)->getClass()->name);
+    fprintf(stderr, " %p", cell);
+}
+
+void
+HeapCheckTracerBase::dumpCellPath()
+{
+    const char* name = contextName();
+    for (int index = parentIndex; index != -1; index = stack[index].parentIndex) {
+        const WorkItem& parent = stack[index];
+        Cell* cell = parent.thing.asCell();
+        fprintf(stderr, "  from ");
+        dumpCellInfo(cell);
+        fprintf(stderr, " %s edge\n", name);
+        name = parent.name;
+    }
+    fprintf(stderr, "  from root %s\n", name);
+}
+
+#endif // defined(JSGC_HASH_TABLE_CHECKS) || defined(DEBUG)
+
+#ifdef JSGC_HASH_TABLE_CHECKS
+
+class CheckHeapTracer final : public HeapCheckTracerBase
+{
+  public:
+    explicit CheckHeapTracer(JSRuntime* rt);
+    void check(AutoLockForExclusiveAccess& lock);
+
+  private:
+    void checkCell(Cell* cell) override;
+};
+
+CheckHeapTracer::CheckHeapTracer(JSRuntime* rt)
+  : HeapCheckTracerBase(rt, TraceWeakMapKeysValues)
+{}
+
+inline static bool
+IsValidGCThingPointer(Cell* cell)
+{
+    return (uintptr_t(cell) & CellAlignMask) == 0;
+}
+
+void
+CheckHeapTracer::checkCell(Cell* cell)
+{
+    if (!IsValidGCThingPointer(cell) || !IsGCThingValidAfterMovingGC(cell)) {
+        failures++;
+        fprintf(stderr, "Bad pointer %p\n", cell);
+        dumpCellPath();
+    }
+}
+
+void
+CheckHeapTracer::check(AutoLockForExclusiveAccess& lock)
+{
+    if (!traceHeap(lock))
         return;
 
     if (failures) {
@@ -596,16 +670,14 @@ void
 CheckGrayMarkingTracer::checkCell(Cell* cell)
 {
     Cell* parent = parentCell();
-    if (!cell->isTenured() || !parent || !parent->isTenured())
+    if (!parent)
         return;
 
-    TenuredCell* tenuredCell = &cell->asTenured();
-    TenuredCell* tenuredParent = &parent->asTenured();
-    if (tenuredParent->isMarkedBlack() && tenuredCell->isMarkedGray())
-    {
+    if (parent->isMarkedBlack() && cell->isMarkedGray()) {
         failures++;
-        fprintf(stderr, "Found black to gray edge to %s %p\n",
-                GCTraceKindToAscii(cell->getTraceKind()), cell);
+        fprintf(stderr, "Found black to gray edge to ");
+        dumpCellInfo(cell);
+        fprintf(stderr, "\n");
         dumpCellPath();
     }
 }

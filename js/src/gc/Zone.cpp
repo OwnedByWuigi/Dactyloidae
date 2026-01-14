@@ -55,10 +55,10 @@ JS::Zone::Zone(JSRuntime* rt)
 #endif
     jitZone_(group, nullptr),
     gcScheduled_(false),
-    gcPreserveCode_(false),
-    jitUsingBarriers_(false),
-    keepShapeTables_(false),
-    listNext_(NotOnList)
+    gcScheduledSaved_(false),
+    gcPreserveCode_(group, false),
+    keepShapeTables_(group, false),
+    listNext_(group, NotOnList)
 {
     /* Ensure that there are no vtables to mess us up here. */
     MOZ_ASSERT(reinterpret_cast<JS::shadow::Zone*>(this) ==
@@ -80,9 +80,12 @@ Zone::~Zone()
     js_delete(jitZone_);
 
 #ifdef DEBUG
-    // Avoid assertion destroying the weak map list if the embedding leaked GC things.
-    if (!rt->gc.shutdownCollectedEverything())
-        gcWeakMapList.clear();
+    // Avoid assertions failures warning that not everything has been destroyed
+    // if the embedding leaked GC things.
+    if (!rt->gc.shutdownCollectedEverything()) {
+        gcWeakMapList().clear();
+        regExps.clear();
+    }
 #endif
 }
 
@@ -101,12 +104,6 @@ bool Zone::init(bool isSystemArg)
 void
 Zone::setNeedsIncrementalBarrier(bool needs, ShouldUpdateJit updateJit)
 {
-    if (updateJit == UpdateJit && needs != jitUsingBarriers_) {
-        jit::ToggleBarriers(this, needs);
-        jitUsingBarriers_ = needs;
-    }
-
-    MOZ_ASSERT_IF(needs && isAtomsZone(), !runtimeFromMainThread()->exclusiveThreadsPresent());
     MOZ_ASSERT_IF(needs, canCollect());
     needsIncrementalBarrier_ = needs;
 }
@@ -314,13 +311,14 @@ Zone::hasMarkedCompartments()
 bool
 Zone::canCollect()
 {
-    // Zones cannot be collected while in use by other threads.
-    if (usedByExclusiveThread)
-        return false;
-    JSRuntime* rt = runtimeFromAnyThread();
-    if (isAtomsZone() && rt->exclusiveThreadsPresent())
-        return false;
-    return true;
+    // The atoms zone cannot be collected while off-thread parsing is taking
+    // place.
+    if (isAtomsZone())
+        return !runtimeFromAnyThread()->hasHelperThreadZones();
+
+    // Zones that will be or are currently used by other threads cannot be
+    // collected.
+    return !group()->createdForHelperThread();
 }
 
 void
