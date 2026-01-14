@@ -4082,7 +4082,9 @@ TypeNewScript::rollbackPartiallyInitializedObjects(JSContext* cx, ObjectGroup* g
                     finished = true;
                     break;
                 }
-                if (!finished) {
+            }
+
+            if (!finished) {
                 (void) NativeObject::rollbackProperties(cx, obj, numProperties);
                 found = true;
             }
