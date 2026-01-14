@@ -2161,7 +2161,7 @@ GCMarker::enterWeakMarkingMode()
     if (weakMapAction() == ExpandWeakMaps) {
         tag_ = TracerKindTag::WeakMarking;
 
-        for (SweepGroupZonesIter zone(runtime()); !zone.done(); zone.next()) {
+        for (GCSweepGroupIter zone(runtime()); !zone.done(); zone.next()) {
             for (WeakMapBase* m : zone->gcWeakMapList()) {
                 if (m->marked)
                     (void) m->traceEntries(this);
@@ -2610,12 +2610,25 @@ js::TenuringTracer::moveToTenuredSlow(JSObject* src)
         // shape list. This is updated in Nursery::sweepDictionaryModeObjects().
     }
 
-    JSObjectMovedOp op = dst->getClass()->extObjectMovedOp();
-    MOZ_ASSERT_IF(src->is<ProxyObject>(), op == proxy_ObjectMoved);
-    if (op) {
+    if (src->is<InlineTypedObject>()) {
+        InlineTypedObject::objectMovedDuringMinorGC(this, dst, src);
+    } else if (src->is<TypedArrayObject>()) {
+        tenuredSize += TypedArrayObject::objectMovedDuringMinorGC(this, dst, src, dstKind);
+    } else if (src->is<UnboxedArrayObject>()) {
+        tenuredSize += UnboxedArrayObject::objectMovedDuringMinorGC(this, dst, src, dstKind);
+    } else if (src->is<ArgumentsObject>()) {
+        tenuredSize += ArgumentsObject::objectMovedDuringMinorGC(this, dst, src);
+    } else if (src->is<ProxyObject>()) {
+        // Objects in the nursery are never swapped so the proxy must have an
+        // inline ProxyValueArray.
+        MOZ_ASSERT(src->as<ProxyObject>().usingInlineValueArray());
+        dst->as<ProxyObject>().setInlineValueArray();
+        if (JSObjectMovedOp op = dst->getClass()->extObjectMovedOp())
+            op(dst, src);
+    } else if (JSObjectMovedOp op = dst->getClass()->extObjectMovedOp()) {
         // Tell the hazard analysis that the object moved hook can't GC.
         JS::AutoSuppressGCAnalysis nogc;
-        tenuredSize += op(dst, src);
+        op(dst, src);
     } else {
         MOZ_ASSERT_IF(src->getClass()->hasFinalize(),
                       CanNurseryAllocateFinalizedClass(src->getClass()));

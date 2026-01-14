@@ -166,7 +166,7 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
 #ifdef DEBUG
     mainThreadHasExclusiveAccess(false),
 #endif
-    numExclusiveThreads(0),
+    numActiveHelperThreadZones(0),
     numCompartments(0),
     localeCallbacks(nullptr),
     defaultLocale(nullptr),
@@ -868,11 +868,21 @@ JSRuntime::setUsedByExclusiveThread(Zone* zone)
 void
 JSRuntime::clearUsedByExclusiveThread(Zone* zone)
 {
-    MOZ_ASSERT(zone->usedByExclusiveThread);
-    zone->usedByExclusiveThread = false;
-    numExclusiveThreads--;
-    if (gc.fullGCForAtomsRequested() && !keepAtoms())
-        gc.triggerFullGCForAtoms();
+    MOZ_ASSERT(!zone->group()->usedByHelperThread());
+    MOZ_ASSERT(!zone->wasGCStarted());
+    zone->group()->setUsedByHelperThread();
+    numActiveHelperThreadZones++;
+}
+
+void
+JSRuntime::clearUsedByHelperThread(Zone* zone)
+{
+    MOZ_ASSERT(zone->group()->usedByHelperThread());
+    zone->group()->clearUsedByHelperThread();
+    numActiveHelperThreadZones--;
+    JSContext* cx = TlsContext.get();
+    if (gc.fullGCForAtomsRequested() && cx->canCollectAtoms())
+        gc.triggerFullGCForAtoms(cx);
 }
 
 bool

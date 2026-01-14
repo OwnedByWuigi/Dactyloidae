@@ -925,7 +925,7 @@ GCRuntime::init(uint32_t maxbytes, uint32_t maxNurseryBytes)
         return false;
 
     {
-        AutoLockGC lock(rt);
+        AutoLockGCBgAlloc lock(rt);
 
         /*
          * Separate gcMaxMallocBytes from gcMaxBytes but initialize to maxbytes
@@ -5954,8 +5954,9 @@ AddSweepAction(bool* ok, SweepAction::Func func, AllocKind kind = AllocKind::LIM
         *ok = SweepPhases.back().emplaceBack(func, kind);
 }
 
-/* static */ bool
-GCRuntime::initializeSweepActions()
+template <typename... Args>
+static UniquePtr<SweepAction<Args...>>
+RepeatForSweepGroup(JSRuntime* rt, UniquePtr<SweepAction<Args...>> action)
 {
     bool ok = true;
 
@@ -5963,14 +5964,17 @@ GCRuntime::initializeSweepActions()
     return js::MakeUnique<Action>(rt, Move(action));
 }
 
-    AddSweepAction(&ok, GCRuntime::sweepTypeInformation);
-    AddSweepAction(&ok, GCRuntime::mergeSweptObjectArenas);
+template <typename... Args>
+static UniquePtr<typename RemoveLastTemplateParameter<SweepAction<Args...>>::Type>
+ForEachZoneInSweepGroup(JSRuntime* rt, UniquePtr<SweepAction<Args...>> action)
+{
+    if (!action)
+        return nullptr;
 
-    for (const auto& finalizePhase : IncrementalFinalizePhases) {
-        AddSweepPhase(&ok);
-        for (auto kind : finalizePhase.kinds)
-            AddSweepAction(&ok, GCRuntime::finalizeAllocKind, kind);
-    }
+    using Action = typename RemoveLastTemplateParameter<
+        SweepActionForEach<GCSweepGroupIter, JSRuntime*, Args...>>::Type;
+    return js::MakeUnique<Action>(rt, Move(action));
+}
 
     AddSweepPhase(&ok);
     AddSweepAction(&ok, GCRuntime::sweepShapeTree);
@@ -5989,7 +5993,7 @@ GCRuntime::initSweepActions()
     using sweepaction::Call;
    
     sweepActions.ref() =
-        RepeatForZoneGroup(rt,
+        RepeatForSweepGroup(rt,
             Sequence(
                 Call(&GCRuntime::endMarkingSweepGroup),
                 Call(&GCRuntime::beginSweepingSweepGroup),
@@ -5998,17 +6002,17 @@ GCRuntime::initSweepActions()
 #endif
                 Call(&GCRuntime::sweepAtomsTable),
                 Call(&GCRuntime::sweepWeakCaches),
-                ForEachZoneInZoneGroup(rt,
+                ForEachZoneInSweepGroup(rt,
                     ForEachAllocKind(ForegroundObjectFinalizePhase.kinds,
                         Call(&GCRuntime::finalizeAllocKind))),
-                ForEachZoneInZoneGroup(rt,
+                ForEachZoneInSweepGroup(rt,
                     Sequence(
                         Call(&GCRuntime::sweepTypeInformation),
                         Call(&GCRuntime::mergeSweptObjectArenas))),
-                ForEachZoneInZoneGroup(rt,
+                ForEachZoneInSweepGroup(rt,
                     ForEachAllocKind(ForegroundNonObjectFinalizePhase.kinds,
                         Call(&GCRuntime::finalizeAllocKind))),
-                ForEachZoneInZoneGroup(rt,
+                ForEachZoneInSweepGroup(rt,
                     Call(&GCRuntime::sweepShapeTree)),
                 Call(&GCRuntime::endSweepingSweepGroup)));
 

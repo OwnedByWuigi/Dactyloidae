@@ -47,7 +47,6 @@ class RegExpObject;
 class SavedFrame;
 class Scope;
 class EnvironmentObject;
-class RequestedModuleObject;
 class ScriptSourceObject;
 class Shape;
 class SharedArrayBufferObject;
@@ -88,7 +87,6 @@ class JitCode;
     D(js::PropertyName*) \
     D(js::RegExpObject*) \
     D(js::RegExpShared*) \
-    D(js::RequestedModuleObject*) \
     D(js::SavedFrame*) \
     D(js::Scope*) \
     D(js::ScriptSourceObject*) \

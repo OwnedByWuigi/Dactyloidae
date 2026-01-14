@@ -27,9 +27,11 @@ StoreBuffer::GenericBuffer::trace(StoreBuffer* owner, JSTracer* trc)
         return;
 
     for (LifoAlloc::Enum e(*storage_); !e.empty();) {
-        unsigned size = *e.read<unsigned>();
-        BufferableRef* edge = e.read<BufferableRef>(size);
+        unsigned size = *e.get<unsigned>();
+        e.popFront<unsigned>();
+        BufferableRef* edge = e.get<BufferableRef>(size);
         edge->trace(trc);
+        e.popFront(size);
     }
 }
 

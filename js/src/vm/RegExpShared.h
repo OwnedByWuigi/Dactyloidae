@@ -297,6 +297,10 @@ class RegExpZone
     bool get(JSContext* cx, HandleAtom source, JSString* maybeOpt,
              MutableHandleRegExpShared shared);
 
+#ifdef DEBUG
+    void clear() { set_.clear(); }
+#endif
+
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
 };
 

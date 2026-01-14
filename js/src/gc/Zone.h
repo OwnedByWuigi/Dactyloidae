@@ -45,6 +45,9 @@ class ZoneHeapThreshold
 
     double gcHeapGrowthFactor() const { return gcHeapGrowthFactor_; }
     size_t gcTriggerBytes() const { return gcTriggerBytes_; }
+    size_t AllocThresholdFactorTriggerBytes(GCSchedulingTunables& tunables) const {
+    return gcTriggerBytes_ * tunables.allocThresholdFactor();
+    }
     double eagerAllocTrigger(bool highFrequencyGC) const;
 
     void updateAfterGC(size_t lastBytes, JSGCInvocationKind gckind,
