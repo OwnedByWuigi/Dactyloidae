@@ -128,7 +128,7 @@ js::Nursery::Nursery(JSRuntime* rt)
   , previousPromotionRate_(0)
   , profileThreshold_(0)
   , enableProfiling_(false)
-  , canAllocateStrings_(false)
+  , canAllocateStrings_(true)
   , reportTenurings_(0)
   , minorGcCount_(0)
   , freeMallocedBuffersTask(nullptr)
@@ -136,9 +136,9 @@ js::Nursery::Nursery(JSRuntime* rt)
   , lastCanary_(nullptr)
 #endif
 {
-    const char* env = getenv("MOZ_ENABLE_NURSERY_STRINGS");
+    const char* env = getenv("MOZ_DISABLE_NURSERY_STRINGS");
     if (env && *env)
-        canAllocateStrings_ = true;
+        canAllocateStrings_ = false;
 }
 
 bool

@@ -8443,6 +8443,7 @@ main(int argc, char** argv, char** envp)
         || !op.addBoolOption('\0', "no-ggc", "Disable Generational GC")
         || !op.addBoolOption('\0', "no-cgc", "Disable Compacting GC")
         || !op.addBoolOption('\0', "no-incremental-gc", "Disable Incremental GC")
+		|| !op.addBoolOption('\0', "no-nursery-strings", "Do not allocate strings in the nursery")
         || !op.addIntOption('\0', "available-memory", "SIZE",
                             "Select GC settings based on available memory (MB)", 0)
 #if defined(JS_CODEGEN_ARM)
@@ -8572,6 +8573,9 @@ main(int argc, char** argv, char** envp)
     JS::SetEnqueuePromiseJobCallback(cx, ShellEnqueuePromiseJobCallback);
     JS::SetGetIncumbentGlobalCallback(cx, ShellGetIncumbentGlobalCallback);
     JS::SetAsyncTaskCallbacks(cx, ShellStartAsyncTaskCallback, ShellFinishAsyncTaskCallback);
+
+    if (op.getBoolOption("no-nursery-strings"))
+        cx->runtime()->gc.nursery().disableStrings();
 
     EnvironmentPreparer environmentPreparer(cx);
 

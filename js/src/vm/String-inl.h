@@ -16,6 +16,9 @@
 
 #include "gc/Allocator.h"
 #include "gc/Marking.h"
+#include "gc/StoreBuffer.h"
+
+#include "gc/StoreBuffer-inl.h"
 
 namespace js {
 
@@ -80,12 +83,6 @@ NewInlineString(ExclusiveContext* cx, HandleLinearString base, size_t start, siz
     return s;
 }
 
-static inline void
-StringWriteBarrierPost(JSContext* maybecx, JSString** strp, JSString* prev, JSString* next)
-{
-    js::BarrierMethods<JSString*>::postBarrier(strp, prev, next);
-}
-
 } /* namespace js */
 
 MOZ_ALWAYS_INLINE bool
@@ -108,8 +105,16 @@ JSRope::init(js::ExclusiveContext* cx, JSString* left, JSString* right, size_t l
         d.u1.flags |= LATIN1_CHARS_BIT;
     d.s.u2.left = left;
     d.s.u3.right = right;
-    js::BarrierMethods<JSString*>::postBarrier(&d.s.u2.left, nullptr, left);
-    js::BarrierMethods<JSString*>::postBarrier(&d.s.u3.right, nullptr, right);
+
+    // Post-barrier by inserting into the whole cell buffer if either
+    // this -> left or this -> right is a tenured -> nursery edge.
+    if (isTenured()) {
+        js::gc::StoreBuffer* sb = left->storeBuffer();
+        if (!sb)
+            sb = right->storeBuffer();
+        if (sb)
+            sb->putWholeCell(this);
+    }
 }
 
 template <js::AllowGC allowGC>
@@ -117,11 +122,11 @@ MOZ_ALWAYS_INLINE JSRope*
 JSRope::new_(js::ExclusiveContext* cx,
              typename js::MaybeRooted<JSString*, allowGC>::HandleType left,
              typename js::MaybeRooted<JSString*, allowGC>::HandleType right,
-             size_t length)
+             size_t length, js::gc::InitialHeap heap)
 {
     if (!validateLength(cx, length))
         return nullptr;
-    JSRope* str = js::Allocate<JSRope, allowGC>(cx, js::gc::TenuredHeap);
+    JSRope* str = js::Allocate<JSRope, allowGC>(cx, heap);
     if (!str)
         return nullptr;
     str->init(cx, left, right, length);
@@ -143,7 +148,8 @@ JSDependentString::init(js::ExclusiveContext* cx, JSLinearString* base, size_t s
         d.s.u2.nonInlineCharsTwoByte = base->twoByteChars(nogc) + start;
     }
     d.s.u3.base = base;
-    js::BarrierMethods<JSString*>::postBarrier(reinterpret_cast<JSString**>(&d.s.u3.base), nullptr, base);
+    if (isTenured() && !base->isTenured())
+        base->storeBuffer()->putWholeCell(this);
 }
 
 MOZ_ALWAYS_INLINE JSLinearString*

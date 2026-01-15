@@ -28,6 +28,7 @@
 #include "irregexp/RegExpEngine.h"
 #include "irregexp/RegExpParser.h"
 #endif
+#include "gc/Heap.h"
 #include "jit/InlinableNatives.h"
 #include "jit/JitFrameIterator.h"
 #include "js/Debug.h"
@@ -43,6 +44,7 @@
 #include "vm/ProxyObject.h"
 #include "vm/SavedStacks.h"
 #include "vm/Stack.h"
+#include "vm/String.h"
 #include "vm/StringBuffer.h"
 #include "vm/TraceLogging.h"
 #include "wasm/AsmJS.h"
@@ -58,6 +60,7 @@
 
 #include "vm/EnvironmentObject-inl.h"
 #include "vm/NativeObject-inl.h"
+#include "vm/String-inl.h"
 
 using namespace js;
 
@@ -1096,6 +1099,79 @@ NewExternalString(JSContext* cx, unsigned argc, Value* vp)
 
     mozilla::Unused << buf.release();
     args.rval().setString(res);
+    return true;
+}
+
+static bool
+NewMaybeExternalString(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (args.length() != 1 || !args[0].isString()) {
+        JS_ReportErrorASCII(cx, "newMaybeExternalString takes exactly one string argument.");
+        return false;
+    }
+
+    RootedString str(cx, args[0].toString());
+    size_t len = str->length();
+
+    UniqueTwoByteChars buf(cx->pod_malloc<char16_t>(len));
+    if (!buf)
+        return false;
+
+    if (!JS_CopyStringChars(cx, mozilla::Range<char16_t>(buf.get(), len), str))
+        return false;
+
+    bool allocatedExternal;
+    JSString* res = JS_NewMaybeExternalString(cx, buf.get(), len, &ExternalStringFinalizer,
+                                              &allocatedExternal);
+    if (!res)
+        return false;
+
+    mozilla::Unused << buf.release();
+    args.rval().setString(res);
+    return true;
+}
+
+// Warning! This will let you create ropes that I'm not sure would be possible
+// otherwise, specifically:
+//
+//   - a rope with a zero-length child
+//   - a rope that would fit into an inline string
+//
+static bool
+NewRope(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (!args.get(0).isString() || !args.get(1).isString()) {
+        JS_ReportErrorASCII(cx, "newRope requires two string arguments.");
+        return false;
+    }
+
+    gc::InitialHeap heap = js::gc::DefaultHeap;
+    if (args.get(2).isObject()) {
+        RootedObject options(cx, &args[2].toObject());
+        RootedValue v(cx);
+        if (!JS_GetProperty(cx, options, "nursery", &v))
+            return false;
+        if (!v.isUndefined() && !ToBoolean(v))
+            heap = js::gc::TenuredHeap;
+    }
+
+    JSString* left = args[0].toString();
+    JSString* right = args[1].toString();
+    size_t length = JS_GetStringLength(left) + JS_GetStringLength(right);
+    if (length > JSString::MAX_LENGTH) {
+        JS_ReportErrorASCII(cx, "rope length exceeds maximum string length");
+        return false;
+    }
+
+    Rooted<JSRope*> str(cx, JSRope::new_<NoGC>(cx, left, right, length, heap));
+    if (!str)
+        return false;
+
+    args.rval().setString(str);
     return true;
 }
 
@@ -4168,6 +4244,12 @@ static const JSFunctionSpecWithHelp TestingFunctions[] = {
 "  this can be disabled by passing false as the optional second parameter.\n"
 "  This is also disabled when --fuzzing-safe is specified."),
 #endif
+
+    JS_FN_HELP("newRope", NewRope, 3, 0,
+"newRope(left, right[, options])",
+"  Creates a rope with the given left/right strings.\n"
+"  Available options:\n"
+"    nursery: bool - force the string to be created in/out of the nursery, if possible.\n"),
 
     JS_FN_HELP("settlePromiseNow", SettlePromiseNow, 1, 0,
 "settlePromiseNow(promise)",
