@@ -840,9 +840,9 @@ js::Nursery::doCollection(JS::gcreason::Reason reason,
     }
     endProfile(ProfileKey::MarkDebugger);
 
-    maybeStartProfile(ProfileKey::SweepCaches);
+    startProfile(ProfileKey::SweepCaches);
     rt->gc.purgeRuntimeForMinorGC();
-    maybeEndProfile(ProfileKey::SweepCaches);
+    endProfile(ProfileKey::SweepCaches);
 
     // Most of the work is done here. This loop iterates over objects that have
     // been moved to the major heap. If these objects have any outgoing pointers

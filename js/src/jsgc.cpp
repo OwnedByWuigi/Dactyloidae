@@ -4782,7 +4782,7 @@ NextIncomingCrossCompartmentPointer(JSObject* prev, bool unlink)
 }
 
 void
-js::DelayCrossCompartmentGrayMarking(JSObject* src)
+js::gc::DelayCrossCompartmentGrayMarking(JSObject* src)
 {
     MOZ_ASSERT(IsGrayListObject(src));
 
