@@ -173,7 +173,7 @@ CompiledScriptMatches(CompilationSelector selector, JSScript* target)
 
         bool match(JSScript* script)    { return script == builder_->script(); }
         bool match(JSCompartment* comp) { return comp == builder_->script()->compartment(); }
-        bool match(Zone* zone)          { return zone == builder_->script()->zone(); }
+        bool match(Zone* zone)          { return zone == builder_->script()->zoneFromAnyThread(); }
         bool match(JSRuntime* runtime)  { return runtime == builder_->script()->runtimeFromAnyThread(); }
         bool match(AllCompilations all) { return true; }
         bool match(ZonesInState zbs)    {

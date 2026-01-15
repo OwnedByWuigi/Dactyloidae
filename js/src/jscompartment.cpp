@@ -200,7 +200,7 @@ JSCompartment::ensureJitCompartmentExists(JSContext* cx)
     if (!jitCompartment_)
         return false;
 
-    if (!jitCompartment_->initialize(cx)) {
+    if (!jitCompartment_->initialize(cx, zone()->allocNurseryStrings)) {
         js_delete(jitCompartment_);
         jitCompartment_ = nullptr;
         return false;

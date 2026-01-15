@@ -439,7 +439,7 @@ JitCompartment::~JitCompartment()
 }
 
 bool
-JitCompartment::initialize(JSContext* cx)
+JitCompartment::initialize(JSContext* cx, bool zoneHasNurseryStrings)
 {
     stubCodes_ = cx->new_<ICStubCodeMap>(cx->runtime());
     if (!stubCodes_)
@@ -450,7 +450,7 @@ JitCompartment::initialize(JSContext* cx)
         return false;
     }
 
-    stringsCanBeInNursery = cx->nursery().canAllocateStrings();
+    setStringsCanBeInNursery(zoneHasNurseryStrings);
 
     return true;
 }

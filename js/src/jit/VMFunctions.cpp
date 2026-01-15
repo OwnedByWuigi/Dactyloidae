@@ -596,10 +596,11 @@ GetDynamicName(JSContext* cx, JSObject* envChain, JSString* str, Value* vp)
 }
 
 void
-PostWriteBarrier(JSRuntime* rt, JSObject* obj)
+PostWriteBarrier(JSRuntime* rt, js::gc::Cell* cell)
 {
-    MOZ_ASSERT(!IsInsideNursery(obj));
-    rt->gc.storeBuffer.putWholeCell(obj);
+    JS::AutoCheckCannotGC nogc;
+    MOZ_ASSERT(!IsInsideNursery(cell));
+    rt->gc.storeBuffer().putWholeCell(cell);
 }
 
 static const size_t MAX_WHOLE_CELL_BUFFER_SIZE = 4096;

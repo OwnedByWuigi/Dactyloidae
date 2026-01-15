@@ -22,6 +22,12 @@ class InlineTypedObject;
 class GeneratorObject;
 class TypedArrayObject;
 
+namespace gc {
+
+struct Cell;
+
+}
+
 namespace jit {
 
 enum DataType {
@@ -653,8 +659,7 @@ CreateThis(JSContext* cx, HandleObject callee, HandleObject newTarget, MutableHa
 
 void GetDynamicName(JSContext* cx, JSObject* scopeChain, JSString* str, Value* vp);
 
-void PostWriteBarrier(JSRuntime* rt, JSObject* obj);
-void PostWriteElementBarrier(JSRuntime* rt, JSObject* obj, int32_t index);
+void PostWriteBarrier(JSRuntime* rt, js::gc::Cell* cell);
 void PostGlobalWriteBarrier(JSRuntime* rt, JSObject* obj);
 
 uint32_t GetIndexFromString(JSString* str);

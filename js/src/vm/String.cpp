@@ -13,6 +13,7 @@
 #include "mozilla/TypeTraits.h"
 #include "mozilla/Unused.h"
 
+#include "gc/GCInternals.h"
 #include "gc/Marking.h"
 #include "gc/Nursery.h"
 #include "js/UbiNode.h"
@@ -198,6 +199,7 @@ JSString::dumpRepresentationHeader(FILE* fp, int indent, const char* subclass) c
     if (flags & HAS_BASE_BIT)           fputs(" HAS_BASE", fp);
     if (flags & INLINE_CHARS_BIT)       fputs(" INLINE_CHARS", fp);
     if (flags & NON_ATOM_BIT)           fputs(" NON_ATOM", fp);
+	else                                fputs(" (ATOM)", fp);
     if (isPermanentAtom())              fputs(" PERMANENT", fp);
     if (flags & LATIN1_CHARS_BIT)       fputs(" LATIN1", fp);
     if (!isTenured())                   fputs(" NURSERY", fp);
