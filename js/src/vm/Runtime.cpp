@@ -166,6 +166,10 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
 #ifdef DEBUG
     mainThreadHasExclusiveAccess(false),
 #endif
+    scriptDataLock(mutexid::RuntimeScriptData),
+#ifdef DEBUG
+    activeThreadHasScriptDataAccess(false),
+#endif
     numActiveHelperThreadZones(0),
     numCompartments(0),
     localeCallbacks(nullptr),
@@ -419,14 +423,15 @@ JSRuntime::destroyRuntime()
     MOZ_ASSERT(ionLazyLinkListSize_ == 0);
     MOZ_ASSERT(ionLazyLinkList_.isEmpty());
 
-    MOZ_ASSERT(!numExclusiveThreads);
-    AutoLockForExclusiveAccess lock(this);
+    MOZ_ASSERT(!singleThreadedExecutionRequired_);
+
+    MOZ_ASSERT(!hasHelperThreadZones());
 
     /*
      * Even though all objects in the compartment are dead, we may have keep
      * some filenames around because of gcKeepAtoms.
      */
-    FreeScriptData(this, lock);
+    FreeScriptData(this);
 
     gc.finish();
     atomsCompartment_ = nullptr;
@@ -463,16 +468,13 @@ JSRuntime::destroyRuntime()
 void
 JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::RuntimeSizes* rtSizes)
 {
-    // Several tables in the runtime enumerated below can be used off thread.
-    AutoLockForExclusiveAccess lock(this);
+    rtSizes->object += mallocSizeOf(this);
 
-    // For now, measure the size of the derived class (JSContext).
-    // TODO (bug 1281529): make memory reporting reflect the new
-    // JSContext/JSRuntime world better.
-    JSContext* cx = unsafeContextFromAnyThread();
-    rtSizes->object += mallocSizeOf(cx);
-
-    rtSizes->atomsTable += atoms(lock).sizeOfIncludingThis(mallocSizeOf);
+    {
+        AutoLockForExclusiveAccess lock(this);
+        rtSizes->atomsTable += atoms(lock).sizeOfIncludingThis(mallocSizeOf);
+        rtSizes->gc.marker += gc.marker.sizeOfExcludingThis(mallocSizeOf, lock);
+    }
 
     if (!parentRuntime) {
         rtSizes->atomsTable += mallocSizeOf(staticStrings);
@@ -500,19 +502,17 @@ JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::Runtim
         cx->caches.uncompressedSourceCache.sizeOfExcludingThis(mallocSizeOf);
 
 
-    rtSizes->scriptData += scriptDataTable(lock).sizeOfExcludingThis(mallocSizeOf);
-    for (ScriptDataTable::Range r = scriptDataTable(lock).all(); !r.empty(); r.popFront())
-        rtSizes->scriptData += mallocSizeOf(r.front());
+    {
+        AutoLockScriptData lock(this);
+        rtSizes->scriptData += scriptDataTable(lock).sizeOfExcludingThis(mallocSizeOf);
+        for (ScriptDataTable::Range r = scriptDataTable(lock).all(); !r.empty(); r.popFront())
+            rtSizes->scriptData += mallocSizeOf(r.front());
+    }
 
     if (jitRuntime_) {
         jitRuntime_->execAlloc().addSizeOfCode(&rtSizes->code);
         jitRuntime_->backedgeExecAlloc().addSizeOfCode(&rtSizes->code);
     }
-
-    rtSizes->gc.marker += gc.marker.sizeOfExcludingThis(mallocSizeOf);
-    rtSizes->gc.nurseryCommitted += gc.nursery.sizeOfHeapCommitted();
-    rtSizes->gc.nurseryMallocedBuffers += gc.nursery.sizeOfMallocedBuffers(mallocSizeOf);
-    gc.storeBuffer.addSizeOfExcludingThis(mallocSizeOf, &rtSizes->gc);
 }
 
 static bool

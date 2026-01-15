@@ -219,7 +219,7 @@ gc::GCRuntime::startVerifyPreBarriers()
     incrementalState = State::MarkRoots;
 
     /* Make all the roots be edges emanating from the root node. */
-    traceRuntime(trc, prep.session().lock);
+    traceRuntime(trc, prep.session());
 
     VerifyNode* node;
     node = trc->curnode;
@@ -456,7 +456,7 @@ class HeapCheckTracerBase : public JS::CallbackTracer
   public:
     explicit CheckHeapTracer(JSRuntime* rt);
     bool init();
-    bool traceHeap(AutoLockForExclusiveAccess& lock);
+    bool traceHeap(AutoTraceSession& session);
     virtual void checkCell(Cell* cell) = 0;
 
   protected:
@@ -542,13 +542,13 @@ CheckHeapTracer::onChild(const JS::GCCellPtr& thing)
         oom = true;
 }
 
-void
-CheckHeapTracer::check(AutoLockForExclusiveAccess& lock)
+bool
+HeapCheckTracerBase::traceHeap(AutoTraceSession& session)
 {
     // The analysis thinks that traceRuntime might GC by calling a GC callback.
     JS::AutoSuppressGCAnalysis nogc;
     if (!rt->isBeingDestroyed())
-        rt->gc.traceRuntime(this, lock);
+        rt->gc.traceRuntime(this, session);
 
     while (!stack.empty()) {
         WorkItem item = stack.back();
@@ -611,7 +611,7 @@ class CheckHeapTracer final : public HeapCheckTracerBase
 {
   public:
     explicit CheckHeapTracer(JSRuntime* rt);
-    void check(AutoLockForExclusiveAccess& lock);
+    void check(AutoTraceSession& session);
 
   private:
     void checkCell(Cell* cell) override;
@@ -638,9 +638,9 @@ CheckHeapTracer::checkCell(Cell* cell)
 }
 
 void
-CheckHeapTracer::check(AutoLockForExclusiveAccess& lock)
+CheckHeapTracer::check(AutoTraceSession& session)
 {
-    if (!traceHeap(lock))
+    if (!traceHeap(session))
         return;
 
     if (failures)
@@ -654,7 +654,7 @@ js::gc::CheckHeapAfterGC(JSRuntime* rt)
     AutoTraceSession session(rt, JS::HeapState::Tracing);
     CheckHeapTracer tracer(rt);
     if (tracer.init())
-        tracer.check(session.lock);
+        tracer.check(session);
 }
 
 #endif /* JSGC_HASH_TABLE_CHECKS */
@@ -665,7 +665,7 @@ class CheckGrayMarkingTracer final : public HeapCheckTracerBase
 {
   public:
     explicit CheckGrayMarkingTracer(JSRuntime* rt);
-    bool check(AutoLockForExclusiveAccess& lock);
+    bool check(AutoTraceSession& session);
 
   private:
     void checkCell(Cell* cell) override;
@@ -694,18 +694,18 @@ CheckGrayMarkingTracer::checkCell(Cell* cell)
         dumpCellPath();
 
 #ifdef DEBUG
-        if (cell->getTraceKind() == JS::TraceKind::Object) {
+        if (cell->is<JSObject>()) {
             fprintf(stderr, "\n");
-            DumpObject(static_cast<JSObject*>(cell), stderr);
+            DumpObject(cell->as<JSObject>(), stderr);
         }
 #endif
     }
 }
 
 bool
-CheckGrayMarkingTracer::check(AutoLockForExclusiveAccess& lock)
+CheckGrayMarkingTracer::check(AutoTraceSession& session)
 {
-    if (!traceHeap(lock))
+    if (!traceHeap(session))
         return true; // Ignore failure.
 
     return failures == 0;
@@ -726,7 +726,7 @@ js::CheckGrayMarkingState(JSContext* cx)
     if (!tracer.init())
         return true; // Ignore failure
 
-    return tracer.check(session.lock);
+    return tracer.check(session);
 }
 
 #endif // defined(JS_GC_ZEAL) || defined(DEBUG)

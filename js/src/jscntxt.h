@@ -15,7 +15,8 @@
 #include "js/Result.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
-#include "vm/Caches.h"
+#include "threading/ProtectedData.h"
+#include "vm/MallocProvider.h"
 #include "vm/Runtime.h"
 
 #ifdef _MSC_VER
@@ -92,8 +93,14 @@ namespace frontend { class CompileError; }
 
 struct HelperThread;
 
-class ExclusiveContext : public ContextFriendFields,
-                         public MallocProvider<ExclusiveContext>
+class AutoLockScriptData;
+
+void ReportOverRecursed(JSContext* cx, unsigned errorNumber);
+
+/* Thread Local Storage slot for storing the context for a thread. */
+extern MOZ_THREAD_LOCAL(JSContext*) TlsContext;
+
+enum class ContextKind
 {
     friend class gc::ArenaLists;
     friend class AutoCompartment;
@@ -307,7 +314,7 @@ class ExclusiveContext : public ContextFriendFields,
     SymbolRegistry& symbolRegistry(js::AutoLockForExclusiveAccess& lock) {
         return runtime_->symbolRegistry(lock);
     }
-    ScriptDataTable& scriptDataTable(AutoLockForExclusiveAccess& lock) {
+    js::ScriptDataTable& scriptDataTable(js::AutoLockScriptData& lock) {
         return runtime_->scriptDataTable(lock);
     }
 
@@ -872,12 +879,41 @@ class MOZ_RAII AutoLockForExclusiveAccess
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-/*
- * ExclusiveContext variants of encoding functions, for off-main-thread use.
- * Refer to CharacterEncoding.h for details.
- */
-extern JS::TwoByteCharsZ
-LossyUTF8CharsToNewTwoByteCharsZ(ExclusiveContext* cx, const JS::UTF8Chars utf8, size_t* outlen);
+class MOZ_RAII AutoLockScriptData
+{
+    JSRuntime* runtime;
+
+  public:
+    explicit AutoLockScriptData(JSRuntime* rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM) {
+        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+        runtime = rt;
+        if (runtime->hasHelperThreadZones()) {
+            runtime->scriptDataLock.lock();
+        } else {
+            MOZ_ASSERT(!runtime->activeThreadHasScriptDataAccess);
+#ifdef DEBUG
+            runtime->activeThreadHasScriptDataAccess = true;
+#endif
+        }
+    }
+    ~AutoLockScriptData() {
+        if (runtime->hasHelperThreadZones()) {
+            runtime->scriptDataLock.unlock();
+        } else {
+            MOZ_ASSERT(runtime->activeThreadHasScriptDataAccess);
+#ifdef DEBUG
+            runtime->activeThreadHasScriptDataAccess = false;
+#endif
+        }
+    }
+
+    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
+};
+
+class MOZ_RAII AutoKeepAtoms
+{
+    JSContext* cx;
+    MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
 extern JS::TwoByteCharsZ
 LossyUTF8CharsToNewTwoByteCharsZ(ExclusiveContext* cx, const JS::ConstUTF8CharsZ& utf8, size_t* outlen);

@@ -37,6 +37,7 @@
   _(PerfSpewer,                  500) \
   _(TraceLoggerThreadState,      500) \
   _(ProcessExecutableRegion,     500) \
+  _(RuntimeScriptData,           500) \
                                       \
   _(TraceLoggerGraphState,       600)
 

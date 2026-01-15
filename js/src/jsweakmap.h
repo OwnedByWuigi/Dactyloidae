@@ -14,6 +14,7 @@
 #include "jsobj.h"
 
 #include "gc/Marking.h"
+#include "gc/DeletePolicy.h"
 #include "gc/StoreBuffer.h"
 #include "js/HashTable.h"
 

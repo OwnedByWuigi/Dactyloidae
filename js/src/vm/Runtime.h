@@ -362,6 +362,7 @@ class PerThreadData
 using ScriptAndCountsVector = GCVector<ScriptAndCounts, 0, SystemAllocPolicy>;
 
 class AutoLockForExclusiveAccess;
+class AutoLockScriptData;
 } // namespace js
 
 struct JSRuntime : public JS::shadow::Runtime,
@@ -676,10 +677,27 @@ struct JSRuntime : public JS::shadow::Runtime,
     bool mainThreadHasExclusiveAccess;
 #endif
 
-    /* Number of zones which may be operated on by non-cooperating helper threads. */
+    /*
+     * Lock used to protect the script data table, which can be used by
+     * off-thread parsing.
+     *
+     * Locking this only occurs if there is actually a thread other than the
+     * active thread which could access this.
+     */
+    js::Mutex scriptDataLock;
+#ifdef DEBUG
+    bool activeThreadHasScriptDataAccess;
+#endif
+
+    /*
+     * Number of zones which may be operated on by non-cooperating helper
+     * threads.
+     */
+
     js::UnprotectedData<size_t> numActiveHelperThreadZones;
 
     friend class js::AutoLockForExclusiveAccess;
+    friend class js::AutoLockScriptData;
 
   public:
     void setUsedByExclusiveThread(JS::Zone* zone);
@@ -688,6 +706,17 @@ struct JSRuntime : public JS::shadow::Runtime,
     bool hasHelperThreadZones() const {
         return numActiveHelperThreadZones > 0;
     }
+
+#ifdef DEBUG
+    bool currentThreadHasExclusiveAccess() const {
+        return (!hasHelperThreadZones() && activeThreadHasExclusiveAccess) ||
+            exclusiveAccessLock.ownedByCurrentThread();
+    }
+    bool currentThreadHasScriptDataAccess() const {
+        return (!hasHelperThreadZones() && activeThreadHasScriptDataAccess) ||
+            scriptDataLock.ownedByCurrentThread();
+    }
+#endif
 
     // How many compartments there are across all zones. This number includes
     // ExclusiveContext compartments, so it isn't necessarily equal to the
@@ -1100,10 +1129,10 @@ struct JSRuntime : public JS::shadow::Runtime,
     // within the runtime. This may be modified by threads with an
     // ExclusiveContext and requires a lock.
   private:
-    js::ScriptDataTable scriptDataTable_;
+    js::ScriptDataLockData<js::ScriptDataTable> scriptDataTable_;
   public:
-    js::ScriptDataTable& scriptDataTable(js::AutoLockForExclusiveAccess& lock) {
-        return scriptDataTable_;
+    js::ScriptDataTable& scriptDataTable(const js::AutoLockScriptData& lock) {
+        return scriptDataTable_.ref();
     }
 
     bool jitSupportsFloatingPoint;

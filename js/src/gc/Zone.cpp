@@ -34,7 +34,6 @@ JS::Zone::Zone(JSRuntime* rt)
     gcWeakRefs_(group),
     weakCaches_(group),
     gcWeakKeys_(group, SystemAllocPolicy(), rt->randomHashCodeScrambler()),
-    gcSweepGroupEdges_(group),
     typeDescrObjects_(group, this),
     regExps(this),
     markedAtoms_(group),
@@ -57,7 +56,7 @@ JS::Zone::Zone(JSRuntime* rt)
     gcScheduledSaved_(false),
     gcPreserveCode_(group, false),
     keepShapeTables_(group, false),
-    listNext_(group, NotOnList)
+    listNext_(NotOnList)
 {
     /* Ensure that there are no vtables to mess us up here. */
     MOZ_ASSERT(reinterpret_cast<JS::shadow::Zone*>(this) ==

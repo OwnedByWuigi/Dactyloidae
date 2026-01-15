@@ -8,19 +8,19 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/HashFunctions.h"
-#include "mozilla/MemoryReporting.h"
 
-#include "jscntxt.h"
-
-#include "ds/SplayTree.h"
 #include "gc/FindSCCs.h"
 #include "gc/GCRuntime.h"
 #include "js/GCHashTable.h"
-#include "js/TracingAPI.h"
 #include "vm/MallocProvider.h"
-#include "vm/TypeInference.h"
+#include "vm/RegExpShared.h"
+#include "vm/Runtime.h"
+
+struct JSContext;
 
 namespace js {
+
+class Debugger;
 
 namespace jit {
 class JitZone;
@@ -70,11 +70,11 @@ class ZoneHeapThreshold
 
 struct ZoneComponentFinder : public ComponentFinder<JS::Zone, ZoneComponentFinder>
 {
-    ZoneComponentFinder(uintptr_t sl, AutoLockForExclusiveAccess& lock)
-      : ComponentFinder<JS::Zone, ZoneComponentFinder>(sl), lock(lock)
+    ZoneComponentFinder(uintptr_t sl, JS::Zone* maybeAtomsZone)
+      : ComponentFinder<JS::Zone, ZoneComponentFinder>(sl), maybeAtomsZone(maybeAtomsZone)
     {}
 
-    AutoLockForExclusiveAccess& lock;
+    JS::Zone* maybeAtomsZone;
 };
 
 struct UniqueIdGCPolicy {
@@ -344,7 +344,7 @@ struct Zone : public JS::shadow::Zone,
     //
     // This is used during GC while calculating sweep groups to record edges
     // that can't be determined by examining this zone by itself.
-    js::ZoneGroupData<ZoneSet> gcSweepGroupEdges_;
+    js::ActiveThreadData<ZoneSet> gcSweepGroupEdges_;
 
   public:
     ZoneSet& gcSweepGroupEdges() { return gcSweepGroupEdges_.ref(); }
@@ -624,7 +624,7 @@ struct Zone : public JS::shadow::Zone,
     // Allow zones to be linked into a list
     friend class js::gc::ZoneList;
     static Zone * const NotOnList;
-    Zone* listNext_;
+    js::ActiveThreadOrGCTaskData<Zone*> listNext_;
     bool isOnList() const;
     Zone* nextZone() const;
 
@@ -711,6 +711,51 @@ class ZonesIter
     JS::Zone* get() const {
         MOZ_ASSERT(!done());
         return *it;
+    }
+
+    operator JS::Zone*() const { return get(); }
+    JS::Zone* operator->() const { return get(); }
+};
+
+// Iterate over all zones in the runtime, except those which may be in use by
+// parse threads.
+class ZonesIter
+{
+    ZoneGroupsIter group;
+    Maybe<ZonesInGroupIter> zone;
+    JS::Zone* atomsZone;
+
+  public:
+    ZonesIter(JSRuntime* rt, ZoneSelector selector)
+      : group(rt), atomsZone(selector == WithAtoms ? rt->gc.atomsZone.ref() : nullptr)
+    {
+        if (!atomsZone && !done())
+            next();
+    }
+
+    bool done() const { return !atomsZone && group.done(); }
+
+    void next() {
+        MOZ_ASSERT(!done());
+        if (atomsZone)
+            atomsZone = nullptr;
+        while (!group.done()) {
+            if (zone.isSome())
+                zone.ref().next();
+            else
+                zone.emplace(group);
+            if (zone.ref().done()) {
+                zone.reset();
+                group.next();
+            } else {
+                break;
+            }
+        }
+    }
+
+    JS::Zone* get() const {
+        MOZ_ASSERT(!done());
+        return atomsZone ? atomsZone : zone.ref().get();
     }
 
     operator JS::Zone*() const { return get(); }
@@ -806,61 +851,47 @@ class CompartmentsIterT
 
 typedef CompartmentsIterT<ZonesIter> CompartmentsIter;
 
-/*
- * Allocation policy that uses Zone::pod_malloc and friends, so that memory
- * pressure is accounted for on the zone. This is suitable for memory associated
- * with GC things allocated in the zone.
- *
- * Since it doesn't hold a JSContext (those may not live long enough), it can't
- * report out-of-memory conditions itself; the caller must check for OOM and
- * take the appropriate action.
- *
- * FIXME bug 647103 - replace these *AllocPolicy names.
- */
-class ZoneAllocPolicy
+template <typename T>
+inline T*
+ZoneAllocPolicy::maybe_pod_malloc(size_t numElems)
 {
-    Zone* const zone;
+    return zone->maybe_pod_malloc<T>(numElems);
+}
 
-  public:
-    MOZ_IMPLICIT ZoneAllocPolicy(Zone* zone) : zone(zone) {}
+template <typename T>
+inline T*
+ZoneAllocPolicy::maybe_pod_calloc(size_t numElems)
+{
+    return zone->maybe_pod_calloc<T>(numElems);
+}
 
-    template <typename T>
-    T* maybe_pod_malloc(size_t numElems) {
-        return zone->maybe_pod_malloc<T>(numElems);
-    }
+template <typename T>
+inline T*
+ZoneAllocPolicy::maybe_pod_realloc(T* p, size_t oldSize, size_t newSize)
+{
+    return zone->maybe_pod_realloc<T>(p, oldSize, newSize);
+}
 
-    template <typename T>
-    T* maybe_pod_calloc(size_t numElems) {
-        return zone->maybe_pod_calloc<T>(numElems);
-    }
+template <typename T>
+inline T*
+ZoneAllocPolicy::pod_malloc(size_t numElems)
+{
+    return zone->pod_malloc<T>(numElems);
+}
 
-    template <typename T>
-    T* maybe_pod_realloc(T* p, size_t oldSize, size_t newSize) {
-        return zone->maybe_pod_realloc<T>(p, oldSize, newSize);
-    }
+template <typename T>
+inline T*
+ZoneAllocPolicy::pod_calloc(size_t numElems)
+{
+    return zone->pod_calloc<T>(numElems);
+}
 
-    template <typename T>
-    T* pod_malloc(size_t numElems) {
-        return zone->pod_malloc<T>(numElems);
-    }
-
-    template <typename T>
-    T* pod_calloc(size_t numElems) {
-        return zone->pod_calloc<T>(numElems);
-    }
-
-    template <typename T>
-    T* pod_realloc(T* p, size_t oldSize, size_t newSize) {
-        return zone->pod_realloc<T>(p, oldSize, newSize);
-    }
-
-    void free_(void* p) { js_free(p); }
-    void reportAllocOverflow() const {}
-
-    MOZ_MUST_USE bool checkSimulatedOOM() const {
-        return !js::oom::ShouldFailWithOOM();
-    }
-};
+template <typename T>
+inline T*
+ZoneAllocPolicy::pod_realloc(T* p, size_t oldSize, size_t newSize)
+{
+    return zone->pod_realloc<T>(p, oldSize, newSize);
+}
 
 } // namespace js
 

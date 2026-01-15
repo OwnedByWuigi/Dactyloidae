@@ -9,6 +9,8 @@
 #include "jsgc.h"
 #include "jsobj.h"
 
+#include "gc/DeletePolicy.h"
+#include "gc/Zone.h"
 #include "vm/Runtime.h"
 #include "vm/TypeInference.h"
 
