@@ -225,22 +225,6 @@ IsOOMReason(JS::gcreason::Reason reason)
            reason == JS::gcreason::MEM_PRESSURE;
 }
 
-inline void
-RelocationOverlay::forwardTo(Cell* cell)
-{
-    MOZ_ASSERT(!isForwarded());
-    // The location of magic_ is important because it must never be valid to see
-    // the value Relocated there in a GC thing that has not been moved.
-    static_assert(offsetof(RelocationOverlay, magic_) == offsetof(JSObject, group_) + sizeof(uint32_t),
-                  "RelocationOverlay::magic_ is in the wrong location");
-    static_assert(offsetof(RelocationOverlay, magic_) == offsetof(js::Shape, base_) + sizeof(uint32_t),
-                  "RelocationOverlay::magic_ is in the wrong location");
-    static_assert(offsetof(RelocationOverlay, magic_) == offsetof(JSString, d.u1.length),
-                  "RelocationOverlay::magic_ is in the wrong location");
-    magic_ = Relocated;
-    newLocation_ = cell;
-}
-
 } /* namespace gc */
 } /* namespace js */
 
