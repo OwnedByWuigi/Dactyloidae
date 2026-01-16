@@ -1023,7 +1023,7 @@ EmitStoreBufferMutation(MacroAssembler& masm, Register strbase, int32_t strofs,
     Register addrReg = regs.takeAny();
     masm.computeEffectiveAddress(Address(strbase, strofs), addrReg);
 
-    bool needExtraReg = !regs.empty();
+    bool needExtraReg = regs.empty();
     if (needExtraReg) {
         masm.push(strbase);
         masm.setupUnalignedABICall(strbase);
@@ -1101,7 +1101,7 @@ EmitStoreBufferMutation(MacroAssembler& masm, Register holder, size_t offset,
 
     masm.computeEffectiveAddress(Address(holder, offset), addrReg);
 
-    bool needExtraReg = !regs.empty();
+    bool needExtraReg = regs.empty();
     if (needExtraReg) {
         masm.push(holder);
         masm.setupUnalignedABICall(holder);
