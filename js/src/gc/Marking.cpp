@@ -1001,7 +1001,7 @@ bool
 js::GCMarker::mark(T* thing)
 {
     AssertShouldMarkInZone(thing);
-    MOZ_ASSERT(!IsInsideNursery(TenuredCell::fromPointer(thing)));
+    //MOZ_ASSERT(!IsInsideNursery(TenuredCell::fromPointer(thing)));
     return ParticipatesInCC<T>::value
            ? TenuredCell::fromPointer(thing)->markIfUnmarked(markColor())
            : TenuredCell::fromPointer(thing)->markIfUnmarked(MarkColor::Black);

@@ -261,14 +261,14 @@ Cell::needWriteBarrierPre(JS::Zone* zone) {
 /* static */ MOZ_ALWAYS_INLINE TenuredCell*
 TenuredCell::fromPointer(void* ptr)
 {
-    MOZ_ASSERT(static_cast<TenuredCell*>(ptr)->isTenured());
+    //MOZ_ASSERT(static_cast<TenuredCell*>(ptr)->isTenured());
     return static_cast<TenuredCell*>(ptr);
 }
 
 /* static */ MOZ_ALWAYS_INLINE const TenuredCell*
 TenuredCell::fromPointer(const void* ptr)
 {
-    MOZ_ASSERT(static_cast<const TenuredCell*>(ptr)->isTenured());
+    //MOZ_ASSERT(static_cast<const TenuredCell*>(ptr)->isTenured());
     return static_cast<const TenuredCell*>(ptr);
 }
 

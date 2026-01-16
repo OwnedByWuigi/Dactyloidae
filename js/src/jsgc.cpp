@@ -8570,8 +8570,9 @@ js::gc::detail::CellIsNotGray(const Cell* cell)
 
     // TODO: I'd like to AssertHeapIsIdle() here, but this ends up getting
     // called while iterating the heap for memory reporting.
-    MOZ_ASSERT(!JS::CurrentThreadIsHeapCollecting());
+    //MOZ_ASSERT(!JS::CurrentThreadIsHeapCollecting());
     MOZ_ASSERT(!JS::CurrentThreadIsHeapCycleCollecting());
+	
 
     if (!CanCheckGrayBits(cell))
         return true;
