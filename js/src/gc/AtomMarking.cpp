@@ -257,7 +257,9 @@ AtomMarkingRuntime::atomIsMarked(Zone* zone, TenuredCell* thing)
 
     if (thing->is<JSString>()) {
         JSString* str = thing->as<JSString>();
-        return str->isAtom() ? atomIsMarked(zone, &str->asAtom()) : true;
+        if (!str->isAtom())
+            return true;
+        return atomIsMarked(zone, &str->asAtom());
     }
 
     if (thing->is<JS::Symbol>())
