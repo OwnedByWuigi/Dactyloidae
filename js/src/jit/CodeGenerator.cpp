@@ -1572,11 +1572,28 @@ CreateDependentString::generate(MacroAssembler& masm, const JSAtomState& names,
         masm.storePtr(temp1, Address(string, JSDependentString::offsetOfBase()));
         masm.bind(&noBase);
     }
-	
-	// Post-barrier the base store, whether it was the direct or indirect
-         // base (both will end up in temp1 here).
+
+        // Post-barrier the base store, whether it was the direct or indirect
+        // base (both will end up in temp1 here).
         masm.branchPtrInNurseryChunk(Assembler::Equal, string, temp2, &done);
-         masm.branchPtrInNurseryChunk(Assembler::NotEqual, temp1, temp2, &done);
+        masm.branchPtrInNurseryChunk(Assembler::NotEqual, temp1, temp2, &done);
+
+        LiveRegisterSet regsToSave(RegisterSet::Volatile());
+        regsToSave.takeUnchecked(temp1);
+        regsToSave.takeUnchecked(temp2);
+        regsToSave.addUnchecked(string);
+
+        masm.PushRegsInMask(regsToSave);
+
+        masm.mov(ImmPtr(runtime), temp1);
+
+        masm.setupUnalignedABICall(temp2);
+        masm.passABIArg(temp1);
+        masm.passABIArg(string);
+        masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, PostWriteBarrier));
+
+        masm.PopRegsInMask(regsToSave);
+
 
     masm.bind(&done);
 }
@@ -1859,7 +1876,9 @@ JitCompartment::generateRegExpMatcherStub(JSContext* cx)
 
     masm.load32(pairsVectorAddress, temp3);
     masm.storeValue(JSVAL_TYPE_INT32, temp3, Address(temp2, 0));
-    masm.storeValue(JSVAL_TYPE_STRING, input, Address(temp2, sizeof(Value)));
+    Address inputSlotAddress(temp2, sizeof(Value));
+    masm.storeValue(JSVAL_TYPE_STRING, input, inputSlotAddress);
+    // No post barrier needed (inputSlotAddress is within nursery object.)
 
     // All done!
     masm.tagValue(JSVAL_TYPE_OBJECT, object, result);
@@ -3715,12 +3734,11 @@ class OutOfLineCallPostWriteBarrier : public OutOfLineCodeBase<CodeGenerator>
 };
 
 static void
-EmitStoreBufferCheckForConstant(MacroAssembler& masm, JSObject* object,
+EmitStoreBufferCheckForConstant(MacroAssembler& masm, const gc::TenuredCell* cell,
                                 AllocatableGeneralRegisterSet& regs, Label* exit, Label* callVM)
 {
     Register temp = regs.takeAny();
 
-    const gc::TenuredCell* cell = &object->asTenured();
     gc::Arena* arena = cell->arena();
 
     Register cells = temp;
@@ -3758,7 +3776,7 @@ EmitPostWriteBarrier(MacroAssembler& masm, Register objreg, JSObject* maybeConst
     // We already have a fast path to check whether a global is in the store
     // buffer.
     if (!isGlobal && maybeConstant)
-        EmitStoreBufferCheckForConstant(masm, maybeConstant, regs, &exit, &callVM);
+        EmitStoreBufferCheckForConstant(masm, &maybeConstant->asTenured(), regs, &exit, &callVM);
 
     // Call into the VM to barrier the write.
     masm.bind(&callVM);
@@ -3888,7 +3906,9 @@ CodeGenerator::visitPostWriteBarrierCommonV(LPostBarrierType* lir, OutOfLineCode
     maybeEmitGlobalBarrierCheck(lir->object(), ool);
 
     ValueOperand value = ToValue(lir, LPostBarrierType::Input);
-    masm.branchValueIsNurseryObject(Assembler::Equal, value, temp, ool->entry());
+    // Bug 1386094 - most callers only need to check for object or string, not
+    // both.
+    masm.branchValueIsNurseryCell(Assembler::Equal, value, temp, ool->entry());
 
     masm.bind(ool->rejoin());
 }
