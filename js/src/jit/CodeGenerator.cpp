@@ -1572,6 +1572,11 @@ CreateDependentString::generate(MacroAssembler& masm, const JSAtomState& names,
         masm.storePtr(temp1, Address(string, JSDependentString::offsetOfBase()));
         masm.bind(&noBase);
     }
+	
+	// Post-barrier the base store, whether it was the direct or indirect
+         // base (both will end up in temp1 here).
+        masm.branchPtrInNurseryChunk(Assembler::Equal, string, temp2, &done);
+         masm.branchPtrInNurseryChunk(Assembler::NotEqual, temp1, temp2, &done);
 
     masm.bind(&done);
 }
