@@ -15,6 +15,7 @@
 #include "jscompartment.h"
 #include "jsutil.h"
 
+#include "js/Vector.h"
 #include "gc/GCInternals.h"
 #include "gc/Memory.h"
 #include "jit/JitFrames.h"
@@ -241,7 +242,6 @@ js::Nursery::disable()
 
     currentEnd_ = 0;
 
-    position_ = 0;
     currentStringEnd_ = 0;
     runtime()->gc.storeBuffer().disable();
 }
@@ -697,6 +697,8 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
     // Resize the nursery.
     maybeResizeNursery(reason);
 
+    js::Vector<ObjectGroup*, 0, SystemAllocPolicy> groupsToPretenure;
+    
     // If we are promoting the nursery, or exhausted the store buffer with
     // pointers to nursery things, which will force a collection well before
     // the nursery is full, look for object groups that are getting promoted
@@ -708,39 +710,56 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
     bool shouldPretenure = (validPromotionRate && promotionRate > 0.6) ||
         IsFullStoreBufferReason(reason);
 
-    if (shouldPretenure) {
-        JSContext* cx = TlsContext.get();
-        for (auto& entry : tenureCounts.entries) {
-            if (entry.count >= 3000) {
-                ObjectGroup* group = entry.group;
-                if (group->canPreTenure() && group->zone()->group()->canEnterWithoutYielding(cx)) {
-                    AutoCompartment ac(cx, group);
-                    group->setShouldPreTenure(cx);
-                    pretenureCount++;
-                }
-            }
-        }
-    }
-    for (ZonesIter zone(rt, SkipAtoms); !zone.done(); zone.next()) {
-        if (shouldPretenure && zone->allocNurseryStrings && zone->tenuredStrings >= 30 * 1000) {
-            MOZ_ASSERT(session.isSome(), "discarding JIT code must be in an AutoTraceSession");
-            JSRuntime::AutoProhibitActiveContextChange apacc(rt);
-            CancelOffThreadIonCompile(zone);
-            bool preserving = zone->isPreservingCode();
-            zone->setPreservingCode(false);
-            zone->discardJitCode(rt->defaultFreeOp());
-            zone->setPreservingCode(preserving);
+  if (shouldPretenure) {
+     for (auto& entry : tenureCounts.entries) {
+         if (entry.count >= 3000) {
+             if (ObjectGroup* group = entry.group) {
+                groupsToPretenure.append(group); // no canPreTenure here
+             }
+         }
+     }
+  }
+
+           for (ZonesIter zone(rt, SkipAtoms); !zone.done(); zone.next()) {
+    if (shouldPretenure && zone->allocNurseryStrings && zone->tenuredStrings >= 30 * 1000) {
+        MOZ_ASSERT(session.isSome(),
+                   "discarding JIT code must be in an AutoTraceSession");
+
+        JSRuntime::AutoProhibitActiveContextChange apacc(rt);
+        CancelOffThreadIonCompile(zone);
+        bool preserving = zone->isPreservingCode();
+        zone->setPreservingCode(false);
+        zone->discardJitCode(rt->defaultFreeOp());
+        zone->setPreservingCode(preserving);
+
             for (CompartmentsInZoneIter c(zone); !c.done(); c.next()) {
-                if (jit::JitCompartment* jitComp = c->jitCompartment()) {
-                    jitComp->discardStubs();
-                    jitComp->setStringsCanBeInNursery(false);
-                }
+            if (jit::JitCompartment* jitComp = c->jitCompartment()) {
+                jitComp->discardStubs();
+                jitComp->setStringsCanBeInNursery(false);
             }
-            zone->allocNurseryStrings = false;
         }
-        zone->tenuredStrings = 0;
+        zone->allocNurseryStrings = false;
     }
-    endProfile(ProfileKey::Pretenure);
+    zone->tenuredStrings = 0;
+}
+    // Now we're done with everything that requires the AutoTraceSession.
+   endProfile(ProfileKey::Pretenure);
+
+    // End the minor GC session NOW (moved earlier than before).
+   session.reset();
+   
+   // Phase B: now it is legal to touch TI / sweep and to enter compartments.
+    if (shouldPretenure && !groupsToPretenure.empty()) {
+    JSContext* cx = TlsContext.get();
+       for (ObjectGroup* group : groupsToPretenure) {
+        // Re-check; canPreTenure may touch TI/sweep.
+           if (group->canPreTenure() && group->zone()->group()->canEnterWithoutYielding(cx)) {
+            AutoCompartment ac(cx, group);
+            group->setShouldPreTenure(cx);
+            pretenureCount++;
+           }
+        }
+    }
 
     // We ignore gcMaxBytes when allocating for minor collection. However, if we
     // overflowed, we disable the nursery. The next time we allocate, we'll fail
@@ -754,7 +773,6 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
         disable();
 
     endProfile(ProfileKey::Total);
-    session.reset(); // End the minor GC session, if running one.
     minorGcCount_++;
 
     int64_t totalTime = profileTimes_[ProfileKey::Total];
