@@ -217,6 +217,10 @@ js::CreateRegExpMatchResult(JSContext* cx, RegExpShared& re,
     // Step 34b (reordered)
     // Set the |indices| property.
     if (hasIndices) {
+      fprintf(stderr,
+        "regexp indices store: arr=%p comp=%p zone=%p | indices=%p comp=%p zone=%p\n",
+        arr.get(), arr->compartment(), arr->zone(),
+        indices.get(), indices->compartment(), indices->zone());
       arr->setSlot(3, ObjectValue(*indices));
     }
     

@@ -857,7 +857,15 @@ class NativeObject : public ShapedObject
         return *getSlotAddress(slot);
     }
 
-    void setSlot(uint32_t slot, const Value& value) {
+    // Check requirements on values stored to this object.
+    MOZ_ALWAYS_INLINE void checkStoredValue(const Value& v) {
+        if (!IsObjectValueInCompartment(v, compartment()))
+    MOZ_CRASH("compartment mismatch");
+        if (!AtomIsMarked(zoneFromAnyThread(), v))
+    MOZ_CRASH("AtomIsMarked failed");
+    }
+
+    MOZ_ALWAYS_INLINE void setSlot(uint32_t slot, const Value& value) {
         MOZ_ASSERT(slotInRange(slot));
         MOZ_ASSERT(IsObjectValueInCompartment(value, compartment()));
         getSlotRef(slot).set(this, HeapSlot::Slot, slot, value);

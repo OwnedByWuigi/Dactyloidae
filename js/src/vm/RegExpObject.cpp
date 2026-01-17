@@ -1297,12 +1297,12 @@ RegExpShared::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf)
 /* RegExpCompartment */
 
 RegExpCompartment::RegExpCompartment(Zone* zone)
-  : set_(zone, Set(zone->runtimeFromMainThread())),
+    : perCompartment_(zone),
     optimizableRegExpPrototypeShape_(nullptr),
     optimizableRegExpInstanceShape_(nullptr)
 {
-  for (auto& templateObj : matchResultTemplateObjects_) {
-    templateObj = nullptr;
+  {
+    MOZ_ALWAYS_TRUE(perCompartment_.init(4));
   }
 }
 
@@ -1312,9 +1312,30 @@ RegExpCompartment::~RegExpCompartment()
 }
 
 ArrayObject*
-RegExpCompartment::createMatchResultTemplateObject(JSContext* cx, ResultTemplateKind kind)
+RegExpCompartment::getOrCreateMatchResultTemplateObject(JSContext* cx, ResultTemplateKind kind)
 {
-    MOZ_ASSERT(!matchResultTemplateObjects_[kind]);
+    JSCompartment* comp = cx->compartment();
+
+    auto p = perCompartment_.lookupForAdd(comp);
+    if (!p) {
+        PerCompartmentData init;
+        if (!perCompartment_.add(p, comp, init))
+            return nullptr;
+    }
+
+    PerCompartmentData& data = p->value();
+    if (data.matchResultTemplateObjects_[kind])
+        return data.matchResultTemplateObjects_[kind];
+
+    return createMatchResultTemplateObject(cx, kind, data);
+}
+
+ArrayObject*
+RegExpCompartment::createMatchResultTemplateObject(JSContext* cx,
+                                                   ResultTemplateKind kind,
+                                                   PerCompartmentData& data)
+{
+    MOZ_ASSERT(!data.matchResultTemplateObjects_[kind]);
 
     /* Create template array object */
     RootedArrayObject templateObject(cx, NewDenseUnallocatedArray(cx, RegExpObject::MaxPairCount,
@@ -1338,8 +1359,8 @@ RegExpCompartment::createMatchResultTemplateObject(JSContext* cx, ResultTemplate
         return nullptr;
       }
       AddTypePropertyId(cx, templateObject, NameToId(cx->names().groups), TypeSet::AnyObjectType());
-      matchResultTemplateObjects_[kind].set(templateObject);
-      return matchResultTemplateObjects_[kind];
+      data.matchResultTemplateObjects_[kind].set(templateObject);
+      return data.matchResultTemplateObjects_[kind];
     }
 
     /* Set dummy index property */
@@ -1378,9 +1399,8 @@ RegExpCompartment::createMatchResultTemplateObject(JSContext* cx, ResultTemplate
       AddTypePropertyId(cx, templateObject, NameToId(cx->names().indices), TypeSet::AnyObjectType());
     }
 
-    matchResultTemplateObjects_[kind].set(templateObject);
-
-    return matchResultTemplateObjects_[kind];
+    data.matchResultTemplateObjects_[kind].set(templateObject);
+    return data.matchResultTemplateObjects_[kind];
 }
 
 bool
@@ -1398,22 +1418,21 @@ RegExpCompartment::init(JSContext* cx)
 void
 RegExpCompartment::sweep(JSRuntime* rt)
 {
-    for (auto& templateObject : matchResultTemplateObjects_) {
-      if (templateObject && IsAboutToBeFinalized(&templateObject)) {
-        templateObject.set(nullptr);
-      }
-    }
+    for (auto iter = perCompartment_.all(); !iter.empty(); iter.popFront()) {
+        PerCompartmentData& data = iter.front().value();
 
-    if (optimizableRegExpPrototypeShape_ &&
-        IsAboutToBeFinalized(&optimizableRegExpPrototypeShape_))
-    {
-        optimizableRegExpPrototypeShape_.set(nullptr);
-    }
+        for (auto& templateObject : data.matchResultTemplateObjects_) {
+            if (templateObject && IsAboutToBeFinalized(&templateObject))
+                templateObject.set(nullptr);
+        }
 
-    if (optimizableRegExpInstanceShape_ &&
-        IsAboutToBeFinalized(&optimizableRegExpInstanceShape_))
-    {
-        optimizableRegExpInstanceShape_.set(nullptr);
+        if (data.optimizableRegExpPrototypeShape_ &&
+            IsAboutToBeFinalized(&data.optimizableRegExpPrototypeShape_))
+            data.optimizableRegExpPrototypeShape_.set(nullptr);
+
+        if (data.optimizableRegExpInstanceShape_ &&
+            IsAboutToBeFinalized(&data.optimizableRegExpInstanceShape_))
+            data.optimizableRegExpInstanceShape_.set(nullptr);
     }
 }
 
