@@ -105,6 +105,11 @@ class CompartmentChecker
         MOZ_ASSERT(!js::gc::detail::CellIsMarkedGray(str));
         if (!str->isAtom())
             checkZone(str->zone());
+        }
+    }
+
+    void check(JS::Symbol* symbol) {
+        checkAtom(symbol);
     }
 
     void check(const js::Value& v) {
@@ -178,9 +183,9 @@ class CompartmentChecker
  * Don't perform these checks when called from a finalizer. The checking
  * depends on other objects not having been swept yet.
  */
-#define START_ASSERT_SAME_COMPARTMENT()                                       \
-    if (cx->isJSContext() && cx->asJSContext()->runtime()->isHeapBusy())      \
-        return;                                                               \
+#define START_ASSERT_SAME_COMPARTMENT()                                 \
+    if (cx->heapState != JS::HeapState::Idle)                           \
+        return;                                                         \
     CompartmentChecker c(cx)
 
 template <class T1> inline void
@@ -417,7 +422,30 @@ js::ExclusiveContext::enterCompartment(
 }
 
 inline void
-js::ExclusiveContext::enterNullCompartment()
+JSContext::enterAtomsCompartment(JSCompartment* c,
+                                 const js::AutoLockForExclusiveAccess& lock)
+{
+    enterCompartmentDepth_++;
+
+    MOZ_ASSERT(c->zone()->isAtomsZone());
+
+    c->enter();
+    setCompartment(c, &lock);
+}
+
+template <typename T>
+inline void
+JSContext::enterCompartmentOf(const T& target)
+{
+    // Use the public API which is guaranteed to be visible in templates
+    if (!JS::CurrentThreadIsHeapCollecting()) {
+        MOZ_ASSERT(JS::CellIsNotGray(target));
+    }
+    enterNonAtomsCompartment(target->compartment());
+}
+
+inline void
+JSContext::enterNullCompartment()
 {
     enterCompartmentDepth_++;
     setCompartment(nullptr);
