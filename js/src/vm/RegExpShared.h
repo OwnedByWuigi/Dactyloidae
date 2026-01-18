@@ -12,6 +12,7 @@
 #ifndef vm_RegExpShared_h
 #define vm_RegExpShared_h
 
+#include "js/GCHashTable.h"   
 #include "mozilla/Assertions.h"
 #include "mozilla/MemoryReporting.h"
 
@@ -22,6 +23,7 @@
 #include "gc/Barrier.h"
 #include "gc/Heap.h"
 #include "gc/Marking.h"
+#include "jsalloc.h"
 #include "js/UbiNode.h"
 #include "js/Vector.h"
 #include "irregexp/InfallibleVector.h"
@@ -310,23 +312,31 @@ public:
   enum ResultTemplateKind { Normal, WithIndices, Indices, NumKinds };
 
 private:
-    /*
-     * The template objects that the result of re.exec() is based on, if
-	 * there is a result. These are used in CreateRegExpMatchResult.
-	 * There are three template objects, each of which is an ArrayObject
-	 * with some additional properties. We decide which to use based on
-	 * the |hasIndices| (/d) flag.
-	 *
-	 *  Normal: Has |index|, |input|, and |groups| properties.
-	 *          Used for the result object if |hasIndices| is not set.
-	 *
-	 *  WithIndices: Has |index|, |input|, |groups|, and |indices| properties.
-	 *               Used for the result object if |hasIndices| is set.
-	 *
-	 *  Indices: Has a |groups| property. If |hasIndices| is set, used
-	 *           for the |.indices| property of the result object.
-     */
-    ReadBarriered<ArrayObject*> matchResultTemplateObjects_[ResultTemplateKind::NumKinds];
+
+struct PerCompartmentData {
+        ReadBarriered<ArrayObject*> matchResultTemplateObjects_[NumKinds];
+        ReadBarriered<Shape*> optimizableRegExpPrototypeShape_;
+        ReadBarriered<Shape*> optimizableRegExpInstanceShape_;
+
+        PerCompartmentData()
+          : optimizableRegExpPrototypeShape_(nullptr),
+            optimizableRegExpInstanceShape_(nullptr)
+        {
+            for (auto& t : matchResultTemplateObjects_)
+                t = nullptr;
+        }
+    };
+
+    using PerCompartmentMap =
+        GCHashMap<JSCompartment*, PerCompartmentData,
+                  DefaultHasher<JSCompartment*>,
+                  ZoneAllocPolicy>;
+
+    PerCompartmentMap perCompartment_;   // <-- add this
+	
+	ArrayObject* createMatchResultTemplateObject(JSContext* cx,
+                                                 ResultTemplateKind kind,
+                                                 PerCompartmentData& data);
 
     /*
      * The shape of RegExp.prototype object that satisfies following:
@@ -349,19 +359,13 @@ private:
      */
     ReadBarriered<Shape*> optimizableRegExpInstanceShape_;
 
-    ArrayObject* createMatchResultTemplateObject(JSContext* cx, ResultTemplateKind kind);
-
   public:
     explicit RegExpCompartment(Zone* zone);
 
     void sweep(JSRuntime* rt);
 
-    /* Get or create template object used to base the result of .exec() on. */
-    ArrayObject* getOrCreateMatchResultTemplateObject(JSContext* cx, ResultTemplateKind kind = ResultTemplateKind::Normal) {
-        if (matchResultTemplateObjects_[kind])
-            return matchResultTemplateObjects_[kind];
-        return createMatchResultTemplateObject(cx, kind);
-    }
+    ArrayObject* getOrCreateMatchResultTemplateObject(JSContext* cx,
+                                                      ResultTemplateKind kind = Normal);
 
     Shape* getOptimizableRegExpPrototypeShape() {
         return optimizableRegExpPrototypeShape_;
