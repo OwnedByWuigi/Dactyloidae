@@ -136,10 +136,6 @@ class RegExpShared : public gc::TenuredCell
 
 bool namedCaptureDataInited_;
 
-// NEW: realm-neutral named-capture data stored on the shared regexp
-Vector<GCPtr<JSAtom*>, 0, SystemAllocPolicy> namedCaptureNames_;
-Vector<uint32_t, 0, SystemAllocPolicy> namedCaptureIndices_;
-
     RegExpCompilation  compilationArray[4];
 
     static int CompilationIndex(CompilationMode mode, bool latin1) {
