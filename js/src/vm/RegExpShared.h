@@ -128,8 +128,17 @@ class RegExpShared : public gc::TenuredCell
     bool               canStringMatch;
     size_t             parenCount;
 
+    struct NamedCaptureData;        // forward-declare at namespace scope
     uint32_t            numNamedCaptures_;
-    GCPtr<PlainObject*> groupsTemplate_;
+    NamedCaptureData* namedCaptureData_;   // nullptr if none
+	public:
+  NamedCaptureData* namedCaptureData() const { return namedCaptureData_; }
+
+bool namedCaptureDataInited_;
+
+// NEW: realm-neutral named-capture data stored on the shared regexp
+Vector<GCPtr<JSAtom*>, 0, SystemAllocPolicy> namedCaptureNames_;
+Vector<uint32_t, 0, SystemAllocPolicy> namedCaptureIndices_;
 
     RegExpCompilation  compilationArray[4];
 
@@ -190,7 +199,7 @@ class RegExpShared : public gc::TenuredCell
 
     // not public due to circular inclusion problems
     static bool initializeNamedCaptures(JSContext* cx, MutableHandleRegExpShared re, irregexp::CharacterVectorVector* names, irregexp::IntegerVector* indices);
-    PlainObject* getGroupsTemplate() { return groupsTemplate_; }
+    PlainObject* getOrCreateGroupsTemplate(JSContext* cx);
     uint32_t numNamedCaptures() const { return numNamedCaptures_; }
     JSAtom* getSource() const           { return source; }
     RegExpFlag getFlags() const         { return flags; }
@@ -238,8 +247,8 @@ class RegExpShared : public gc::TenuredCell
              + offsetof(RegExpCompilation, jitCode);
     }
 
-    static size_t offsetOfGroupsTemplate() {
-        return offsetof(RegExpShared, groupsTemplate_);
+    static size_t offsetOfNumNamedCaptures() {
+    return offsetof(RegExpShared, numNamedCaptures_);
     }
 
     size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);

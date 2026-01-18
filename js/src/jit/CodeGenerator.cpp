@@ -1736,10 +1736,10 @@ JitCompartment::generateRegExpMatcherStub(JSContext* cx)
     Register shared = temp2;
     masm.loadPtr(Address(regexp, NativeObject::getFixedSlotOffset(RegExpObject::PRIVATE_SLOT)),
                  shared);
-    masm.branchPtr(Assembler::NotEqual,
-                   Address(shared, RegExpShared::offsetOfGroupsTemplate()),
-                   ImmWord(0),
-                   &oolEntry);
+    masm.branch32(Assembler::NotEqual,
+                  Address(shared, RegExpShared::offsetOfNumNamedCaptures()),
+                  Imm32(0),
+                  &oolEntry);
 
     // Similarly, if the |hasIndices| flag is set, fall back to the OOL stub.
     masm.branchTest32(Assembler::NonZero,

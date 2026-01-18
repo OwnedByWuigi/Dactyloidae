@@ -110,7 +110,9 @@ js::CreateRegExpMatchResult(JSContext* cx, RegExpShared& re,
   
       // MakeIndicesArray: steps 10-12
       if (re.numNamedCaptures() > 0) {
-        RootedPlainObject groupsTemplate(cx, re.getGroupsTemplate());
+        RootedPlainObject groupsTemplate(cx, re.getOrCreateGroupsTemplate(cx));
+        if (!groupsTemplate)
+            return false;
         indicesGroups = CreateGroupsObject(cx, groupsTemplate);
         if (!indicesGroups) {
           return false;
@@ -166,7 +168,9 @@ js::CreateRegExpMatchResult(JSContext* cx, RegExpShared& re,
     RootedPlainObject groups(cx);
     if (re.numNamedCaptures() > 0) {
         // construct a new object from the template saved on RegExpShared
-        RootedPlainObject groupsTemplate(cx, re.getGroupsTemplate());
+        RootedPlainObject groupsTemplate(cx, re.getOrCreateGroupsTemplate(cx));
+        if (!groupsTemplate)
+            return false;
         groups = CreateGroupsObject(cx, groupsTemplate);
 
         // Step 33 e-f
