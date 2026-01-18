@@ -958,17 +958,16 @@ RegExpShared::RegExpShared(JSAtom* source, RegExpFlag flags)
 {}
 
 struct RegExpShared::NamedCaptureData {
+	bool mapInited;
     // per-compartment template cache (optional; you can also skip templates entirely)
     using GroupsTemplateMap =
         GCHashMap<JSCompartment*, ReadBarriered<PlainObject*>,
                   DefaultHasher<JSCompartment*>, SystemAllocPolicy>;
     GroupsTemplateMap groupsTemplateMap;
-    bool groupsTemplateMapInited;
+    bool groupsTemplateMapInited = false;
 
     Vector<JSAtom*, 0, SystemAllocPolicy> names;
     Vector<uint32_t, 0, SystemAllocPolicy> indices;
-
-    NamedCaptureData() : groupsTemplateMapInited(false) {}
 };
 
 void
@@ -978,16 +977,14 @@ RegExpShared::traceChildren(JSTracer* trc)
     if (IsMarkingTrace(trc) && trc->runtime()->gc.isShrinkingGC())
         discardJitCode();
 
-    if (namedCaptureData_ && namedCaptureData_->groupsTemplateMapInited) {
+    if (namedCaptureData_ && namedCaptureData_->mapInited) {
 	  for (auto iter = namedCaptureData_->groupsTemplateMap.all(); !iter.empty(); iter.popFront()) {
         TraceNullableEdge(trc, &iter.front().value(), "RegExpShared groupsTemplate per-compartment");
       }
     }
 
-    if (namedCaptureData_) {
-      for (JSAtom*& atom : namedCaptureData_->names) {
-        TraceEdge(trc, &atom, "RegExpShared namedCaptureName");
-      }
+    for (auto& atom : namedCaptureNames_) {
+    TraceEdge(trc, &atom, "RegExpShared namedCaptureName");
     }
 
     TraceNullableEdge(trc, &source, "RegExpShared source");
@@ -1008,11 +1005,6 @@ RegExpShared::discardJitCode()
 void
 RegExpShared::finalize(FreeOp* fop)
 {
-	if (namedCaptureData_) {
-        js_delete(namedCaptureData_);
-        namedCaptureData_ = nullptr;
-    }
-
     for (auto& comp : compilationArray)
         js_free(comp.byteCode);
     tables.~JitCodeTables();
@@ -1409,10 +1401,10 @@ RegExpShared::getOrCreateGroupsTemplate(JSContext* cx)
 
     NamedCaptureData* data = namedCaptureData_;
 
-    if (!data->groupsTemplateMapInited) {
+    if (!data->mapInited) {
         if (!data->groupsTemplateMap.init(4))
             return nullptr;
-        data->groupsTemplateMapInited = true;
+        data->mapInited = true;
     }
 
     JSCompartment* comp = cx->compartment();

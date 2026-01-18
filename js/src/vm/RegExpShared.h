@@ -132,7 +132,13 @@ class RegExpShared : public gc::TenuredCell
     uint32_t            numNamedCaptures_;
     NamedCaptureData* namedCaptureData_;   // nullptr if none
 	public:
-    NamedCaptureData* namedCaptureData() const { return namedCaptureData_; }
+  NamedCaptureData* namedCaptureData() const { return namedCaptureData_; }
+
+bool namedCaptureDataInited_;
+
+// NEW: realm-neutral named-capture data stored on the shared regexp
+Vector<GCPtr<JSAtom*>, 0, SystemAllocPolicy> namedCaptureNames_;
+Vector<uint32_t, 0, SystemAllocPolicy> namedCaptureIndices_;
 
     RegExpCompilation  compilationArray[4];
 
