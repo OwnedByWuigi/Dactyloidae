@@ -859,10 +859,8 @@ class NativeObject : public ShapedObject
 
     // Check requirements on values stored to this object.
     MOZ_ALWAYS_INLINE void checkStoredValue(const Value& v) {
-        if (!IsObjectValueInCompartment(v, compartment()))
-    MOZ_CRASH("compartment mismatch");
-        if (!AtomIsMarked(zoneFromAnyThread(), v))
-    MOZ_CRASH("AtomIsMarked failed");
+        MOZ_ASSERT(IsObjectValueInCompartment(v, compartment()));
+        MOZ_ASSERT(AtomIsMarked(zoneFromAnyThread(), v));
     }
 
     MOZ_ALWAYS_INLINE void setSlot(uint32_t slot, const Value& value) {
