@@ -2938,33 +2938,23 @@ ArenaLists::queueForegroundThingsForSweep(FreeOp* fop)
     gcScriptArenasToUpdate = arenaListsToSweep[AllocKind::SCRIPT];
 }
 
-SliceBudget::SliceBudget()
-  : timeBudget(UnlimitedTimeBudget), workBudget(UnlimitedWorkBudget)
+void
+SliceBudget::reset()
 {
-    makeUnlimited();
-}
+	MOZ_ASSERT_IF(timeBudget.budget < 0, !callbackBudget);
+	if (timeBudget.budget >= 0) {
 
-SliceBudget::SliceBudget(TimeBudget time)
-  : timeBudget(time), workBudget(UnlimitedWorkBudget)
-{
-    if (time.budget < 0) {
-        makeUnlimited();
-    } else {
         // Note: TimeBudget(0) is equivalent to WorkBudget(CounterReset).
-        deadline = PRMJ_Now() + time.budget * PRMJ_USEC_PER_MSEC;
+        deadline = PRMJ_Now() + timeBudget.budget * PRMJ_USEC_PER_MSEC;
         counter = CounterReset;
-    }
-}
-
-SliceBudget::SliceBudget(WorkBudget work)
-  : timeBudget(UnlimitedTimeBudget), workBudget(work)
-{
-    if (work.budget < 0) {
-        makeUnlimited();
-    } else {
-        deadline = 0;
-        counter = work.budget;
-    }
+		if (callbackBudget)
+			callbackBudget->reset();
+	    } else if (workBudget.budget >= 0) {
+			deadline = 0;
+			counter = workBudget.budget;
+        } else {
+				makeUnlimited();
+        }
 }
 
 int
@@ -2981,10 +2971,20 @@ SliceBudget::describe(char* buffer, size_t maxlen) const
 bool
 SliceBudget::checkOverBudget()
 {
-    bool over = PRMJ_Now() >= deadline;
-    if (!over)
+    int64_t now = PRMJ_Now();
+	bool over = now >= deadline;
+	if (over)
+		return true;
+	if (!callbackBudget || !callbackBudget->isOverBudget()) {
         counter = CounterReset;
-    return over;
+		return false;
+    }
+	callbackBudget->reset();
+	if (interruptRequested(callbackData)) {
+		deadline = now;
+		return true;
+	}
+    return false;
 }
 
 void

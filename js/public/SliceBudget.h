@@ -34,12 +34,18 @@ struct JS_PUBLIC_API(WorkBudget)
  */
 class JS_PUBLIC_API(SliceBudget)
 {
+	typedef bool (*InterruptRequestCallback)(void*);
+
     static const int64_t unlimitedDeadline = INT64_MAX;
     static const intptr_t unlimitedStartCounter = INTPTR_MAX;
 
     bool checkOverBudget();
 
-    SliceBudget();
+    SliceBudget()
+	   : timeBudget(UnlimitedTimeBudget), workBudget(UnlimitedWorkBudget), callbackBudget(nullptr)
+	{
+		reset();
+	}
 
   public:
     // Memory of the originally requested budget. If isUnlimited, neither of
@@ -56,22 +62,51 @@ class JS_PUBLIC_API(SliceBudget)
     static const int64_t UnlimitedTimeBudget = -1;
     static const int64_t UnlimitedWorkBudget = -1;
 
+    SliceBudget* callbackBudget;
+	// If callbackBudget is nullptr, the following fields are uninitialized and unused.
+	InterruptRequestCallback interruptRequested;
+	void* callbackData;
+
     /* Use to create an unlimited budget. */
     static SliceBudget unlimited() { return SliceBudget(); }
 
+    explicit SliceBudget(TimeBudget time,
+	                     SliceBudget& callbackBudget_, InterruptRequestCallback callback,
+						                          void* callbackData)
+      : timeBudget(time), workBudget(UnlimitedWorkBudget)
+      , callbackBudget(&callbackBudget_), interruptRequested(callback)
+      , callbackData(callbackData)
+    {
+        reset();
+    }
+
     /* Instantiate as SliceBudget(TimeBudget(n)). */
-    explicit SliceBudget(TimeBudget time);
+    explicit SliceBudget(TimeBudget time)
+      : timeBudget(time), workBudget(UnlimitedWorkBudget), callbackBudget(nullptr)
+    {
+        reset();
+    }
 
     /* Instantiate as SliceBudget(WorkBudget(n)). */
-    explicit SliceBudget(WorkBudget work);
+        explicit SliceBudget(WorkBudget work)
+      : timeBudget(UnlimitedTimeBudget), workBudget(work), callbackBudget(nullptr)
+    {
+        reset();
+    }
+
+    void reset();
 
     void makeUnlimited() {
         deadline = unlimitedDeadline;
         counter = unlimitedStartCounter;
+		if (callbackBudget)
+            callbackBudget->makeUnlimited();
     }
 
     void step(intptr_t amt = 1) {
         counter -= amt;
+		if (callbackBudget)
+            callbackBudget->step(amt);
     }
 
     bool isOverBudget() {
