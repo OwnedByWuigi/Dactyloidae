@@ -110,9 +110,9 @@ const size_t gStackSize = 8192;
 
 // The amount of time we wait between a request to CC (after GC ran)
 // and doing the actual CC.
-#define NS_CC_DELAY                 6000 // ms
+#define NS_CC_DELAY                 50000 // ms
 
-#define NS_CC_SKIPPABLE_DELAY       250 // ms
+#define NS_CC_SKIPPABLE_DELAY       400 // ms
 
 // ForgetSkippable is usually fast, so we can use small budgets.
 // This isn't a real budget but a hint to CollectorRunner whether there
@@ -148,12 +148,94 @@ class CollectorRunner;
 
 // if you add statics here, add them to the list in StartupJSEnvironment
 
-static nsITimer *sGCTimer;
-static nsITimer *sShrinkingGCTimer;
-static StaticRefPtr<CollectorRunner> sCCRunner;
-static StaticRefPtr<CollectorRunner> sICCRunner;
-static nsITimer *sFullGCTimer;
-static StaticRefPtr<CollectorRunner> sInterSliceGCRunner;
+static SlowAsynchronousTaskScheduler* sScheduler;
+
+static SATSState
+TriggerGCOrGCSlice(uint32_t aCurrentID, void* aData);
+
+static SATSState
+TriggerGCSlice(uint32_t aCurrentID, void* aData);
+
+static SATSState
+TriggerFullGC(uint32_t aCurrentID, void* aData);
+
+static SATSState
+ShrinkGCBuffers(uint32_t aCurrentID, void* aData);
+
+static SATSState
+TriggerShrinkingGC(uint32_t aCurrentID, void* aData);
+
+static SATSState
+CCDelay(uint32_t aCurrentID, void* aData);
+
+static SATSState
+TriggerForgetSkippable(uint32_t aCurrentID, void* aData);
+
+static SATSState
+TriggerICCSlice(uint32_t aCurrentID, void* aData);
+
+class CollectorSchedule
+{
+public:
+  enum {
+    eInitialGC,
+    eGC,
+    eVariableScheduledGC,
+    eGCSlice,
+    eFullGC,	
+    eShrinkingGC,
+    eCCDelay,
+    eForgetSkippable,
+    eCCSlice,
+    eNone	
+  };
+};
+
+static DependentSlowTask sMainThreadCollectorScheduling[]
+{
+  { CollectorSchedule::eInitialGC,           10000,  TriggerGCOrGCSlice },
+  { CollectorSchedule::eGC,                  4000,   TriggerGCOrGCSlice },
+  { CollectorSchedule::eVariableScheduledGC, 0,      TriggerGCOrGCSlice },
+  { CollectorSchedule::eGCSlice,             100,    TriggerGCSlice },
+  { CollectorSchedule::eFullGC,              60000,  TriggerFullGC },
+  { CollectorSchedule::eShrinkingGC,         300000, TriggerShrinkingGC },
+  { CollectorSchedule::eCCDelay,             50000,  CCDelay },
+  { CollectorSchedule::eForgetSkippable,     400,    TriggerForgetSkippable },
+  { CollectorSchedule::eCCSlice,             32,     TriggerICCSlice },
+  { CollectorSchedule::eNone,                0,      nullptr }
+};
+
+static bool
+IsGCScheduled()
+{
+  return sScheduler->IsScheduled(sMainThreadCollectorScheduling,
+                                 CollectorSchedule::eInitialGC) ||
+         sScheduler->IsScheduled(sMainThreadCollectorScheduling,
+                                 CollectorSchedule::eGC) ||
+         sScheduler->IsScheduled(sMainThreadCollectorScheduling,
+                                 CollectorSchedule::eVariableScheduledGC);
+}
+
+static bool
+IsGCSliceScheduled()
+{
+  return sScheduler->IsScheduled(sMainThreadCollectorScheduling,
+                                 CollectorSchedule::eGCSlice);
+}
+
+static bool IsForgetSkippableScheduled()
+{
+  return sScheduler->IsScheduled(sMainThreadCollectorScheduling,
+                                 CollectorSchedule::eForgetSkippable);
+}
+
+static bool
+IsCCSliceScheduled()
+{
+  return sScheduler->IsScheduled(sMainThreadCollectorScheduling,
+                                 CollectorSchedule::eCCSlice);
+}
+
 
 static TimeStamp sLastCCEndTime;
 
