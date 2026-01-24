@@ -5633,7 +5633,7 @@ JS_StringHasBeenPinned(JSContext* cx, JSString* str)
     if (!str->isAtom())
         return false;
 
-    return AtomIsPinned(cx, &str->asAtom());
+    return str->asAtom().isPinned();
 }
 
 JS_PUBLIC_API(jsid)

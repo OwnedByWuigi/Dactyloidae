@@ -165,6 +165,20 @@ JSRuntime::finishAtoms()
     emptyString = nullptr;
 }
 
+static inline void
+TracePinnedAtoms(JSTracer* trc, const AtomSet& atoms)
+{
+    for (auto r = atoms.all(); !r.empty(); r.popFront()) {
+        const AtomStateEntry& entry = r.front();
+		MOZ_ASSERT(entry.isPinned() == entry.asPtrUnbarriered()->isPinned());
+        if (entry.isPinned()) {
+            JSAtom* atom = entry.asPtrUnbarriered();
+            TraceRoot(trc, &atom, "interned_atom");
+            MOZ_ASSERT(entry.asPtrUnbarriered() == atom);
+        }
+    }
+}
+
 void
 js::MarkAtoms(JSTracer* trc, AutoLockForExclusiveAccess& lock)
 {
@@ -202,7 +216,8 @@ js::MarkPermanentAtoms(JSTracer* trc)
             const AtomStateEntry& entry = r.front();
 
             JSAtom* atom = entry.asPtrUnbarriered();
-            TraceProcessGlobalRoot(trc, atom, "permanent_table");
+            MOZ_ASSERT(atom->isPinned());
+            TraceProcessGlobalRoot(trc, atom, "permanent atom");
         }
     }
 }
@@ -252,48 +267,16 @@ JSRuntime::transformToPermanentAtoms(JSContext* cx)
     return true;
 }
 
-bool
-AtomIsPinned(JSContext* cx, JSAtom* atom)
+static inline AtomSet::Ptr
+LookupAtomState(JSRuntime* rt, const AtomHasher::Lookup& lookup)
 {
-    /* We treat static strings as interned because they're never collected. */
-    if (StaticStrings::isStatic(atom))
-        return true;
+    MOZ_ASSERT(rt->currentThreadHasExclusiveAccess());
 
-    AtomHasher::Lookup lookup(atom);
-
-    /* Likewise, permanent strings are considered to be interned. */
-    MOZ_ASSERT(cx->isPermanentAtomsInitialized());
-    AtomSet::Ptr p = cx->permanentAtoms().readonlyThreadsafeLookup(lookup);
-    if (p)
-        return true;
-
-    AutoLockForExclusiveAccess lock(cx);
-
-    p = cx->runtime()->atoms(lock).lookup(lookup);
-    if (!p)
-        return false;
-
-    return p->isPinned();
+    AtomSet::Ptr p = rt->unsafeAtoms().lookup(lookup); // Safe because we hold the lock.
+    if (!p && rt->atomsAddedWhileSweeping())
+        p = rt->atomsAddedWhileSweeping()->lookup(lookup);
+    return p;
 }
-
-#ifdef DEBUG
-
-bool
-AtomIsPinnedInRuntime(JSRuntime* rt, JSAtom* atom)
-{
-    Maybe<AutoLockForExclusiveAccess> lock;
-    if (!rt->currentThreadHasExclusiveAccess())
-        lock.emplace(rt);
-
-    AtomHasher::Lookup lookup(atom);
-
-    AtomSet::Ptr p = LookupAtomState(rt, lookup);
-    MOZ_ASSERT(p);
-
-    return p->isPinned();
-}
-
-#endif // DEBUG
 
 template <typename CharT>
 MOZ_ALWAYS_INLINE
@@ -369,7 +352,10 @@ AtomizeAndCopyCharsInner(JSContext* cx, const CharT* tbchars, size_t length, Pin
     AtomSet::AddPtr p = atoms.lookupForAdd(lookup);
     if (p) {
         JSAtom* atom = p->asPtr(cx);
-        p->setPinned(bool(pin));
+        if (pin && !atom->isPinned()) {
+            atom->setPinned();
+            p->setPinned(true);
+        }
         return atom;
     }
 
@@ -389,12 +375,17 @@ AtomizeAndCopyCharsInner(JSContext* cx, const CharT* tbchars, size_t length, Pin
     JSAtom* atom = flat->morphAtomizedStringIntoAtom(lookup.hash);
     MOZ_ASSERT(atom->hash() == lookup.hash);
 
-    // We have held the lock since looking up p, and the operations we've done
-    // since then can't GC; therefore the atoms table has not been modified and
-    // p is still valid.
-    if (!atoms.add(p, AtomStateEntry(atom, bool(pin)))) {
-        ReportOutOfMemory(cx); /* SystemAllocPolicy does not report OOM. */
-        return nullptr;
+        if (pin)
+            atom->setPinned();
+
+        // We have held the lock since looking up p, and the operations we've done
+        // since then can't GC; therefore the atoms table has not been modified and
+        // p is still valid.
+        AtomSet* addSet = atomsAddedWhileSweeping ? atomsAddedWhileSweeping : &atoms;
+        if (!addSet->add(p, AtomStateEntry(atom, bool(pin)))) {
+            ReportOutOfMemory(cx); /* SystemAllocPolicy does not report OOM. */
+            return nullptr;
+        }
     }
     return atom;
 }
@@ -412,24 +403,19 @@ js::AtomizeString(ExclusiveContext* cx, JSString* str,
     if (str->isAtom()) {
         JSAtom& atom = str->asAtom();
         /* N.B. static atoms are effectively always interned. */
-        if (pin != PinAtom || js::StaticStrings::isStatic(&atom))
+        if (pin != PinAtom || atom.isPinned())
             return &atom;
 
         AtomHasher::Lookup lookup(&atom);
 
-        /* Likewise, permanent atoms are always interned. */
-        MOZ_ASSERT(cx->isPermanentAtomsInitialized());
-        AtomSet::Ptr p = cx->permanentAtoms().readonlyThreadsafeLookup(lookup);
-        if (p)
-            return &atom;
-
         AutoLockForExclusiveAccess lock(cx);
 
-        p = cx->atoms(lock).lookup(lookup);
-        MOZ_ASSERT(p); /* Non-static atom must exist in atom state set. */
+        AtomSet::Ptr p = LookupAtomState(cx->runtime(), lookup);
+        MOZ_ASSERT(p); // Unpinned atoms must exist in atoms table.
         MOZ_ASSERT(p->asPtrUnbarriered() == &atom);
         MOZ_ASSERT(pin == PinAtom);
-        p->setPinned(bool(pin));
+        atom.setPinned();
+        p->setPinned(true);
         return &atom;
     }
 
