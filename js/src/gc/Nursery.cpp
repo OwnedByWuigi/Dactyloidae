@@ -683,10 +683,8 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
 
     TenureCountCache tenureCounts;
     previousGC.reason = JS::gcreason::NO_REASON;
-    mozilla::Maybe<AutoTraceSession> session;
     if (!isEmpty()) {
-        session.emplace(rt, JS::HeapState::MinorCollecting);
-        doCollection(reason, session.ref(), tenureCounts);
+        doCollection(reason, tenureCounts);
     } else {
         previousGC.nurseryUsedBytes = 0;
         previousGC.nurseryCapacity = spaceToEnd(maxChunkCount());
@@ -720,10 +718,11 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
      }
   }
 
-           for (ZonesIter zone(rt, SkipAtoms); !zone.done(); zone.next()) {
+    mozilla::Maybe<AutoTraceSession> session;
+    for (ZonesIter zone(rt, SkipAtoms); !zone.done(); zone.next()) {
     if (shouldPretenure && zone->allocNurseryStrings && zone->tenuredStrings >= 30 * 1000) {
-        MOZ_ASSERT(session.isSome(),
-                   "discarding JIT code must be in an AutoTraceSession");
+        if (!session.isSome())
+                session.emplace(rt, JS::HeapState::MinorCollecting);
 
         JSRuntime::AutoProhibitActiveContextChange apacc(rt);
         CancelOffThreadIonCompile(zone);
@@ -742,11 +741,11 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
     }
     zone->tenuredStrings = 0;
 }
+
+   // End the minor GC session NOW (moved earlier than before).
+   session.reset();
     // Now we're done with everything that requires the AutoTraceSession.
    endProfile(ProfileKey::Pretenure);
-
-    // End the minor GC session NOW (moved earlier than before).
-   session.reset();
    
    // Phase B: now it is legal to touch TI / sweep and to enter compartments.
     if (shouldPretenure && !groupsToPretenure.empty()) {
@@ -806,11 +805,10 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
 }
 
 void
-js::Nursery::doCollection(JS::gcreason::Reason reason,
-                          AutoTraceSession& session,
-                          TenureCountCache& tenureCounts)
+js::Nursery::doCollection(JS::gcreason::Reason reason, TenureCountCache& tenureCounts)
 {
     JSRuntime* rt = runtime();
+    AutoTraceSession session(rt, JS::HeapState::MinorCollecting);
     AutoSetThreadIsPerformingGC performingGC;
     AutoDisableProxyCheck disableStrictProxyChecking(rt);
     mozilla::DebugOnly<AutoEnterOOMUnsafeRegion> oomUnsafeRegion;
