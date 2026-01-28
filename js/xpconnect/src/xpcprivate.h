@@ -528,6 +528,9 @@ public:
     void BeginCycleCollectionCallback() override;
     void EndCycleCollectionCallback(mozilla::CycleCollectorResults& aResults) override;
     void DispatchDeferredDeletion(bool aContinuation, bool aPurge = false) override;
+    nsresult ScheduleTimerForThread(nsITimer* aTimer,
+                                    nsICancelableRunnable* aRunnable,
+                                    uint32_t aDelay) override;
 
     void CustomGCCallback(JSGCStatus status) override;
     void CustomOutOfMemoryCallback() override;
