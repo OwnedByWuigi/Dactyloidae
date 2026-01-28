@@ -286,7 +286,7 @@ public:
   {
   }
 
-  NS_IMETHOD Run() override
+  NS_IMETHOD Run()
   {
     if (!mRunnable) {
       return NS_OK;
@@ -296,36 +296,25 @@ public:
     return runnable->Run();
   }
 
-  static void TimedOut(nsITimer* aTimer, void* aClosure)
+  static void
+  TimedOut(nsITimer* aTimer, void* aClosure)
   {
-    // Take ownership of the strong ref we passed in SetTimer.
-    RefPtr<IdleRunnableWrapper> self =
-      dont_AddRef(static_cast<IdleRunnableWrapper*>(aClosure));
-
-    // Avoid re-entrancy: the timer has fired, drop/cancel it before running.
-    self->CancelTimer();
-    self->Run();
+    RefPtr<IdleRunnableWrapper> runnable =
+      static_cast<IdleRunnableWrapper*>(aClosure);
+    runnable->Run();
   }
 
-    void SetTimer(uint32_t aDelay, nsIThread* aTarget) override
+    void SetTimer(uint32_t aDelay, nsIThread* aTarget)
   {
     MOZ_ASSERT(aTarget);
-
-    // Safe to cancel here (we're not in the timer firing path).
-    CancelTimer();
+    MOZ_ASSERT(!mTimer);
 
     mTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
-    if (!mTimer) {
-      return;
+    if (mTimer) {
+      mTimer->SetTarget(aTarget);
+      mTimer->InitWithFuncCallback(TimedOut, this, aDelay,
+                                   nsITimer::TYPE_ONE_SHOT);
     }
-
-    mTimer->SetTarget(aTarget);
-
-    RefPtr<IdleRunnableWrapper> self = this;
-    mTimer->InitWithFuncCallback(&IdleRunnableWrapper::TimedOut,
-                                 self.forget().take(), // owned closure
-                                 aDelay,
-                                 nsITimer::TYPE_ONE_SHOT);
   }
 
 private:
@@ -338,7 +327,6 @@ private:
   {
     if (mTimer) {
       mTimer->Cancel();
-      mTimer = nullptr;
     }
   }
 
