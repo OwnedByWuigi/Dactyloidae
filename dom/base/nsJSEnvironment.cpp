@@ -2222,9 +2222,12 @@ nsJSContext::MaybePokeCC()
 void
 nsJSContext::KillGCTimer()
 {
-  if (sGCTimer) {
-    sGCTimer->Cancel();
-    NS_RELEASE(sGCTimer);
+  sScheduler->CancelScheduledTask(sMainThreadCollectorScheduling,
+                                  CollectorSchedule::eInitialGC);
+  sScheduler->CancelScheduledTask(sMainThreadCollectorScheduling,
+                                  CollectorSchedule::eGC);
+  sScheduler->CancelScheduledTask(sMainThreadCollectorScheduling,
+                                  CollectorSchedule::eVariableScheduledGC);
   }
 }
 
@@ -2441,7 +2444,7 @@ nsJSContext::LikelyShortLivingObjectCreated()
 void
 mozilla::dom::StartupJSEnvironment()
 {
-  sScheduler = CycleCollectedJSContext::GetScheduler();
+  sScheduler = CycleCollectedJSRuntime::GetScheduler();
   MOZ_ASSERT(sScheduler);
   MOZ_ASSERT(sMainThreadCollectorScheduling[CollectorSchedule::eGC].mDelayMillis ==
              NS_GC_DELAY);
@@ -2771,9 +2774,9 @@ nsJSContext::EnsureStatics()
                                "javascript.options.compact_on_user_inactive",
                                true);
 
-  Preferences::AddUintVarCache(&sCompactOnUserInactiveDelay,
-                               "javascript.options.compact_on_user_inactive_delay",
-                               NS_DEAULT_INACTIVE_GC_DELAY);
+  sMainThreadCollectorScheduling[CollectorSchedule::eShrinkGCBuffers].mDelayMillis =
+                               Preferences::GetUint("javascript.options.compact_on_user_inactive_delay",
+                               NS_DEFAULT_INACTIVE_GC_DELAY);
 
   Preferences::AddBoolVarCache(&sPostGCEventsToConsole,
                                JS_OPTIONS_DOT_STR "mem.log");
@@ -2788,6 +2791,50 @@ nsJSContext::EnsureStatics()
   obs->AddObserver(observer, NS_XPCOM_SHUTDOWN_OBSERVER_ID, false);
 
   sIsInitialized = true;
+}
+
+void
+nsJSContext::NotifyDidPaint()
+{
+  sDidPaintAfterPreviousICCSlice = true;
+  if (sICCTimer) {
+    static uint32_t sCount = 0;
+    // 16 here is the common value for refresh driver tick frequency.
+    static const uint32_t kTicksPerSliceDelay = kICCIntersliceDelay / 16;
+    if (++sCount % kTicksPerSliceDelay != 0) {
+      // Don't trigger CC slice all the time after paint, but often still.
+      // The key point is to trigger it right after paint, especially when
+      // we're running RefreshDriver constantly.
+      return;
+    }
+
+    sICCTimer->Cancel();
+    ICCTimerFired(nullptr, nullptr);
+    if (sICCTimer) {
+      sICCTimer->InitWithNamedFuncCallback(ICCTimerFired, nullptr,
+                                           kICCIntersliceDelay,
+                                           nsITimer::TYPE_REPEATING_SLACK,
+                                           "ICCTimerFired");
+    }
+  } else if (sCCTimer) {
+    static uint32_t sCount = 0;
+    static const uint32_t kTicksPerForgetSkippableDelay =
+      NS_CC_SKIPPABLE_DELAY / 16;
+    if (++sCount % kTicksPerForgetSkippableDelay != 0) {
+      // The comment above about triggering CC slice applies to forget skippable
+      // too.
+      return;
+    }
+
+    sCCTimer->Cancel();
+    CCTimerFired(nullptr, nullptr);
+    if (sCCTimer) {
+      sCCTimer->InitWithNamedFuncCallback(CCTimerFired, nullptr,
+                                          NS_CC_SKIPPABLE_DELAY,
+                                          nsITimer::TYPE_REPEATING_SLACK,
+                                          "CCTimerFired");
+    }
+  }
 }
 
 nsScriptNameSpaceManager*

@@ -1107,9 +1107,9 @@ public:
                                   uint32_t aDelay) override
   {
     NS_ENSURE_STATE(mWorkerPrivate);
-    RefPtr<ExternalRunnableWrapper> wrapper =
+    nsRefPtr<ExternalRunnableWrapper> wrapper =
       new ExternalRunnableWrapper(mWorkerPrivate, aRunnable);
-    RefPtr<TimerThreadEventTarget> target =
+    nsRefPtr<TimerThreadEventTarget> target =
       new TimerThreadEventTarget(mWorkerPrivate, wrapper);
     aTimer->SetTarget(target);
     return aTimer->InitWithFuncCallback(DummyCallback, nullptr, aDelay,
