@@ -605,7 +605,7 @@ TimerThread::FindNextFireTimeForCurrentThread(TimeStamp aDefault, uint32_t aSear
   uint32_t index = 0;
 
   for (auto timers = mTimers.begin(); timers != mTimers.end(); ++timers) {
-    nsTimerImpl* timer = (*timers).Value();
+    nsTimerImpl* timer = (*timers).mTimerImpl;
 
     if (!timer) {
       continue;
