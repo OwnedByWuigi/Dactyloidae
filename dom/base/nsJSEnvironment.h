@@ -91,7 +91,7 @@ public:
                               int32_t aExtraForgetSkippableCalls = 0);
 
   // Run a cycle collector slice, using a heuristic to decide how long to run it.
-  static void RunCycleCollectorSlice(mozilla::TimeStamp aDeadline);
+  static void RunCycleCollectorSlice();
 
   // Run a cycle collector slice, using the given work budget.
   static void RunCycleCollectorWorkSlice(int64_t aWorkBudget);
