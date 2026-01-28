@@ -152,6 +152,9 @@ static SATSState
 TriggerFullGC(uint32_t aCurrentID, void* aData);
 
 static SATSState
+CCDelay(uint32_t aCurrentID, void* aData);
+
+static SATSState
 ShrinkGCBuffers(uint32_t aCurrentID, void* aData);
 
 static SATSState
@@ -174,6 +177,7 @@ public:
     eFullGC,	
     eShrinkingGC,
     eForgetSkippable,	
+    eCCDelay,
     eCCSlice,
     eNone	
   };
@@ -186,6 +190,7 @@ static DependentSlowTask sMainThreadCollectorScheduling[]
   { CollectorSchedule::eVariableScheduledGC, 0,      TriggerGCOrGCSlice },
   { CollectorSchedule::eGCSlice,             100,    TriggerGCSlice },
   { CollectorSchedule::eFullGC,              60000,  TriggerFullGC },
+  { CollectorSchedule::eCCDelay,             20000,  CCDelay },
   { CollectorSchedule::eShrinkingGC,         300000, TriggerShrinkingGC },
   { CollectorSchedule::eForgetSkippable,     250,    TriggerForgetSkippable },
   { CollectorSchedule::eCCSlice,             32,     TriggerICCSlice },
