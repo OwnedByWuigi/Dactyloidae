@@ -93,14 +93,6 @@ const size_t gStackSize = 8192;
 #undef CompareString
 #endif
 
-#define NS_SHRINK_GC_BUFFERS_DELAY  4000 // ms
-
-// The amount of time we wait from the first request to GC to actually
-// doing the first GC.
-#define NS_FIRST_GC_DELAY           10000 // ms
-
-#define NS_FULL_GC_DELAY            60000 // ms
-
 // The default amount of time to wait from the user being idle to starting a
 // shrinking GC.
 #define NS_DEAULT_INACTIVE_GC_DELAY 300000 // ms
