@@ -1337,6 +1337,7 @@ FullGCTimerFired(nsITimer* aTimer, void* aClosure)
   MOZ_ASSERT(!aClosure, "Don't pass a closure to FullGCTimerFired");
   nsJSContext::GarbageCollectNow(JS::gcreason::FULL_GC_TIMER,
                                  nsJSContext::IncrementalGC);
+  return CollectorSchedule::eNone;
 }
 
 //static
@@ -1624,7 +1625,7 @@ void
 nsJSContext::RunCycleCollectorSlice(TimeStamp aDeadline)
 {
   if (!NS_IsMainThread()) {
-    return;
+    return CollectorSchedule::eNone;
   }
 
   PROFILER_LABEL("nsJSContext", "RunCycleCollectorSlice",
@@ -1712,7 +1713,7 @@ static bool
 ICCRunnerFired(TimeStamp aDeadline, void* aData)
 {
   if (sDidShutdown) {
-    return false;
+    return CollectorSchedule::eNone;
   }
 
   // Ignore ICC timer fires during IGC. Running ICC during an IGC will cause us
@@ -1923,22 +1924,18 @@ InterSliceGCRunnerFired(TimeStamp aDeadline, void* aData)
                                    JS::gcreason::INTER_SLICE_GC,
                                  nsJSContext::IncrementalGC,
                                  nsJSContext::NonShrinkingGC,
-                                 budget);
-
-    return true;
+                                 NS_INTERSLICE_GC_BUDGET);
+  return CollectorSchedule::eNone;
 }
 
 // static
 void
 GCTimerFired(nsITimer *aTimer, void *aClosure)
 {
-  nsJSContext::KillGCTimer();
-  // Now start the actual GC after initial timer has fired.
-  sInterSliceGCRunner = CollectorRunner::Create(InterSliceGCRunnerFired,
-                                                NS_INTERSLICE_GC_DELAY,
-                                                sActiveIntersliceGCBudget,
-                                                false,
-                                                aClosure);
+  uintptr_t reason = reinterpret_cast<uintptr_t>(aData);
+  nsJSContext::GarbageCollectNow(static_cast<JS::gcreason::Reason>(reason),
+                                 nsJSContext::IncrementalGC);
+  return CollectorSchedule::eNone;
 }
 
 // static
@@ -1950,6 +1947,7 @@ ShrinkingGCTimerFired(nsITimer* aTimer, void* aClosure)
   nsJSContext::GarbageCollectNow(JS::gcreason::USER_INACTIVE,
                                  nsJSContext::IncrementalGC,
                                  nsJSContext::ShrinkingGC);
+  return CollectorSchedule::eNone;
 }
 
 static bool
@@ -2034,7 +2032,7 @@ CCRunnerFired(TimeStamp aDeadline, void* aData)
     // We have either just run the CC or decided we don't want to run the CC
     // next time, so kill the timer.
     sPreviousSuspectedCount = 0;
-    nsJSContext::KillCCRunner();
+    return CollectorSchedule::eNone;
   }
     return didDoWork;
 }
@@ -2104,13 +2102,14 @@ nsJSContext::RunNextCollectorTimer()
 
   if (sGCTimer) {
     if (ReadyToTriggerExpensiveCollectorTimer()) {
-      GCTimerFired(nullptr, reinterpret_cast<void *>(JS::gcreason::DOM_WINDOW_UTILS));
+      TriggerGCOrGCSlice(CollectorSchedule::eNone,
+      reinterpret_cast<void *>(JS::gcreason::DOM_WINDOW_UTILS));
     }
     return;
   }
 
-  if (sInterSliceGCRunner) {
-    InterSliceGCRunnerFired(TimeStamp(), nullptr);
+  if (IsGCSliceScheduled()) {
+    TriggerGCSlice(CollectorSchedule::eNone, nullptr);
     return;
   }
 
@@ -2120,13 +2119,13 @@ nsJSContext::RunNextCollectorTimer()
 
   if (sCCRunner) {
     if (ReadyToTriggerExpensiveCollectorTimer()) {
-      CCRunnerFired(TimeStamp(), nullptr);
+      TriggerForgetSkippable(CollectorSchedule::eNone, nullptr);
     }
     return;
   }
 
-  if (sICCRunner) {
-    ICCRunnerFired(TimeStamp(), nullptr);
+  if (IsCCSliceScheduled()) {
+    TriggerICCSlice(CollectorSchedule::eNone, nullptr);
     return;
   }
 }
