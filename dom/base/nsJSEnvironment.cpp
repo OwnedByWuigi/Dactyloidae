@@ -166,9 +166,6 @@ static SATSState
 TriggerShrinkingGC(uint32_t aCurrentID, void* aData);
 
 static SATSState
-CCDelay(uint32_t aCurrentID, void* aData);
-
-static SATSState
 TriggerForgetSkippable(uint32_t aCurrentID, void* aData);
 
 static SATSState
@@ -184,8 +181,7 @@ public:
     eGCSlice,
     eFullGC,	
     eShrinkingGC,
-    eCCDelay,
-    eForgetSkippable,
+    eForgetSkippable,	
     eCCSlice,
     eNone	
   };
@@ -199,8 +195,7 @@ static DependentSlowTask sMainThreadCollectorScheduling[]
   { CollectorSchedule::eGCSlice,             100,    TriggerGCSlice },
   { CollectorSchedule::eFullGC,              60000,  TriggerFullGC },
   { CollectorSchedule::eShrinkingGC,         300000, TriggerShrinkingGC },
-  { CollectorSchedule::eCCDelay,             50000,  CCDelay },
-  { CollectorSchedule::eForgetSkippable,     400,    TriggerForgetSkippable },
+  { CollectorSchedule::eForgetSkippable,     250,    TriggerForgetSkippable },
   { CollectorSchedule::eCCSlice,             32,     TriggerICCSlice },
   { CollectorSchedule::eNone,                0,      nullptr }
 };
@@ -2454,6 +2449,17 @@ nsJSContext::LikelyShortLivingObjectCreated()
 void
 mozilla::dom::StartupJSEnvironment()
 {
+  sScheduler = CycleCollectedJSContext::GetScheduler();
+  MOZ_ASSERT(sScheduler);
+  MOZ_ASSERT(sMainThreadCollectorScheduling[CollectorSchedule::eGC].mDelayMillis ==
+             NS_GC_DELAY);
+  MOZ_ASSERT(sMainThreadCollectorScheduling[CollectorSchedule::eForgetSkippable].mDelayMillis ==
+             NS_CC_SKIPPABLE_DELAY);
+  MOZ_ASSERT(sMainThreadCollectorScheduling[CollectorSchedule::eCCSlice].mDelayMillis ==
+             NS_ICC_DELAY);
+  MOZ_ASSERT(sMainThreadCollectorScheduling[CollectorSchedule::eShrinkingGC].mDelayMillis ==
+             NS_DEFAULT_INACTIVE_GC_DELAY);
+
   // initialize all our statics, so that we can restart XPCOM
   sGCTimer = sShrinkingGCTimer = sFullGCTimer = nullptr;
   sCCLockedOut = false;
