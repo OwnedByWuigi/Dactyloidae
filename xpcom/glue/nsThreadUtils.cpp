@@ -61,8 +61,7 @@ CancelableRunnable::Cancel()
   return NS_OK;
 }
 
-NS_IMPL_ISUPPORTS_INHERITED(IdleRunnable, CancelableRunnable,
-                            nsIIdleRunnable)
+NS_IMPL_ISUPPORTS_INHERITED(IdleRunnable, CancelableRunnable, nsIIdleRunnable)
 
 namespace mozilla {
 namespace detail {
@@ -278,6 +277,7 @@ NS_IdleDispatchToCurrentThread(already_AddRefed<nsIRunnable>&& aEvent)
   return rv;
 }
 
+#ifndef XPCOM_GLUE_AVOID_NSPR
 class IdleRunnableWrapper : public IdleRunnable
 {
 public:
@@ -286,7 +286,7 @@ public:
   {
   }
 
-  NS_IMETHOD Run()
+  NS_IMETHOD Run() override
   {
     if (!mRunnable) {
       return NS_OK;
@@ -296,25 +296,38 @@ public:
     return runnable->Run();
   }
 
-  static void
-  TimedOut(nsITimer* aTimer, void* aClosure)
+  static void TimedOut(nsITimer* aTimer, void* aClosure)
   {
-    RefPtr<IdleRunnableWrapper> runnable =
-      static_cast<IdleRunnableWrapper*>(aClosure);
-    runnable->Run();
+    // Take ownership of the strong ref we passed in SetTimer.
+    RefPtr<IdleRunnableWrapper> self =
+      dont_AddRef(static_cast<IdleRunnableWrapper*>(aClosure));
+
+    // Avoid re-entrancy: the timer has fired, drop/cancel it before running.
+    self->CancelTimer();
+    self->Run();
   }
 
-  void SetTimer(uint32_t aDelay, nsIThread* aTarget)
+    void SetTimer(uint32_t aDelay, nsIThread* aTarget) override
   {
     MOZ_ASSERT(aTarget);
-    MOZ_ASSERT(!mTimer);
+
+    // Safe to cancel here (we're not in the timer firing path).
+    CancelTimer();
+
     mTimer = do_CreateInstance(NS_TIMER_CONTRACTID);
-    if (mTimer) {
-      mTimer->SetTarget(aTarget);
-      mTimer->InitWithFuncCallback(TimedOut, this, aDelay,
-                                   nsITimer::TYPE_ONE_SHOT);
+    if (!mTimer) {
+      return;
     }
+
+    mTimer->SetTarget(aTarget);
+
+    RefPtr<IdleRunnableWrapper> self = this;
+    mTimer->InitWithFuncCallback(&IdleRunnableWrapper::TimedOut,
+                                 self.forget().take(), // owned closure
+                                 aDelay,
+                                 nsITimer::TYPE_ONE_SHOT);
   }
+
 private:
   ~IdleRunnableWrapper()
   {
@@ -325,13 +338,16 @@ private:
   {
     if (mTimer) {
       mTimer->Cancel();
+      mTimer = nullptr;
     }
   }
 
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsIRunnable> mRunnable;
 };
+#endif
 
+#ifndef XPCOM_GLUE_AVOID_NSPR
 extern nsresult
 NS_IdleDispatchToCurrentThread(already_AddRefed<nsIRunnable>&& aEvent,
                                uint32_t aTimeout)
@@ -345,12 +361,26 @@ NS_IdleDispatchToCurrentThread(already_AddRefed<nsIRunnable>&& aEvent,
     event = do_QueryInterface(idleEvent);
     MOZ_DIAGNOSTIC_ASSERT(event);
   }
+#ifdef MOZILLA_INTERNAL_API
+  nsIThread* thread = NS_GetCurrentThread();  // ✅ This version takes no args
+  if (!thread) {
+    return NS_ERROR_UNEXPECTED;
+  }
+#else
+  nsCOMPtr<nsIThread> thread;
+  nsresult rv = NS_GetCurrentThread(getter_AddRefs(thread));  // ✅ This version needs an arg
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+#endif
+
 
   //XXX Using current thread for now as the nsIEventTarget.
-  idleEvent->SetTimer(aTimeout, NS_GetCurrentThread());
+  idleEvent->SetTimer(aTimeout, thread);
 
   return NS_IdleDispatchToCurrentThread(event.forget());
 }
+#endif
 
 #ifndef XPCOM_GLUE_AVOID_NSPR
 nsresult
