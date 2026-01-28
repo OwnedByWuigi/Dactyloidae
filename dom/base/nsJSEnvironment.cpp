@@ -1325,13 +1325,7 @@ FireForgetSkippable(uint32_t aSuspected, bool aRemoveChildless,
   FinishAnyIncrementalGC();
   bool earlyForgetSkippable =
     sCleanupsSinceLastGC < NS_MAJOR_FORGET_SKIPPABLE_CALLS;
-
-  int64_t budgetMs = aDeadline.IsNull() ?
-    kForgetSkippableSliceDuration :
-    int64_t((aDeadline - TimeStamp::Now()).ToMilliseconds());
-  js::SliceBudget budget = js::SliceBudget(js::TimeBudget(budgetMs));
-  nsCycleCollector_forgetSkippable(budget, aRemoveChildless, earlyForgetSkippable);
-
+  nsCycleCollector_forgetSkippable(aRemoveChildless, earlyForgetSkippable);
   sPreviousSuspectedCount = nsCycleCollector_suspectedCount();
   ++sCleanupsSinceLastGC;
   PRTime delta = PR_Now() - startTime;
