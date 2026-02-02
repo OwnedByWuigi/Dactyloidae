@@ -1949,7 +1949,7 @@ imgLoader::RemoveFromCache(imgCacheEntry* entry)
     if (entry->HasNoProxies()) {
       LOG_STATIC_FUNC(gImgLog,
                       "imgLoader::RemoveFromCache removing from tracker");
-      if (mCacheTracker) {
+      if (mCacheTracker && queue.GetSize() > 0) {
         mCacheTracker->RemoveObject(entry);
       }
       queue.Remove(entry);
