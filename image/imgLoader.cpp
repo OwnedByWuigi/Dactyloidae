@@ -1944,16 +1944,19 @@ imgLoader::RemoveFromCache(imgCacheEntry* entry)
                                "imgLoader::RemoveFromCache", "entry's uri",
                                key.Spec());
 
-    cache.Remove(key);
-
     if (entry->HasNoProxies()) {
       LOG_STATIC_FUNC(gImgLog,
                       "imgLoader::RemoveFromCache removing from tracker");
-      if (mCacheTracker && queue.GetSize() > 0) {
+      if (queue.IsDirty()) {
+        queue.Refresh();
+      }
+      if (mCacheTracker) {
         mCacheTracker->RemoveObject(entry);
       }
       queue.Remove(entry);
     }
+
+    cache.Remove(key);
 
     entry->SetEvicted(true);
     request->SetIsInCache(false);
