@@ -314,8 +314,11 @@ nsMediaExpression::Matches(nsPresContext *aPresContext,
                      "bad required value");
         nscoord actualCoord = nsRuleNode::CalcLengthWithInitialFont(
                                 aPresContext, actual);
-        nscoord requiredCoord = nsRuleNode::CalcLengthWithInitialFont(
-                                  aPresContext, required);
+        nscoord requiredCoord;
+        if (!ComputeMediaQueryTypedCalcLength(aPresContext, required,
+                                              requiredCoord)) {
+          return false;
+        }
         cmp = DoCompare(actualCoord, requiredCoord);
       }
       break;
