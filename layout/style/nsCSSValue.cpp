@@ -6,6 +6,7 @@
 /* representation of simple property values within CSS declarations */
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/FloatingPoint.h"
 
 #include "nsCSSValue.h"
 
@@ -29,6 +30,25 @@
 
 using namespace mozilla;
 using namespace mozilla::css;
+
+static void
+AppendSerializedCSSFloat(float aValue, nsAString& aResult)
+{
+  if (mozilla::IsNaN(aValue)) {
+    aResult.AppendLiteral("NaN");
+    return;
+  }
+
+  if (mozilla::IsInfinite(aValue)) {
+    if (aValue < 0.0f) {
+      aResult.Append('-');
+    }
+    aResult.AppendLiteral("infinity");
+    return;
+  }
+
+  aResult.AppendFloat(aValue);
+}
 
 static bool
 IsLocalRefURL(nsStringBuffer* aString)
@@ -68,7 +88,6 @@ nsCSSValue::nsCSSValue(float aValue, nsCSSUnit aUnit)
   MOZ_ASSERT(eCSSUnit_Percent <= aUnit, "not a float value");
   if (eCSSUnit_Percent <= aUnit) {
     mValue.mFloat = aValue;
-    MOZ_ASSERT(!mozilla::IsNaN(mValue.mFloat));
   }
   else {
     mUnit = eCSSUnit_Null;
@@ -147,7 +166,6 @@ nsCSSValue::nsCSSValue(const nsCSSValue& aCopy)
   }
   else if (eCSSUnit_Percent <= mUnit) {
     mValue.mFloat = aCopy.mValue.mFloat;
-    MOZ_ASSERT(!mozilla::IsNaN(mValue.mFloat));
   }
   else if (UnitHasStringValue()) {
     mValue.mString = aCopy.mValue.mString;
@@ -484,7 +502,6 @@ void nsCSSValue::SetPercentValue(float aValue)
   Reset();
   mUnit = eCSSUnit_Percent;
   mValue.mFloat = aValue;
-  MOZ_ASSERT(!mozilla::IsNaN(mValue.mFloat));
 }
 
 void nsCSSValue::SetFloatValue(float aValue, nsCSSUnit aUnit)
@@ -494,7 +511,6 @@ void nsCSSValue::SetFloatValue(float aValue, nsCSSUnit aUnit)
   if (IsFloatUnit(aUnit)) {
     mUnit = aUnit;
     mValue.mFloat = aValue;
-    MOZ_ASSERT(!mozilla::IsNaN(mValue.mFloat));
   }
 }
 
@@ -1980,10 +1996,10 @@ nsCSSValue::AppendToString(nsCSSPropertyID aProperty, nsAString& aResult,
     aResult.Append(')');
   }
   else if (eCSSUnit_Percent == unit) {
-    aResult.AppendFloat(GetPercentValue() * 100.0f);
+    AppendSerializedCSSFloat(GetPercentValue() * 100.0f, aResult);
   }
   else if (eCSSUnit_Percent < unit) {  // length unit
-    aResult.AppendFloat(GetFloatValue());
+    AppendSerializedCSSFloat(GetFloatValue(), aResult);
   }
   else if (eCSSUnit_Gradient == unit) {
     nsCSSValueGradient* gradient = GetGradientValue();
