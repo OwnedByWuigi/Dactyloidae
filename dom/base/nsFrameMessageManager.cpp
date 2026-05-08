@@ -1929,6 +1929,9 @@ public:
   {
     ProcessGlobal* global = ProcessGlobal::Get();
     MOZ_ASSERT(!aRunInGlobalScope);
+    if (NS_WARN_IF(!global)) {
+      return false;
+    }
     global->LoadScript(aURL);
     return true;
   }
