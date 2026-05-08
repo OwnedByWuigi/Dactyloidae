@@ -6096,6 +6096,9 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
     var abort = state.sink.abort;
     state.state = "errored";
     state.storedError = reason;
+    if (state.abortController) {
+      try { state.abortController.abort(); } catch (e) {}
+    }
     state.ready.reject(reason);
     state.closed.reject(reason);
     state.readyPromise.catch(function() {});
@@ -6124,7 +6127,7 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
         var state = writableControllerState.get(this);
         if (!state)
           throw new TypeError("WritableStreamDefaultController expected");
-        return state.signal;
+        return state.abortController ? state.abortController.signal : undefined;
       }
     });
   } catch (e) {}
@@ -6155,6 +6158,9 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       throw new TypeError("strategy.size is not callable");
 
     var controller = Object.create(WritableStreamDefaultController.prototype);
+    var abortController = typeof global.AbortController === "function"
+      ? new global.AbortController()
+      : undefined;
     var ready = newPromiseCapability();
     ready.resolve(undefined);
     var closed = newPromiseCapability();
@@ -6165,6 +6171,7 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       state: "writable",
       storedError: undefined,
       writer: undefined,
+      abortController: abortController,
       writeChain: Promise.resolve(undefined),
       ready: ready,
       readyPromise: ready.promise,
@@ -6176,7 +6183,10 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       backpressure: false
     };
     writableState.set(this, state);
-    writableControllerState.set(controller, { stream: this, signal: undefined });
+    writableControllerState.set(controller, {
+      stream: this,
+      abortController: abortController
+    });
 
     var start = underlyingSink.start;
     if (start !== undefined) {
@@ -6263,9 +6273,9 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
         throw new TypeError("Writer lock is released");
       var streamState = writableState.get(state.stream);
       if (streamState.state === "errored")
-        throw streamState.storedError;
-      if (streamState.state === "closed")
         return null;
+      if (streamState.state === "closed")
+        return 0;
       return streamState.highWaterMark - streamState.queueTotalSize;
     }
   });
@@ -6582,6 +6592,12 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
     pair = requiredObject(pair, "transform");
     var writable = pair.writable;
     var output = pair.readable;
+    if (readable.locked)
+      throw new TypeError("ReadableStream is locked");
+    if (!isWritableStream(writable))
+      throw new TypeError("transform.writable must be a WritableStream");
+    if (writable.locked)
+      throw new TypeError("WritableStream is locked");
     readable.pipeTo(writable, options).catch(function() {});
     return output;
   }
