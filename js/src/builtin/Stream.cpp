@@ -5965,6 +5965,24 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
     return Promise.reject(error);
   }
 
+  function silenceRejection(promise) {
+    try {
+      if (promise && typeof promise.catch === "function")
+        promise.catch(function() {});
+    } catch (e) {}
+  }
+
+  function releaseReaderLock(reader) {
+    try { silenceRejection(reader.closed); } catch (e) {}
+    try { reader.releaseLock(); } catch (e) {}
+  }
+
+  function releaseWriterLock(writer) {
+    try { silenceRejection(writer.closed); } catch (e) {}
+    try { silenceRejection(writer.ready); } catch (e) {}
+    try { writer.releaseLock(); } catch (e) {}
+  }
+
   function syncWritableWriterWithStream(writer, state) {
     var ws = writerState.get(writer);
     if (!ws || ws.stream === undefined)
@@ -6530,8 +6548,8 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       if (closed)
         return;
       closed = true;
-      try { reader.releaseLock(); } catch (e) {}
-      try { writer.releaseLock(); } catch (e) {}
+      releaseReaderLock(reader);
+      releaseWriterLock(writer);
       if (signal && signal.removeEventListener)
         signal.removeEventListener("abort", onAbort);
     }
@@ -6704,12 +6722,12 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       return this._reader.read().then(function(result) {
         if (result.done) {
           self._done = true;
-          self._reader.releaseLock();
+          releaseReaderLock(self._reader);
         }
         return result;
       }, function(error) {
         self._done = true;
-        try { self._reader.releaseLock(); } catch (e) {}
+        releaseReaderLock(self._reader);
         throw error;
       });
     };
@@ -6720,14 +6738,14 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       this._done = true;
       var reader = this._reader;
       if (this._preventCancel) {
-        reader.releaseLock();
+        releaseReaderLock(reader);
         return Promise.resolve({ value: value, done: true });
       }
       return reader.cancel(value).then(function() {
-        reader.releaseLock();
+        releaseReaderLock(reader);
         return { value: value, done: true };
       }, function(error) {
-        try { reader.releaseLock(); } catch (e) {}
+        releaseReaderLock(reader);
         throw error;
       });
     };
