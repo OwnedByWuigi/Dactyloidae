@@ -5869,6 +5869,46 @@ StreamCompressionProcess(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+bool
+ReleaseReadableStreamReaderSilently(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    args.rval().setBoolean(true);
+
+    if (!args.get(0).isObject())
+        return true;
+
+    RootedObject readerObj(cx, &args[0].toObject());
+    if (!readerObj->is<ReadableStreamDefaultReader>() &&
+        !readerObj->is<ReadableStreamBYOBReader>())
+        return true;
+
+    RootedNativeObject reader(cx, &readerObj->as<NativeObject>());
+    if (!ReaderHasStream(reader))
+        return true;
+
+    Value requestsVal = reader->getFixedSlot(ReaderSlot_Requests);
+    if (!requestsVal.isUndefined()) {
+        NativeObject* requests = &requestsVal.toObject().as<NativeObject>();
+        if (requests->getDenseInitializedLength() != 0) {
+            args.rval().setBoolean(false);
+            return true;
+        }
+    }
+
+    Rooted<ReadableStream*> stream(cx, StreamFromReader(reader));
+    MOZ_ASSERT(&stream->getFixedSlot(StreamSlot_Reader).toObject() == reader);
+
+    RootedObject closedPromise(cx, PromiseObject::unforgeableResolve(cx, UndefinedHandleValue));
+    if (!closedPromise)
+        return false;
+    reader->setFixedSlot(ReaderSlot_ClosedPromise, ObjectValue(*closedPromise));
+
+    stream->setFixedSlot(StreamSlot_Reader, UndefinedValue());
+    reader->setFixedSlot(ReaderSlot_Stream, UndefinedValue());
+    return true;
+}
+
 } // anonymous namespace
 
 bool
@@ -5880,6 +5920,10 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
 
     if (!JS_DefineFunction(cx, global, "__uxpCompressionProcess",
                            StreamCompressionProcess, 3, 0))
+        return false;
+
+    if (!JS_DefineFunction(cx, global, "__uxpReleaseReadableStreamReaderSilently",
+                           ReleaseReadableStreamReaderSilently, 1, 0))
         return false;
 
     static const char source[] = R"JS(
@@ -5973,8 +6017,18 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
   }
 
   function releaseReaderLock(reader) {
-    try { silenceRejection(reader.closed); } catch (e) {}
-    try { reader.releaseLock(); } catch (e) {}
+    try {
+      if (global.__uxpReleaseReadableStreamReaderSilently(reader))
+        return;
+    } catch (e) {}
+    Promise.resolve().then(function() {
+      try {
+        if (global.__uxpReleaseReadableStreamReaderSilently(reader))
+          return;
+      } catch (e) {}
+      try { silenceRejection(reader.closed); } catch (e) {}
+      try { reader.releaseLock(); } catch (e) {}
+    });
   }
 
   function releaseWriterLock(writer) {
