@@ -951,6 +951,20 @@ LookupStdName(const JSAtomState& names, JSAtom* name, const JSStdName* table)
     return nullptr;
 }
 
+static bool
+IsStreamExtraName(JSFlatString* name)
+{
+    return JS_FlatStringEqualsAscii(name, "WritableStream") ||
+           JS_FlatStringEqualsAscii(name, "WritableStreamDefaultWriter") ||
+           JS_FlatStringEqualsAscii(name, "WritableStreamDefaultController") ||
+           JS_FlatStringEqualsAscii(name, "TransformStream") ||
+           JS_FlatStringEqualsAscii(name, "TransformStreamDefaultController") ||
+           JS_FlatStringEqualsAscii(name, "TextEncoderStream") ||
+           JS_FlatStringEqualsAscii(name, "TextDecoderStream") ||
+           JS_FlatStringEqualsAscii(name, "CompressionStream") ||
+           JS_FlatStringEqualsAscii(name, "DecompressionStream");
+}
+
 /*
  * Table of standard classes, indexed by JSProtoKey. For entries where the
  * JSProtoKey does not correspond to a class with a meaningful constructor, we
@@ -1041,9 +1055,25 @@ JS_ResolveStandardClass(JSContext* cx, HandleObject obj, HandleId id, bool* reso
             if (!GlobalObject::ensureConstructor(cx, global, key))
                 return false;
 
+            if (key == JSProto_ReadableStream) {
+                RootedObject globalObj(cx, global);
+                if (!InitStreamExtras(cx, globalObj))
+                    return false;
+            }
+
             *resolved = true;
             return true;
         }
+    }
+
+    if (cx->options().streams() && IsStreamExtraName(idAtom)) {
+        RootedObject globalObj(cx, global);
+        if (!InitStreamExtras(cx, globalObj))
+            return false;
+
+        if (!HasOwnProperty(cx, globalObj, id, resolved))
+            return false;
+        return true;
     }
 
     // There is no such property to resolve. An ordinary resolve hook would
@@ -1075,6 +1105,7 @@ JS_MayResolveStandardClass(const JSAtomState& names, jsid id, JSObject* maybeObj
 
     return atom == names.undefined ||
            atom == names.globalThis ||
+           IsStreamExtraName(atom) ||
            LookupStdName(names, atom, standard_class_names) ||
            LookupStdName(names, atom, builtin_property_names);
 }

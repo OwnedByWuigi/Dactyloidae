@@ -933,6 +933,13 @@ CallStreamExtra(JSContext* cx, const char* name, HandleValue streamVal,
         return false;
 
     if (!fun.isObject() || !IsCallable(fun)) {
+        if (!InitStreamExtras(cx, global))
+            return false;
+        if (!JS_GetProperty(cx, global, name, &fun))
+            return false;
+    }
+
+    if (!fun.isObject() || !IsCallable(fun)) {
         JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                   JSMSG_READABLESTREAM_METHOD_NOT_IMPLEMENTED, name);
         return false;
