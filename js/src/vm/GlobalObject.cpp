@@ -464,6 +464,10 @@ GlobalObject::initStandardClasses(JSContext* cx, Handle<GlobalObject*> global)
         if (!ensureConstructor(cx, global, static_cast<JSProtoKey>(k)))
             return false;
     }
+
+    if (cx->options().streams() && !InitStreamExtras(cx, global))
+        return false;
+
     return true;
 }
 

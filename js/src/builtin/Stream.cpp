@@ -5,6 +5,7 @@
 
 #include "builtin/Stream.h"
 
+#include "js/CompilationAndEvaluation.h"
 #include "js/Stream.h"
 
 #include "jscntxt.h"
@@ -15,6 +16,10 @@
 #include "jsobjinlines.h"
 
 #include "vm/NativeObject-inl.h"
+
+#include "zlib.h"
+
+#include <string.h>
 
 using namespace js;
 
@@ -915,30 +920,72 @@ ReadableStream_getReader(JSContext* cx, unsigned argc, Value* vp)
     return CallNonGenericMethod<Is<ReadableStream>, ReadableStream_getReader_impl>(cx, args);
 }
 
+[[nodiscard]] static bool
+CallStreamExtra(JSContext* cx, const char* name, HandleValue streamVal,
+                HandleValue arg0, HandleValue arg1, MutableHandleValue rval)
+{
+    RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
+    if (!global)
+        return false;
+
+    RootedValue fun(cx);
+    if (!JS_GetProperty(cx, global, name, &fun))
+        return false;
+
+    if (!fun.isObject() || !IsCallable(fun)) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_READABLESTREAM_METHOD_NOT_IMPLEMENTED, name);
+        return false;
+    }
+
+    FixedInvokeArgs<3> invokeArgs(cx);
+    invokeArgs[0].set(streamVal);
+    invokeArgs[1].set(arg0);
+    invokeArgs[2].set(arg1);
+    return Call(cx, fun, UndefinedHandleValue, invokeArgs, rval);
+}
+
 // Streams spec, 3.2.4.4. pipeThrough({ writable, readable }, options)
-static MOZ_MUST_USE bool
+[[nodiscard]] static bool
 ReadableStream_pipeThrough(JSContext* cx, unsigned argc, Value* vp)
 {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_READABLESTREAM_METHOD_NOT_IMPLEMENTED, "pipeThrough");
-    return false;
-    // // Step 1: Perform ? Invoke(this, "pipeTo", « writable, options »).
+    CallArgs args = CallArgsFromVp(argc, vp);
+    if (!Is<ReadableStream>(args.thisv())) {
+        ReportValueError3(cx, JSMSG_INCOMPATIBLE_PROTO, JSDVG_SEARCH_STACK, args.thisv(),
+                          nullptr, "pipeThrough", "");
+        return false;
+    }
 
-    // // Step 2: Return readable.
-    // return readable;
+    RootedValue rval(cx);
+    if (!CallStreamExtra(cx, "__uxpStreamsPipeThrough", args.thisv(),
+                         args.get(0), args.get(1), &rval))
+        return false;
+
+    args.rval().set(rval);
+    return true;
 }
 
 // Streams spec, 3.2.4.5. pipeTo(dest, { preventClose, preventAbort, preventCancel } = {})
-// TODO: Unimplemented since spec is not complete yet.
-static MOZ_MUST_USE bool
+[[nodiscard]] static bool
 ReadableStream_pipeTo(JSContext* cx, unsigned argc, Value* vp)
 {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_READABLESTREAM_METHOD_NOT_IMPLEMENTED, "pipeTo");
-    return false;
+    CallArgs args = CallArgsFromVp(argc, vp);
+    if (!Is<ReadableStream>(args.thisv())) {
+        ReportValueError3(cx, JSMSG_INCOMPATIBLE_PROTO, JSDVG_SEARCH_STACK, args.thisv(),
+                          nullptr, "pipeTo", "");
+        return false;
+    }
+
+    RootedValue rval(cx);
+    if (!CallStreamExtra(cx, "__uxpStreamsPipeTo", args.thisv(),
+                         args.get(0), args.get(1), &rval))
+        return false;
+
+    args.rval().set(rval);
+    return true;
 }
 
-static MOZ_MUST_USE bool
+[[nodiscard]] static bool
 ReadableStreamTee(JSContext* cx, Handle<ReadableStream*> stream, bool cloneForBranch2,
                   MutableHandle<ReadableStream*> branch1, MutableHandle<ReadableStream*> branch2);
 
@@ -5485,4 +5532,1446 @@ js::UnwrapReadableStream(JSObject* obj)
     if (JSObject* unwrapped = CheckedUnwrap(obj))
         return unwrapped->is<ReadableStream>() ? unwrapped : nullptr;
     return nullptr;
+}
+
+namespace {
+
+enum class StreamCompressionFormat {
+    Deflate,
+    DeflateRaw,
+    Gzip
+};
+
+struct StreamCompressionContext
+{
+    z_stream mStream;
+    StreamCompressionFormat mFormat;
+    bool mCompress;
+    bool mFinished;
+    bool mInitialized;
+
+    StreamCompressionContext(StreamCompressionFormat format, bool compress)
+      : mFormat(format),
+        mCompress(compress),
+        mFinished(false),
+        mInitialized(false)
+    {
+        memset(&mStream, 0, sizeof(mStream));
+    }
+
+    ~StreamCompressionContext()
+    {
+        if (!mInitialized)
+            return;
+        if (mCompress)
+            deflateEnd(&mStream);
+        else
+            inflateEnd(&mStream);
+    }
+};
+
+static int
+WindowBitsForFormat(StreamCompressionFormat format)
+{
+    switch (format) {
+      case StreamCompressionFormat::Deflate:
+        return MAX_WBITS;
+      case StreamCompressionFormat::DeflateRaw:
+        return -MAX_WBITS;
+      case StreamCompressionFormat::Gzip:
+        return MAX_WBITS + 16;
+    }
+    MOZ_CRASH("Unknown compression stream format");
+}
+
+static bool
+ParseCompressionFormat(JSContext* cx, HandleValue value,
+                       StreamCompressionFormat* format)
+{
+    RootedString str(cx, ToString<CanGC>(cx, value));
+    if (!str)
+        return false;
+
+    bool match = false;
+    if (!JS_StringEqualsAscii(cx, str, "deflate", &match))
+        return false;
+    if (match) {
+        *format = StreamCompressionFormat::Deflate;
+        return true;
+    }
+
+    if (!JS_StringEqualsAscii(cx, str, "deflate-raw", &match))
+        return false;
+    if (match) {
+        *format = StreamCompressionFormat::DeflateRaw;
+        return true;
+    }
+
+    if (!JS_StringEqualsAscii(cx, str, "gzip", &match))
+        return false;
+    if (match) {
+        *format = StreamCompressionFormat::Gzip;
+        return true;
+    }
+
+    if (!JS_StringEqualsAscii(cx, str, "brotli", &match))
+        return false;
+
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_NOT_EXPECTED_TYPE,
+                              "CompressionStream", "supported format",
+                              match ? "unsupported brotli format" : "unknown format");
+    return false;
+}
+
+static void
+StreamCompressionContextFinalize(FreeOp* fop, JSObject* obj)
+{
+    auto* context = static_cast<StreamCompressionContext*>(JS_GetPrivate(obj));
+    if (context)
+        js_delete(context);
+}
+
+static const ClassOps StreamCompressionContextClassOps = {
+    nullptr, /* addProperty */
+    nullptr, /* delProperty */
+    nullptr, /* getProperty */
+    nullptr, /* setProperty */
+    nullptr, /* enumerate */
+    nullptr, /* resolve */
+    nullptr, /* mayResolve */
+    StreamCompressionContextFinalize,
+    nullptr, /* call */
+    nullptr, /* hasInstance */
+    nullptr, /* construct */
+    nullptr  /* trace */
+};
+
+static const Class StreamCompressionContextClass = {
+    "StreamCompressionContext",
+    JSCLASS_HAS_PRIVATE,
+    &StreamCompressionContextClassOps
+};
+
+static bool
+CreateStreamCompressionContext(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (args.length() < 2) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_MORE_ARGS_NEEDED,
+                                  "__uxpCreateCompressionContext", "1", "s");
+        return false;
+    }
+
+    StreamCompressionFormat format;
+    if (!ParseCompressionFormat(cx, args.get(0), &format))
+        return false;
+
+    bool compress = ToBoolean(args.get(1));
+    auto* context = js_new<StreamCompressionContext>(format, compress);
+    if (!context) {
+        ReportOutOfMemory(cx);
+        return false;
+    }
+
+    int windowBits = WindowBitsForFormat(format);
+    int zerr = compress
+               ? deflateInit2(&context->mStream, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+                              windowBits, 8, Z_DEFAULT_STRATEGY)
+               : inflateInit2(&context->mStream, windowBits);
+    if (zerr != Z_OK) {
+        js_delete(context);
+        JS_ReportErrorASCII(cx, "Failed to initialize compression stream");
+        return false;
+    }
+    context->mInitialized = true;
+
+    RootedObject obj(cx, NewObjectWithGivenProto(cx, &StreamCompressionContextClass, nullptr));
+    if (!obj) {
+        js_delete(context);
+        return false;
+    }
+
+    JS_SetPrivate(obj, context);
+    args.rval().setObject(*obj);
+    return true;
+}
+
+static bool
+GetBufferSourceBytes(JSContext* cx, HandleValue value, Vector<uint8_t>* bytes)
+{
+    if (!value.isObject()) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_NOT_EXPECTED_TYPE,
+                                  "CompressionStream", "BufferSource",
+                                  InformalValueTypeName(value));
+        return false;
+    }
+
+    RootedObject obj(cx, &value.toObject());
+    if (JS_IsArrayBufferViewObject(obj)) {
+        uint32_t length = JS_GetArrayBufferViewByteLength(obj);
+        if (length == 0)
+            return true;
+
+        JS::AutoCheckCannotGC nogc(cx);
+        bool isShared;
+        uint8_t* data = static_cast<uint8_t*>(JS_GetArrayBufferViewData(obj, &isShared, nogc));
+        return bytes->append(data, length);
+    }
+
+    if (JS_IsArrayBufferObject(obj)) {
+        uint32_t length = JS_GetArrayBufferByteLength(obj);
+        if (length == 0)
+            return true;
+
+        JS::AutoCheckCannotGC nogc(cx);
+        bool isShared;
+        uint8_t* data = JS_GetArrayBufferData(obj, &isShared, nogc);
+        return bytes->append(data, length);
+    }
+
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_NOT_EXPECTED_TYPE,
+                              "CompressionStream", "BufferSource",
+                              obj->getClass()->name);
+    return false;
+}
+
+static bool
+AppendUint8Array(JSContext* cx, HandleObject array, uint32_t* index,
+                 const uint8_t* data, size_t length)
+{
+    if (length == 0)
+        return true;
+
+    if (length > UINT32_MAX) {
+        ReportAllocationOverflow(cx);
+        return false;
+    }
+
+    RootedObject view(cx, JS_NewUint8Array(cx, length));
+    if (!view)
+        return false;
+
+    {
+        JS::AutoCheckCannotGC nogc(cx);
+        bool isShared;
+        uint8_t* viewData = static_cast<uint8_t*>(JS_GetArrayBufferViewData(view, &isShared, nogc));
+        memcpy(viewData, data, length);
+    }
+
+    RootedValue viewVal(cx, ObjectValue(*view));
+    return JS_SetElement(cx, array, (*index)++, viewVal);
+}
+
+static bool
+StreamCompressionProcess(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (args.length() < 3 || !args[0].isObject() ||
+        !args[0].toObject().hasClass(&StreamCompressionContextClass)) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_NOT_EXPECTED_TYPE,
+                                  "__uxpCompressionProcess",
+                                  "StreamCompressionContext", "other");
+        return false;
+    }
+
+    auto* context =
+        static_cast<StreamCompressionContext*>(JS_GetPrivate(&args[0].toObject()));
+    if (!context) {
+        JS_ReportErrorASCII(cx, "Compression stream is already finished");
+        return false;
+    }
+
+    bool finish = ToBoolean(args.get(2));
+
+    if (context->mFinished) {
+        if (finish && args.get(1).isUndefined()) {
+            RootedObject emptyChunks(cx, JS_NewArrayObject(cx, 0));
+            if (!emptyChunks)
+                return false;
+            args.rval().setObject(*emptyChunks);
+            return true;
+        }
+        JS_ReportErrorASCII(cx, "Compression stream is already finished");
+        return false;
+    }
+
+    Vector<uint8_t> input(cx);
+    if (!args.get(1).isUndefined() && !GetBufferSourceBytes(cx, args.get(1), &input))
+        return false;
+
+    RootedObject chunks(cx, JS_NewArrayObject(cx, 0));
+    if (!chunks)
+        return false;
+
+    z_stream& stream = context->mStream;
+    stream.next_in = input.empty() ? nullptr : input.begin();
+    stream.avail_in = input.length();
+
+    uint32_t chunkIndex = 0;
+    const int flush = finish ? Z_FINISH : Z_NO_FLUSH;
+    bool madeProgress;
+
+    do {
+        uint8_t output[16384];
+        stream.next_out = output;
+        stream.avail_out = sizeof(output);
+
+        uint32_t beforeIn = stream.avail_in;
+        uint32_t beforeOut = stream.avail_out;
+        int zerr = context->mCompress ? deflate(&stream, flush) : inflate(&stream, flush);
+
+        size_t produced = sizeof(output) - stream.avail_out;
+        if (!AppendUint8Array(cx, chunks, &chunkIndex, output, produced))
+            return false;
+
+        madeProgress = produced > 0 || stream.avail_in != beforeIn ||
+                       stream.avail_out != beforeOut;
+
+        if (zerr == Z_STREAM_END) {
+            context->mFinished = true;
+            if (!context->mCompress && stream.avail_in != 0) {
+                JS_ReportErrorASCII(cx, "Compressed input has trailing data");
+                return false;
+            }
+            break;
+        }
+
+        if (zerr == Z_BUF_ERROR && !madeProgress)
+            break;
+
+        if (zerr != Z_OK && zerr != Z_BUF_ERROR) {
+            JS_ReportErrorASCII(cx, stream.msg ? stream.msg : "Compression stream error");
+            return false;
+        }
+    } while (stream.avail_out == 0 || stream.avail_in != 0 ||
+             (finish && !context->mFinished && madeProgress));
+
+    if (finish && !context->mFinished) {
+        JS_ReportErrorASCII(cx, "Compressed input ended before the end of stream");
+        return false;
+    }
+
+    args.rval().setObject(*chunks);
+    return true;
+}
+
+} // anonymous namespace
+
+bool
+js::InitStreamExtras(JSContext* cx, HandleObject global)
+{
+    if (!JS_DefineFunction(cx, global, "__uxpCreateCompressionContext",
+                           CreateStreamCompressionContext, 2, 0))
+        return false;
+
+    if (!JS_DefineFunction(cx, global, "__uxpCompressionProcess",
+                           StreamCompressionProcess, 3, 0))
+        return false;
+
+    static const char source[] = R"JS(
+(function(global) {
+  "use strict";
+
+  if (global.__uxpStreamsInitialized)
+    return;
+  Object.defineProperty(global, "__uxpStreamsInitialized",
+                        { value: true, configurable: true });
+
+  var objectToString = Object.prototype.toString;
+  var hasOwn = Object.prototype.hasOwnProperty;
+
+  function isObject(value) {
+    return (typeof value === "object" && value !== null) ||
+           typeof value === "function";
+  }
+
+  function requiredObject(value, name) {
+    if (!isObject(value))
+      throw new TypeError(name + " is not an object");
+    return value;
+  }
+
+  function newPromiseCapability() {
+    var resolve, reject;
+    var promise = new Promise(function(res, rej) {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise: promise, resolve: resolve, reject: reject };
+  }
+
+  function promiseCall(fn, receiver, args) {
+    try {
+      return Promise.resolve(fn.apply(receiver, args || []));
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
+
+  function getMethod(value, name) {
+    var method = value[name];
+    if (method === undefined || method === null)
+      return undefined;
+    if (typeof method !== "function")
+      throw new TypeError(name + " is not callable");
+    return method;
+  }
+
+  function makeDOMException(message, name) {
+    if (typeof global.DOMException === "function")
+      return new global.DOMException(message, name);
+    var error = new Error(message);
+    error.name = name;
+    return error;
+  }
+
+  function define(name, value) {
+    if (hasOwn.call(global, name) && global[name] !== undefined)
+      return;
+    Object.defineProperty(global, name, {
+      value: value,
+      writable: true,
+      configurable: true
+    });
+  }
+
+  var writableState = new WeakMap();
+  var writerState = new WeakMap();
+  var writableControllerState = new WeakMap();
+
+  function isWritableStream(stream) {
+    return writableState.has(stream);
+  }
+
+  function isWritableStreamDefaultWriter(writer) {
+    return writerState.has(writer);
+  }
+
+  function rejectPromise(error) {
+    return Promise.reject(error);
+  }
+
+  function syncWritableWriterWithStream(writer, state) {
+    var ws = writerState.get(writer);
+    if (!ws || ws.stream === undefined)
+      return;
+
+    ws.readyPromise = state.readyPromise;
+    if (state.state === "closed") {
+      ws.closedPromise = Promise.resolve(undefined);
+    } else if (state.state === "errored") {
+      ws.closedPromise = Promise.reject(state.storedError);
+      ws.closedPromise.catch(function() {});
+    } else {
+      ws.closedPromise = state.closedPromise;
+    }
+  }
+
+  function writableError(stream, error) {
+    var state = writableState.get(stream);
+    if (!state || state.state === "closed" || state.state === "errored")
+      return;
+    state.state = "errored";
+    state.storedError = error;
+    state.ready.reject(error);
+    state.closed.reject(error);
+    state.readyPromise.catch(function() {});
+    state.closedPromise.catch(function() {});
+    if (state.writer)
+      syncWritableWriterWithStream(state.writer, state);
+  }
+
+  function writableClose(stream) {
+    var state = writableState.get(stream);
+    if (!state || state.state === "closed")
+      return;
+    state.state = "closed";
+    state.ready.resolve(undefined);
+    state.closed.resolve(undefined);
+    if (state.writer)
+      syncWritableWriterWithStream(state.writer, state);
+  }
+
+  function writableStreamWrite(stream, chunk) {
+    var state = writableState.get(stream);
+    if (!state)
+      return rejectPromise(new TypeError("WritableStream expected"));
+    if (state.state === "closed")
+      return rejectPromise(new TypeError("WritableStream is closed"));
+    if (state.state === "errored")
+      return rejectPromise(state.storedError);
+    if (state.state === "closing")
+      return rejectPromise(new TypeError("WritableStream is closing"));
+
+    var size = 1;
+    try {
+      size = state.sizeAlgorithm(chunk);
+      if (!Number.isFinite(size) || size < 0)
+        throw new RangeError("Invalid chunk size");
+    } catch (e) {
+      writableError(stream, e);
+      return rejectPromise(e);
+    }
+
+    state.queueTotalSize += size;
+    if (state.queueTotalSize > state.highWaterMark && state.backpressure === false) {
+      state.backpressure = true;
+      state.ready = newPromiseCapability();
+      state.readyPromise = state.ready.promise;
+      if (state.writer)
+        syncWritableWriterWithStream(state.writer, state);
+    }
+
+    var write = state.sink.write;
+    var controller = state.controller;
+    var writePromise = state.writeChain.then(function() {
+      if (write)
+        return write.call(state.sink, chunk, controller);
+      return undefined;
+    });
+    state.writeChain = writePromise.then(function(value) {
+      state.queueTotalSize -= size;
+      if (state.queueTotalSize <= state.highWaterMark && state.backpressure) {
+        state.backpressure = false;
+        state.ready.resolve(undefined);
+        state.ready = newPromiseCapability();
+        state.ready.resolve(undefined);
+        state.readyPromise = state.ready.promise;
+        if (state.writer)
+          syncWritableWriterWithStream(state.writer, state);
+      }
+      return value;
+    }, function(error) {
+      writableError(stream, error);
+      throw error;
+    });
+    state.writeChain.catch(function() {});
+    return writePromise;
+  }
+
+  function writableStreamClose(stream) {
+    var state = writableState.get(stream);
+    if (!state)
+      return rejectPromise(new TypeError("WritableStream expected"));
+    if (state.state === "closed")
+      return rejectPromise(new TypeError("WritableStream is already closed"));
+    if (state.state === "errored")
+      return rejectPromise(state.storedError);
+    if (state.state === "closing")
+      return rejectPromise(new TypeError("WritableStream is already closing"));
+
+    state.state = "closing";
+    var close = state.sink.close;
+    var closePromise = state.writeChain.then(function() {
+      if (close)
+        return close.call(state.sink);
+      return undefined;
+    }).then(function(value) {
+      writableClose(stream);
+      return value;
+    }, function(error) {
+      writableError(stream, error);
+      throw error;
+    });
+    state.writeChain = closePromise.catch(function() {});
+    return closePromise;
+  }
+
+  function writableStreamAbort(stream, reason) {
+    var state = writableState.get(stream);
+    if (!state)
+      return rejectPromise(new TypeError("WritableStream expected"));
+    if (state.state === "closed")
+      return Promise.resolve(undefined);
+    if (state.state === "errored")
+      return rejectPromise(state.storedError);
+
+    var abort = state.sink.abort;
+    state.state = "errored";
+    state.storedError = reason;
+    state.ready.reject(reason);
+    state.closed.reject(reason);
+    state.readyPromise.catch(function() {});
+    state.closedPromise.catch(function() {});
+
+    var abortPromise = abort ? promiseCall(abort, state.sink, [reason])
+                             : Promise.resolve(undefined);
+    return abortPromise;
+  }
+
+  function WritableStreamDefaultController() {
+    throw new TypeError("Illegal constructor");
+  }
+
+  WritableStreamDefaultController.prototype.error = function(error) {
+    var state = writableControllerState.get(this);
+    if (!state)
+      throw new TypeError("WritableStreamDefaultController expected");
+    writableError(state.stream, error);
+  };
+
+  try {
+    Object.defineProperty(WritableStreamDefaultController.prototype, "signal", {
+      configurable: true,
+      get: function() {
+        var state = writableControllerState.get(this);
+        if (!state)
+          throw new TypeError("WritableStreamDefaultController expected");
+        return state.signal;
+      }
+    });
+  } catch (e) {}
+
+  Object.defineProperty(WritableStreamDefaultController.prototype,
+                        Symbol.toStringTag,
+                        { value: "WritableStreamDefaultController",
+                          configurable: true });
+
+  function WritableStream(underlyingSink, strategy) {
+    if (!(this instanceof WritableStream))
+      throw new TypeError("WritableStream must be constructed with new");
+
+    underlyingSink = underlyingSink === undefined ? {} : requiredObject(underlyingSink, "underlyingSink");
+    strategy = strategy === undefined ? {} : requiredObject(strategy, "strategy");
+
+    if (underlyingSink.type !== undefined)
+      throw new RangeError("Invalid writable stream type");
+
+    var highWaterMark = strategy.highWaterMark === undefined ? 1 : Number(strategy.highWaterMark);
+    if (Number.isNaN(highWaterMark) || highWaterMark < 0)
+      throw new RangeError("Invalid highWaterMark");
+
+    var sizeAlgorithm = strategy.size;
+    if (sizeAlgorithm === undefined)
+      sizeAlgorithm = function() { return 1; };
+    if (typeof sizeAlgorithm !== "function")
+      throw new TypeError("strategy.size is not callable");
+
+    var controller = Object.create(WritableStreamDefaultController.prototype);
+    var ready = newPromiseCapability();
+    ready.resolve(undefined);
+    var closed = newPromiseCapability();
+    var state = {
+      sink: underlyingSink,
+      controller: controller,
+      signal: undefined,
+      state: "writable",
+      storedError: undefined,
+      writer: undefined,
+      writeChain: Promise.resolve(undefined),
+      ready: ready,
+      readyPromise: ready.promise,
+      closed: closed,
+      closedPromise: closed.promise,
+      highWaterMark: highWaterMark,
+      sizeAlgorithm: sizeAlgorithm,
+      queueTotalSize: 0,
+      backpressure: false
+    };
+    writableState.set(this, state);
+    writableControllerState.set(controller, { stream: this, signal: undefined });
+
+    var start = underlyingSink.start;
+    if (start !== undefined) {
+      if (typeof start !== "function")
+        throw new TypeError("underlyingSink.start is not callable");
+      state.writeChain = promiseCall(start, underlyingSink, [controller]).catch(function(error) {
+        writableError(this, error);
+        throw error;
+      }.bind(this));
+      state.writeChain.catch(function() {});
+    }
+  }
+
+  Object.defineProperty(WritableStream.prototype, "locked", {
+    configurable: true,
+    get: function() {
+      var state = writableState.get(this);
+      if (!state)
+        throw new TypeError("WritableStream expected");
+      return state.writer !== undefined;
+    }
+  });
+
+  WritableStream.prototype.abort = function(reason) {
+    if (!isWritableStream(this))
+      return rejectPromise(new TypeError("WritableStream expected"));
+    if (writableState.get(this).writer !== undefined)
+      return rejectPromise(new TypeError("WritableStream is locked"));
+    return writableStreamAbort(this, reason);
+  };
+
+  WritableStream.prototype.close = function() {
+    if (!isWritableStream(this))
+      return rejectPromise(new TypeError("WritableStream expected"));
+    if (writableState.get(this).writer !== undefined)
+      return rejectPromise(new TypeError("WritableStream is locked"));
+    return writableStreamClose(this);
+  };
+
+  WritableStream.prototype.getWriter = function() {
+    if (!isWritableStream(this))
+      throw new TypeError("WritableStream expected");
+    return new WritableStreamDefaultWriter(this);
+  };
+
+  Object.defineProperty(WritableStream.prototype, Symbol.toStringTag,
+                        { value: "WritableStream", configurable: true });
+
+  function WritableStreamDefaultWriter(stream) {
+    if (!(this instanceof WritableStreamDefaultWriter))
+      throw new TypeError("WritableStreamDefaultWriter must be constructed with new");
+    if (!isWritableStream(stream))
+      throw new TypeError("WritableStream expected");
+
+    var state = writableState.get(stream);
+    if (state.writer !== undefined)
+      throw new TypeError("WritableStream is locked");
+
+    state.writer = this;
+    writerState.set(this, {
+      stream: stream,
+      readyPromise: state.readyPromise,
+      closedPromise: state.closedPromise
+    });
+  }
+
+  Object.defineProperty(WritableStreamDefaultWriter.prototype, "closed", {
+    configurable: true,
+    get: function() {
+      var state = writerState.get(this);
+      if (!state)
+        return rejectPromise(new TypeError("WritableStreamDefaultWriter expected"));
+      return state.closedPromise;
+    }
+  });
+
+  Object.defineProperty(WritableStreamDefaultWriter.prototype, "desiredSize", {
+    configurable: true,
+    get: function() {
+      var state = writerState.get(this);
+      if (!state)
+        throw new TypeError("WritableStreamDefaultWriter expected");
+      if (state.stream === undefined)
+        throw new TypeError("Writer lock is released");
+      var streamState = writableState.get(state.stream);
+      if (streamState.state === "errored")
+        throw streamState.storedError;
+      if (streamState.state === "closed")
+        return null;
+      return streamState.highWaterMark - streamState.queueTotalSize;
+    }
+  });
+
+  Object.defineProperty(WritableStreamDefaultWriter.prototype, "ready", {
+    configurable: true,
+    get: function() {
+      var state = writerState.get(this);
+      if (!state)
+        return rejectPromise(new TypeError("WritableStreamDefaultWriter expected"));
+      return state.readyPromise;
+    }
+  });
+
+  WritableStreamDefaultWriter.prototype.abort = function(reason) {
+    var state = writerState.get(this);
+    if (!state || state.stream === undefined)
+      return rejectPromise(new TypeError("Writer lock is released"));
+    return writableStreamAbort(state.stream, reason);
+  };
+
+  WritableStreamDefaultWriter.prototype.close = function() {
+    var state = writerState.get(this);
+    if (!state || state.stream === undefined)
+      return rejectPromise(new TypeError("Writer lock is released"));
+    return writableStreamClose(state.stream);
+  };
+
+  WritableStreamDefaultWriter.prototype.releaseLock = function() {
+    var state = writerState.get(this);
+    if (!state)
+      throw new TypeError("WritableStreamDefaultWriter expected");
+    if (state.stream === undefined)
+      return;
+    var streamState = writableState.get(state.stream);
+    if (streamState.writer === this)
+      streamState.writer = undefined;
+    state.stream = undefined;
+    state.readyPromise = rejectPromise(new TypeError("Writer lock is released"));
+    state.closedPromise = rejectPromise(new TypeError("Writer lock is released"));
+    state.readyPromise.catch(function() {});
+    state.closedPromise.catch(function() {});
+  };
+
+  WritableStreamDefaultWriter.prototype.write = function(chunk) {
+    var state = writerState.get(this);
+    if (!state || state.stream === undefined)
+      return rejectPromise(new TypeError("Writer lock is released"));
+    return writableStreamWrite(state.stream, chunk);
+  };
+
+  Object.defineProperty(WritableStreamDefaultWriter.prototype, Symbol.toStringTag,
+                        { value: "WritableStreamDefaultWriter",
+                          configurable: true });
+
+  var transformState = new WeakMap();
+  var transformControllerState = new WeakMap();
+
+  function TransformStreamDefaultController() {
+    throw new TypeError("Illegal constructor");
+  }
+
+  Object.defineProperty(TransformStreamDefaultController.prototype, "desiredSize", {
+    configurable: true,
+    get: function() {
+      var state = transformControllerState.get(this);
+      if (!state)
+        throw new TypeError("TransformStreamDefaultController expected");
+      return state.readableController.desiredSize;
+    }
+  });
+
+  TransformStreamDefaultController.prototype.enqueue = function(chunk) {
+    var state = transformControllerState.get(this);
+    if (!state)
+      throw new TypeError("TransformStreamDefaultController expected");
+    state.readableController.enqueue(chunk);
+  };
+
+  TransformStreamDefaultController.prototype.error = function(reason) {
+    var state = transformControllerState.get(this);
+    if (!state)
+      throw new TypeError("TransformStreamDefaultController expected");
+    state.readableController.error(reason);
+    writableError(state.stream.writable, reason);
+  };
+
+  TransformStreamDefaultController.prototype.terminate = function() {
+    var state = transformControllerState.get(this);
+    if (!state)
+      throw new TypeError("TransformStreamDefaultController expected");
+    try {
+      state.readableController.close();
+    } catch (e) {}
+    writableError(state.stream.writable, new TypeError("TransformStream terminated"));
+  };
+
+  Object.defineProperty(TransformStreamDefaultController.prototype,
+                        Symbol.toStringTag,
+                        { value: "TransformStreamDefaultController",
+                          configurable: true });
+
+  function TransformStream(transformer, writableStrategy, readableStrategy) {
+    if (!(this instanceof TransformStream))
+      throw new TypeError("TransformStream must be constructed with new");
+
+    transformer = transformer === undefined ? {} : requiredObject(transformer, "transformer");
+    writableStrategy = writableStrategy === undefined ? {} : requiredObject(writableStrategy, "writableStrategy");
+    readableStrategy = readableStrategy === undefined ? {} : requiredObject(readableStrategy, "readableStrategy");
+
+    if (transformer.readableType !== undefined)
+      throw new RangeError("Invalid readableType");
+    if (transformer.writableType !== undefined)
+      throw new RangeError("Invalid writableType");
+
+    var controller = Object.create(TransformStreamDefaultController.prototype);
+    var readableController;
+    var stream = this;
+    var startAlgorithm = getMethod(transformer, "start");
+    var transformAlgorithm = getMethod(transformer, "transform");
+    var flushAlgorithm = getMethod(transformer, "flush");
+    var cancelAlgorithm = getMethod(transformer, "cancel");
+
+    var readable = new ReadableStream({
+      start: function(c) {
+        readableController = c;
+        transformControllerState.set(controller, {
+          stream: stream,
+          readableController: c
+        });
+      },
+      cancel: function(reason) {
+        if (cancelAlgorithm)
+          return cancelAlgorithm.call(transformer, reason);
+        return undefined;
+      }
+    }, readableStrategy);
+
+    var startPromise = startAlgorithm
+      ? promiseCall(startAlgorithm, transformer, [controller])
+      : Promise.resolve(undefined);
+
+    var writable = new WritableStream({
+      start: function() {
+        return startPromise;
+      },
+      write: function(chunk) {
+        if (transformAlgorithm)
+          return transformAlgorithm.call(transformer, chunk, controller);
+        controller.enqueue(chunk);
+        return undefined;
+      },
+      close: function() {
+        var result = flushAlgorithm
+          ? promiseCall(flushAlgorithm, transformer, [controller])
+          : Promise.resolve(undefined);
+        return result.then(function() {
+          readableController.close();
+        });
+      },
+      abort: function(reason) {
+        readableController.error(reason);
+      }
+    }, writableStrategy);
+
+    transformState.set(this, {
+      readable: readable,
+      writable: writable,
+      controller: controller
+    });
+  }
+
+  Object.defineProperty(TransformStream.prototype, "readable", {
+    configurable: true,
+    get: function() {
+      var state = transformState.get(this);
+      if (!state)
+        throw new TypeError("TransformStream expected");
+      return state.readable;
+    }
+  });
+
+  Object.defineProperty(TransformStream.prototype, "writable", {
+    configurable: true,
+    get: function() {
+      var state = transformState.get(this);
+      if (!state)
+        throw new TypeError("TransformStream expected");
+      return state.writable;
+    }
+  });
+
+  Object.defineProperty(TransformStream.prototype, Symbol.toStringTag,
+                        { value: "TransformStream", configurable: true });
+
+  function pipeTo(readable, destination, options) {
+    options = options === undefined ? {} : requiredObject(options, "options");
+    var signal = options.signal;
+    var preventClose = Boolean(options.preventClose);
+    var preventAbort = Boolean(options.preventAbort);
+    var preventCancel = Boolean(options.preventCancel);
+    var reader;
+    var writer;
+
+    try {
+      destination = requiredObject(destination, "destination");
+      reader = readable.getReader();
+      writer = destination.getWriter();
+    } catch (e) {
+      return rejectPromise(e);
+    }
+
+    var closed = false;
+    function cleanup() {
+      if (closed)
+        return;
+      closed = true;
+      try { reader.releaseLock(); } catch (e) {}
+      try { writer.releaseLock(); } catch (e) {}
+      if (signal && signal.removeEventListener)
+        signal.removeEventListener("abort", onAbort);
+    }
+
+    function abortReason() {
+      return signal && "reason" in signal
+             ? signal.reason
+             : makeDOMException("The operation was aborted.", "AbortError");
+    }
+
+    function shutdownWithAction(action, originalError) {
+      return action().then(function() {
+        cleanup();
+        throw originalError;
+      }, function(actionError) {
+        cleanup();
+        throw actionError;
+      });
+    }
+
+    function onAbort() {}
+
+    var pipePromise = new Promise(function(resolve, reject) {
+      onAbort = function() {
+        var reason = abortReason();
+        var actions = [];
+        if (!preventAbort)
+          actions.push(writer.abort(reason));
+        if (!preventCancel)
+          actions.push(reader.cancel(reason));
+        Promise.all(actions).then(function() {
+          cleanup();
+          reject(reason);
+        }, function(error) {
+          cleanup();
+          reject(error);
+        });
+      };
+
+      if (signal && signal.aborted) {
+        onAbort();
+        return;
+      }
+      if (signal && signal.addEventListener)
+        signal.addEventListener("abort", onAbort);
+
+      function pump() {
+        reader.read().then(function(result) {
+          if (result.done) {
+            var closePromise = preventClose ? Promise.resolve(undefined)
+                                           : writer.close();
+            closePromise.then(function() {
+              cleanup();
+              resolve(undefined);
+            }, function(error) {
+              cleanup();
+              reject(error);
+            });
+            return;
+          }
+
+          writer.write(result.value).then(pump, function(error) {
+            var cancel = preventCancel
+              ? Promise.resolve(undefined)
+              : reader.cancel(error);
+            cancel.then(function() {
+              cleanup();
+              reject(error);
+            }, function(cancelError) {
+              cleanup();
+              reject(cancelError);
+            });
+          });
+        }, function(error) {
+          var abort = preventAbort
+            ? Promise.resolve(undefined)
+            : writer.abort(error);
+          abort.then(function() {
+            cleanup();
+            reject(error);
+          }, function(abortError) {
+            cleanup();
+            reject(abortError);
+          });
+        });
+      }
+
+      pump();
+    });
+
+    return pipePromise;
+  }
+
+  function pipeThrough(readable, pair, options) {
+    pair = requiredObject(pair, "transform");
+    var writable = pair.writable;
+    var output = pair.readable;
+    readable.pipeTo(writable, options).catch(function() {});
+    return output;
+  }
+
+  Object.defineProperty(global, "__uxpStreamsPipeTo",
+                        { value: pipeTo, configurable: true });
+  Object.defineProperty(global, "__uxpStreamsPipeThrough",
+                        { value: pipeThrough, configurable: true });
+
+  if (global.ReadableStream && !global.ReadableStream.from) {
+    Object.defineProperty(global.ReadableStream, "from", {
+      value: function from(asyncIterable) {
+        if (asyncIterable == null)
+          throw new TypeError("ReadableStream.from requires an iterable");
+        var method = asyncIterable[Symbol.asyncIterator] ||
+                     asyncIterable[Symbol.iterator];
+        if (typeof method !== "function")
+          throw new TypeError("ReadableStream.from requires an iterable");
+        var iterator = method.call(asyncIterable);
+        return new ReadableStream({
+          pull: function(controller) {
+            return Promise.resolve(iterator.next()).then(function(result) {
+              if (!isObject(result))
+                throw new TypeError("Iterator result is not an object");
+              if (result.done) {
+                controller.close();
+              } else {
+                controller.enqueue(result.value);
+              }
+            });
+          },
+          cancel: function(reason) {
+            var returnMethod = iterator.return;
+            if (returnMethod)
+              return returnMethod.call(iterator, reason);
+            return undefined;
+          }
+        });
+      },
+      writable: true,
+      configurable: true
+    });
+  }
+
+  if (global.ReadableStream && typeof Symbol === "function" &&
+      Symbol.asyncIterator && !global.ReadableStream.prototype.values) {
+    function ReadableStreamAsyncIterator(stream, preventCancel) {
+      this._reader = stream.getReader();
+      this._preventCancel = preventCancel;
+      this._done = false;
+    }
+
+    ReadableStreamAsyncIterator.prototype.next = function() {
+      if (this._done)
+        return Promise.resolve({ value: undefined, done: true });
+      var self = this;
+      return this._reader.read().then(function(result) {
+        if (result.done) {
+          self._done = true;
+          self._reader.releaseLock();
+        }
+        return result;
+      }, function(error) {
+        self._done = true;
+        try { self._reader.releaseLock(); } catch (e) {}
+        throw error;
+      });
+    };
+
+    ReadableStreamAsyncIterator.prototype.return = function(value) {
+      if (this._done)
+        return Promise.resolve({ value: value, done: true });
+      this._done = true;
+      var reader = this._reader;
+      if (this._preventCancel) {
+        reader.releaseLock();
+        return Promise.resolve({ value: value, done: true });
+      }
+      return reader.cancel(value).then(function() {
+        reader.releaseLock();
+        return { value: value, done: true };
+      });
+    };
+
+    ReadableStreamAsyncIterator.prototype[Symbol.asyncIterator] = function() {
+      return this;
+    };
+
+    Object.defineProperty(global.ReadableStream.prototype, "values", {
+      value: function values(options) {
+        var preventCancel = Boolean(options && options.preventCancel);
+        return new ReadableStreamAsyncIterator(this, preventCancel);
+      },
+      writable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(global.ReadableStream.prototype, Symbol.asyncIterator, {
+      value: global.ReadableStream.prototype.values,
+      writable: true,
+      configurable: true
+    });
+  }
+
+  var textEncoderStreamState = new WeakMap();
+  var textDecoderStreamState = new WeakMap();
+
+  function enqueueEncoded(controller, encoder, string) {
+    if (string.length === 0)
+      return;
+    var chunk = encoder.encode(string);
+    if (chunk.byteLength)
+      controller.enqueue(chunk);
+  }
+
+  function TextEncoderStream() {
+    if (!(this instanceof TextEncoderStream))
+      throw new TypeError("TextEncoderStream must be constructed with new");
+
+    var encoder = new TextEncoder();
+    var leadingSurrogate = null;
+    var transform = new TransformStream({
+      transform: function(chunk, controller) {
+        var input = String(chunk);
+        var output = "";
+        var i = 0;
+
+        if (leadingSurrogate !== null) {
+          if (input.length > 0) {
+            var first = input.charCodeAt(0);
+            if (first >= 0xDC00 && first <= 0xDFFF) {
+              output += String.fromCharCode(leadingSurrogate) + input.charAt(0);
+              i = 1;
+            } else {
+              output += "\uFFFD";
+            }
+          } else {
+            return;
+          }
+          leadingSurrogate = null;
+        }
+
+        for (; i < input.length; ++i) {
+          var code = input.charCodeAt(i);
+          if (code >= 0xD800 && code <= 0xDBFF) {
+            if (i + 1 < input.length) {
+              var next = input.charCodeAt(i + 1);
+              if (next >= 0xDC00 && next <= 0xDFFF) {
+                output += input.charAt(i) + input.charAt(i + 1);
+                ++i;
+              } else {
+                output += "\uFFFD";
+              }
+            } else {
+              leadingSurrogate = code;
+              break;
+            }
+          } else if (code >= 0xDC00 && code <= 0xDFFF) {
+            output += "\uFFFD";
+          } else {
+            output += input.charAt(i);
+          }
+        }
+
+        enqueueEncoded(controller, encoder, output);
+      },
+      flush: function(controller) {
+        if (leadingSurrogate !== null) {
+          leadingSurrogate = null;
+          enqueueEncoded(controller, encoder, "\uFFFD");
+        }
+      }
+    });
+
+    textEncoderStreamState.set(this, { transform: transform });
+  }
+
+  Object.defineProperty(TextEncoderStream.prototype, "encoding", {
+    configurable: true,
+    get: function() {
+      if (!textEncoderStreamState.has(this))
+        throw new TypeError("TextEncoderStream expected");
+      return "utf-8";
+    }
+  });
+
+  Object.defineProperty(TextEncoderStream.prototype, "readable", {
+    configurable: true,
+    get: function() {
+      var state = textEncoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextEncoderStream expected");
+      return state.transform.readable;
+    }
+  });
+
+  Object.defineProperty(TextEncoderStream.prototype, "writable", {
+    configurable: true,
+    get: function() {
+      var state = textEncoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextEncoderStream expected");
+      return state.transform.writable;
+    }
+  });
+
+  Object.defineProperty(TextEncoderStream.prototype, Symbol.toStringTag,
+                        { value: "TextEncoderStream", configurable: true });
+
+  function TextDecoderStream(label, options) {
+    if (!(this instanceof TextDecoderStream))
+      throw new TypeError("TextDecoderStream must be constructed with new");
+    label = label === undefined ? "utf-8" : label;
+    options = options === undefined ? {} : options;
+
+    var decoder = new TextDecoder(label, options);
+    var transform = new TransformStream({
+      transform: function(chunk, controller) {
+        var output = decoder.decode(chunk, { stream: true });
+        if (output.length)
+          controller.enqueue(output);
+      },
+      flush: function(controller) {
+        var output = decoder.decode();
+        if (output.length)
+          controller.enqueue(output);
+      }
+    });
+
+    textDecoderStreamState.set(this, {
+      transform: transform,
+      encoding: decoder.encoding,
+      fatal: decoder.fatal,
+      ignoreBOM: Boolean(options && options.ignoreBOM)
+    });
+  }
+
+  Object.defineProperty(TextDecoderStream.prototype, "encoding", {
+    configurable: true,
+    get: function() {
+      var state = textDecoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextDecoderStream expected");
+      return state.encoding;
+    }
+  });
+
+  Object.defineProperty(TextDecoderStream.prototype, "fatal", {
+    configurable: true,
+    get: function() {
+      var state = textDecoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextDecoderStream expected");
+      return state.fatal;
+    }
+  });
+
+  Object.defineProperty(TextDecoderStream.prototype, "ignoreBOM", {
+    configurable: true,
+    get: function() {
+      var state = textDecoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextDecoderStream expected");
+      return state.ignoreBOM;
+    }
+  });
+
+  Object.defineProperty(TextDecoderStream.prototype, "readable", {
+    configurable: true,
+    get: function() {
+      var state = textDecoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextDecoderStream expected");
+      return state.transform.readable;
+    }
+  });
+
+  Object.defineProperty(TextDecoderStream.prototype, "writable", {
+    configurable: true,
+    get: function() {
+      var state = textDecoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextDecoderStream expected");
+      return state.transform.writable;
+    }
+  });
+
+  Object.defineProperty(TextDecoderStream.prototype, Symbol.toStringTag,
+                        { value: "TextDecoderStream", configurable: true });
+
+  var compressionStreamState = new WeakMap();
+  var decompressionStreamState = new WeakMap();
+
+  function enqueueCompressionChunks(nativeContext, chunk, finish, controller) {
+    var chunks = global.__uxpCompressionProcess(nativeContext, chunk, finish);
+    for (var i = 0; i < chunks.length; ++i)
+      controller.enqueue(chunks[i]);
+  }
+
+  function CompressionStream(format) {
+    if (!(this instanceof CompressionStream))
+      throw new TypeError("CompressionStream must be constructed with new");
+    var nativeContext = global.__uxpCreateCompressionContext(format, true);
+    var transform = new TransformStream({
+      transform: function(chunk, controller) {
+        enqueueCompressionChunks(nativeContext, chunk, false, controller);
+      },
+      flush: function(controller) {
+        enqueueCompressionChunks(nativeContext, undefined, true, controller);
+      }
+    });
+    compressionStreamState.set(this, { transform: transform });
+  }
+
+  Object.defineProperty(CompressionStream.prototype, "readable", {
+    configurable: true,
+    get: function() {
+      var state = compressionStreamState.get(this);
+      if (!state)
+        throw new TypeError("CompressionStream expected");
+      return state.transform.readable;
+    }
+  });
+
+  Object.defineProperty(CompressionStream.prototype, "writable", {
+    configurable: true,
+    get: function() {
+      var state = compressionStreamState.get(this);
+      if (!state)
+        throw new TypeError("CompressionStream expected");
+      return state.transform.writable;
+    }
+  });
+
+  Object.defineProperty(CompressionStream.prototype, Symbol.toStringTag,
+                        { value: "CompressionStream", configurable: true });
+
+  function DecompressionStream(format) {
+    if (!(this instanceof DecompressionStream))
+      throw new TypeError("DecompressionStream must be constructed with new");
+    var nativeContext = global.__uxpCreateCompressionContext(format, false);
+    var transform = new TransformStream({
+      transform: function(chunk, controller) {
+        enqueueCompressionChunks(nativeContext, chunk, false, controller);
+      },
+      flush: function(controller) {
+        enqueueCompressionChunks(nativeContext, undefined, true, controller);
+      }
+    });
+    decompressionStreamState.set(this, { transform: transform });
+  }
+
+  Object.defineProperty(DecompressionStream.prototype, "readable", {
+    configurable: true,
+    get: function() {
+      var state = decompressionStreamState.get(this);
+      if (!state)
+        throw new TypeError("DecompressionStream expected");
+      return state.transform.readable;
+    }
+  });
+
+  Object.defineProperty(DecompressionStream.prototype, "writable", {
+    configurable: true,
+    get: function() {
+      var state = decompressionStreamState.get(this);
+      if (!state)
+        throw new TypeError("DecompressionStream expected");
+      return state.transform.writable;
+    }
+  });
+
+  Object.defineProperty(DecompressionStream.prototype, Symbol.toStringTag,
+                        { value: "DecompressionStream", configurable: true });
+
+  define("WritableStream", WritableStream);
+  define("WritableStreamDefaultWriter", WritableStreamDefaultWriter);
+  define("WritableStreamDefaultController", WritableStreamDefaultController);
+  define("TransformStream", TransformStream);
+  define("TransformStreamDefaultController", TransformStreamDefaultController);
+  define("TextEncoderStream", TextEncoderStream);
+  define("TextDecoderStream", TextDecoderStream);
+  define("CompressionStream", CompressionStream);
+  define("DecompressionStream", DecompressionStream);
+})(this);
+)JS";
+
+    RootedValue rval(cx);
+    JS::CompileOptions options(cx);
+    options.setFileAndLine("builtin/StreamExtras.js", 1);
+    options.setNoScriptRval(true);
+    return JS::Evaluate(cx, options, source, strlen(source), &rval);
 }
