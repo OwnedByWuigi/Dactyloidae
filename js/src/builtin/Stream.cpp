@@ -6382,6 +6382,12 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
                         { value: "TransformStreamDefaultController",
                           configurable: true });
 
+  function errorReadableController(controller, error) {
+    try {
+      controller.error(error);
+    } catch (e) {}
+  }
+
   function TransformStream(transformer, writableStrategy, readableStrategy) {
     if (!(this instanceof TransformStream))
       throw new TypeError("TransformStream must be constructed with new");
@@ -6421,16 +6427,33 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
     var startPromise = startAlgorithm
       ? promiseCall(startAlgorithm, transformer, [controller])
       : Promise.resolve(undefined);
+    startPromise = startPromise.then(undefined, function(error) {
+      if (readableController)
+        errorReadableController(readableController, error);
+      throw error;
+    });
 
     var writable = new WritableStream({
       start: function() {
         return startPromise;
       },
       write: function(chunk) {
-        if (transformAlgorithm)
-          return transformAlgorithm.call(transformer, chunk, controller);
-        controller.enqueue(chunk);
-        return undefined;
+        var result;
+        try {
+          if (transformAlgorithm) {
+            result = transformAlgorithm.call(transformer, chunk, controller);
+          } else {
+            controller.enqueue(chunk);
+            result = undefined;
+          }
+        } catch (error) {
+          errorReadableController(readableController, error);
+          throw error;
+        }
+        return Promise.resolve(result).then(undefined, function(error) {
+          errorReadableController(readableController, error);
+          throw error;
+        });
       },
       close: function() {
         var result = flushAlgorithm
@@ -6438,6 +6461,9 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
           : Promise.resolve(undefined);
         return result.then(function() {
           readableController.close();
+        }, function(error) {
+          errorReadableController(readableController, error);
+          throw error;
         });
       },
       abort: function(reason) {
