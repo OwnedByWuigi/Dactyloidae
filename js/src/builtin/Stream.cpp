@@ -6032,6 +6032,8 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
     var write = state.sink.write;
     var controller = state.controller;
     var writePromise = state.writeChain.then(function() {
+      if (state.state === "errored")
+        throw state.storedError;
       if (write)
         return write.call(state.sink, chunk, controller);
       return undefined;
@@ -6103,6 +6105,8 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
     state.closed.reject(reason);
     state.readyPromise.catch(function() {});
     state.closedPromise.catch(function() {});
+    if (state.writer)
+      syncWritableWriterWithStream(state.writer, state);
 
     var abortPromise = abort ? promiseCall(abort, state.sink, [reason])
                              : Promise.resolve(undefined);
@@ -6542,7 +6546,11 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
         signal.addEventListener("abort", onAbort);
 
       function pump() {
+        if (closed)
+          return;
         reader.read().then(function(result) {
+          if (closed)
+            return;
           if (result.done) {
             var closePromise = preventClose ? Promise.resolve(undefined)
                                            : writer.close();
@@ -6557,6 +6565,8 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
           }
 
           writer.write(result.value).then(pump, function(error) {
+            if (closed)
+              return;
             var cancel = preventCancel
               ? Promise.resolve(undefined)
               : reader.cancel(error);
@@ -6569,6 +6579,8 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
             });
           });
         }, function(error) {
+          if (closed)
+            return;
           var abort = preventAbort
             ? Promise.resolve(undefined)
             : writer.abort(error);
@@ -6596,6 +6608,8 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       throw new TypeError("ReadableStream is locked");
     if (!isWritableStream(writable))
       throw new TypeError("transform.writable must be a WritableStream");
+    if (!(output instanceof global.ReadableStream))
+      throw new TypeError("transform.readable must be a ReadableStream");
     if (writable.locked)
       throw new TypeError("WritableStream is locked");
     readable.pipeTo(writable, options).catch(function() {});
@@ -6679,6 +6693,9 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       return reader.cancel(value).then(function() {
         reader.releaseLock();
         return { value: value, done: true };
+      }, function(error) {
+        try { reader.releaseLock(); } catch (e) {}
+        throw error;
       });
     };
 
