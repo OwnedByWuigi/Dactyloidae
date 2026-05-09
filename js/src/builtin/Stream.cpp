@@ -6697,6 +6697,140 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
   Object.defineProperty(TransformStream.prototype, Symbol.toStringTag,
                         { value: "TransformStream", configurable: true });
 
+  function isReadableStreamObject(value) {
+    if (!isObject(value) || !global.ReadableStream)
+      return false;
+    try {
+      return value instanceof global.ReadableStream;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function isUncloneableStreamChunk(value) {
+    return isObject(value) &&
+           (isWritableStream(value) ||
+            isReadableStreamObject(value) ||
+            transformState.has(value));
+  }
+
+  function makeDataCloneError() {
+    return makeDOMException("The object could not be cloned.", "DataCloneError");
+  }
+
+  function abortTransferredWritable(record, reason) {
+    try {
+      return record.writer.abort(reason);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
+
+  function rejectTransferredWritableWrite(record, error) {
+    var abortPromise = abortTransferredWritable(record, error);
+    silenceRejection(abortPromise);
+    return Promise.reject(error);
+  }
+
+  function forwardTransferredWritableWrite(record, chunk) {
+    if (isUncloneableStreamChunk(chunk))
+      return rejectTransferredWritableWrite(record, makeDataCloneError());
+
+    var prior = record.tail || Promise.resolve(undefined);
+    var firstWrite = !record.started;
+    record.started = true;
+
+    var forwarding = prior.then(function() {
+      var writePromise;
+      try {
+        writePromise = Promise.resolve(record.writer.write(chunk));
+      } catch (e) {
+        writePromise = Promise.reject(e);
+      }
+      record.inFlight = writePromise;
+      silenceRejection(writePromise);
+      return writePromise;
+    });
+
+    record.tail = forwarding;
+    silenceRejection(forwarding);
+
+    if (firstWrite)
+      return undefined;
+
+    return prior.then(function() { return undefined; });
+  }
+
+  function closeTransferredWritable(record) {
+    var tail = record.tail || Promise.resolve(undefined);
+    var closePromise = tail.then(function() {
+      return record.writer.close();
+    });
+    record.tail = closePromise;
+    silenceRejection(closePromise);
+    return closePromise;
+  }
+
+  function __uxpTransferWritableStream(stream) {
+    if (!isWritableStream(stream))
+      return undefined;
+    if (stream.locked)
+      return null;
+    try {
+      return {
+        writer: stream.getWriter(),
+        started: false,
+        inFlight: undefined,
+        tail: undefined
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function __uxpReceiveWritableStreamTransfer(record) {
+    return new WritableStream({
+      write: function(chunk) {
+        return forwardTransferredWritableWrite(record, chunk);
+      },
+      close: function() {
+        return closeTransferredWritable(record);
+      },
+      abort: function(reason) {
+        return abortTransferredWritable(record, reason);
+      }
+    });
+  }
+
+  function __uxpTransferReadableStream(stream) {
+    if (!isReadableStreamObject(stream))
+      return undefined;
+    if (stream.locked)
+      return null;
+    try {
+      return { reader: stream.getReader() };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function __uxpReceiveReadableStreamTransfer(record) {
+    return new ReadableStream({
+      pull: function(controller) {
+        return record.reader.read().then(function(result) {
+          if (result.done) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(result.value);
+        });
+      },
+      cancel: function(reason) {
+        return record.reader.cancel(reason);
+      }
+    });
+  }
+
   function pipeTo(readable, destination, options) {
     options = options === undefined ? {} : requiredObject(options, "options");
     var signal = options.signal;
@@ -6842,6 +6976,18 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
                         { value: pipeTo, configurable: true });
   Object.defineProperty(global, "__uxpStreamsPipeThrough",
                         { value: pipeThrough, configurable: true });
+  Object.defineProperty(global, "__uxpTransferWritableStream",
+                        { value: __uxpTransferWritableStream,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpReceiveWritableStreamTransfer",
+                        { value: __uxpReceiveWritableStreamTransfer,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpTransferReadableStream",
+                        { value: __uxpTransferReadableStream,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpReceiveReadableStreamTransfer",
+                        { value: __uxpReceiveReadableStreamTransfer,
+                          configurable: true });
 
   if (global.ReadableStream && !global.ReadableStream.from) {
     Object.defineProperty(global.ReadableStream, "from", {
