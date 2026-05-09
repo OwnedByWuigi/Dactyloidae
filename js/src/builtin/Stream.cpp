@@ -6060,7 +6060,8 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
                            ReleaseReadableStreamReaderSilently, 1, 0))
         return false;
 
-    static const char source[] = R"JS(
+    static const char source[] =
+  R"JS(
 (function(global) {
   "use strict";
 
@@ -6543,6 +6544,9 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       return rejectPromise(new TypeError("Writer lock is released"));
     return writableStreamWrite(state.stream, chunk);
   };
+
+)JS"
+R"JS(
 
   Object.defineProperty(WritableStreamDefaultWriter.prototype, Symbol.toStringTag,
                         { value: "WritableStreamDefaultWriter",
@@ -7115,6 +7119,9 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       closeReadableTransferPort(record.port);
   }
 
+)JS"
+R"JS(
+
   function requestReadableTransferPortChunk(state) {
     if (state.closed || state.errored || state.canceled)
       return;
@@ -7190,6 +7197,9 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
   }
 
   function __uxpTransferReadableStreamPort(stream) {
+
+)JS"
+R"JS(
     if (!isReadableStreamObject(stream))
       return undefined;
     if (stream.locked || typeof global.MessageChannel !== "function")
@@ -7647,6 +7657,9 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       configurable: true
     });
   }
+
+  )JS"
+  R"JS(
 
   var textEncoderStreamState = new WeakMap();
   var textDecoderStreamState = new WeakMap();
