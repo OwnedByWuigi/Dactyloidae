@@ -7104,14 +7104,15 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
     var posted = tryPostReadableTransferPort(record.port,
                                              { type: "error", value: error });
     if (!posted) {
-      tryPostReadableTransferPort(record.port, {
+      posted = tryPostReadableTransferPort(record.port, {
         type: "error",
         name: error && error.name,
         message: error && error.message
       });
     }
     record.closed = true;
-    closeReadableTransferPort(record.port);
+    if (!posted)
+      closeReadableTransferPort(record.port);
   }
 
   function requestReadableTransferPortChunk(state) {
@@ -7160,8 +7161,8 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
 
       if (result.done) {
         record.closed = true;
-        tryPostReadableTransferPort(record.port, { type: "close" });
-        closeReadableTransferPort(record.port);
+        if (!tryPostReadableTransferPort(record.port, { type: "close" }))
+          closeReadableTransferPort(record.port);
         return;
       }
 
@@ -7208,7 +7209,16 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
 
       record.port.onmessage = function(event) {
         var message = event.data;
-        if (!message || record.closed || record.canceled)
+        if (!message || record.canceled)
+          return;
+
+        if (message.type === "closed") {
+          record.closed = true;
+          closeReadableTransferPort(record.port);
+          return;
+        }
+
+        if (record.closed)
           return;
 
         if (message.type === "pull") {
@@ -7282,13 +7292,22 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       if (message.type === "close") {
         state.closed = true;
         try { state.controller.close(); } catch (e) {}
+        tryPostReadableTransferPort(port, { type: "closed" });
         closeReadableTransferPort(port);
         return;
       }
 
       if (message.type === "error") {
-        errorReadableTransferPortState(
-          state, errorFromReadableTransferPortMessage(message));
+        if (!state.errored) {
+          state.errored = true;
+          try {
+            if (state.controller)
+              state.controller.error(
+                errorFromReadableTransferPortMessage(message));
+          } catch (e) {}
+        }
+        tryPostReadableTransferPort(port, { type: "closed" });
+        closeReadableTransferPort(port);
       }
     };
 
