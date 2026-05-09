@@ -5157,7 +5157,8 @@ DequeueValue(JSContext* cx, HandleNativeObject container, MutableHandleValue chu
 
     // Step 2: Assert: queue is not empty.
     RootedValue val(cx, container->getFixedSlot(QueueContainerSlot_Queue));
-    RootedNativeObject queue(cx, &val.toObject().as<NativeObject>());
+    RootedNativeObject queue(cx);
+    queue = UnwrapInternalSlotObject<NativeObject>(&val.toObject());
     MOZ_ASSERT(queue->getDenseInitializedLength() > 0);
 
     // Step 3. Let pair be the first element of queue.
@@ -5179,7 +5180,10 @@ DequeueValue(JSContext* cx, HandleNativeObject container, MutableHandleValue chu
     container->setFixedSlot(QueueContainerSlot_TotalSize, NumberValue(totalSize));
 
     // Step 7: Return pair.[[value]].
-    chunk.set(pair->value());
+    RootedValue chunkVal(cx, pair->value());
+    if (!JS_WrapValue(cx, &chunkVal))
+        return false;
+    chunk.set(chunkVal);
     return true;
 }
 
@@ -5208,19 +5212,27 @@ EnqueueValueWithSize(JSContext* cx, HandleNativeObject container, HandleValue va
     // Step 4: Append Record {[[value]]: value, [[size]]: size} as the last element
     //         of container.[[queue]].
     RootedValue val(cx, container->getFixedSlot(QueueContainerSlot_Queue));
-    RootedNativeObject queue(cx, &val.toObject().as<NativeObject>());
+    RootedNativeObject queue(cx);
+    queue = UnwrapInternalSlotObject<NativeObject>(&val.toObject());
 
-    QueueEntry* entry = QueueEntry::create(cx, value, size);
-    if (!entry)
-        return false;
-    val = ObjectValue(*entry);
-    if (!AppendToList(cx, queue, val))
-        return false;
+    {
+        JSAutoCompartment ac(cx, queue);
+        RootedValue wrappedValue(cx, value);
+        if (!JS_WrapValue(cx, &wrappedValue))
+            return false;
 
-    // Step 5: Set container.[[queueTotalSize]] to
-    //         container.[[queueTotalSize]] + size.
-    double totalSize = container->getFixedSlot(QueueContainerSlot_TotalSize).toNumber();
-    container->setFixedSlot(QueueContainerSlot_TotalSize, NumberValue(totalSize + size));
+        QueueEntry* entry = QueueEntry::create(cx, wrappedValue, size);
+        if (!entry)
+            return false;
+        val = ObjectValue(*entry);
+        if (!AppendToList(cx, queue, val))
+            return false;
+
+        // Step 5: Set container.[[queueTotalSize]] to
+        //         container.[[queueTotalSize]] + size.
+        double totalSize = container->getFixedSlot(QueueContainerSlot_TotalSize).toNumber();
+        container->setFixedSlot(QueueContainerSlot_TotalSize, NumberValue(totalSize + size));
+    }
 
     return true;
 }
