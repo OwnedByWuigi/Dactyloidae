@@ -6916,6 +6916,236 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
     return undefined;
   }
 
+  function closeReadableTransferPort(port) {
+    try { port.close(); } catch (e) {}
+  }
+
+  function startReadableTransferPort(port) {
+    try {
+      if (port.start)
+        port.start();
+    } catch (e) {}
+  }
+
+  function tryPostReadableTransferPort(port, message) {
+    try {
+      port.postMessage(message);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function postReadableTransferPortError(record, error) {
+    var posted = tryPostReadableTransferPort(record.port,
+                                             { type: "error", value: error });
+    if (!posted) {
+      tryPostReadableTransferPort(record.port, {
+        type: "error",
+        name: error && error.name,
+        message: error && error.message
+      });
+    }
+    record.closed = true;
+    closeReadableTransferPort(record.port);
+  }
+
+  function requestReadableTransferPortChunk(state) {
+    if (state.closed || state.errored || state.canceled)
+      return;
+    if (!tryPostReadableTransferPort(state.port, { type: "pull" })) {
+      state.errored = true;
+      if (state.controller)
+        try { state.controller.error(makeDataCloneError()); } catch (e) {}
+      closeReadableTransferPort(state.port);
+    }
+  }
+
+  function errorReadableTransferPortState(state, error) {
+    if (state.errored)
+      return;
+    state.errored = true;
+    try {
+      if (state.controller)
+        state.controller.error(error);
+    } catch (e) {}
+    closeReadableTransferPort(state.port);
+  }
+
+  function pumpReadableTransferPort(record) {
+    if (record.reading || record.closed || record.canceled ||
+        record.credits <= 0)
+      return;
+
+    --record.credits;
+    record.reading = true;
+
+    var readPromise;
+    try {
+      readPromise = Promise.resolve(record.reader.read());
+    } catch (e) {
+      readPromise = Promise.reject(e);
+    }
+    silenceRejection(readPromise);
+
+    readPromise.then(function(result) {
+      record.reading = false;
+
+      if (record.canceled || record.closed)
+        return;
+
+      if (result.done) {
+        record.closed = true;
+        tryPostReadableTransferPort(record.port, { type: "close" });
+        closeReadableTransferPort(record.port);
+        return;
+      }
+
+      if (isUncloneableStreamChunk(result.value)) {
+        var cloneError = makeDataCloneError();
+        silenceRejection(record.reader.cancel(cloneError));
+        postReadableTransferPortError(record, cloneError);
+        return;
+      }
+
+      if (!tryPostReadableTransferPort(record.port,
+                                       { type: "chunk", value: result.value })) {
+        record.closed = true;
+        closeReadableTransferPort(record.port);
+        return;
+      }
+
+      pumpReadableTransferPort(record);
+    }, function(error) {
+      record.reading = false;
+      if (record.canceled || record.closed)
+        return;
+      postReadableTransferPortError(record, error);
+    });
+  }
+
+  function __uxpTransferReadableStreamPort(stream) {
+    if (!isReadableStreamObject(stream))
+      return undefined;
+    if (stream.locked || typeof global.MessageChannel !== "function")
+      return null;
+
+    var channel;
+    try {
+      channel = new global.MessageChannel();
+      var record = {
+        reader: stream.getReader(),
+        port: channel.port1,
+        reading: false,
+        credits: 1,
+        closed: false,
+        canceled: false
+      };
+
+      record.port.onmessage = function(event) {
+        var message = event.data;
+        if (!message || record.closed || record.canceled)
+          return;
+
+        if (message.type === "pull") {
+          ++record.credits;
+          pumpReadableTransferPort(record);
+          return;
+        }
+
+        if (message.type === "cancel") {
+          record.canceled = true;
+          Promise.resolve().then(function() {
+            try {
+              silenceRejection(record.reader.cancel(message.reason));
+            } catch (e) {}
+          });
+          closeReadableTransferPort(record.port);
+        }
+      };
+
+      startReadableTransferPort(record.port);
+      pumpReadableTransferPort(record);
+      return channel.port2;
+    } catch (e) {
+      if (channel) {
+        closeReadableTransferPort(channel.port1);
+        closeReadableTransferPort(channel.port2);
+      }
+      return null;
+    }
+  }
+
+  function errorFromReadableTransferPortMessage(message) {
+    if ("value" in message)
+      return message.value;
+    return makeDOMException(message.message || "ReadableStream transfer failed",
+                            message.name || "DataCloneError");
+  }
+
+  function __uxpReceiveReadableStreamTransferFromPort(port) {
+    var state = {
+      port: port,
+      controller: undefined,
+      closed: false,
+      errored: false,
+      canceled: false
+    };
+
+    port.onmessage = function(event) {
+      var message = event.data;
+      if (!message || state.closed || state.errored || state.canceled)
+        return;
+
+      if (message.type === "chunk") {
+        if (isUncloneableStreamChunk(message.value)) {
+          errorReadableTransferPortState(state, makeDataCloneError());
+          return;
+        }
+
+        try {
+          state.controller.enqueue(message.value);
+        } catch (e) {
+          errorReadableTransferPortState(state, e);
+          return;
+        }
+
+        if (state.controller.desiredSize > 0)
+          requestReadableTransferPortChunk(state);
+        return;
+      }
+
+      if (message.type === "close") {
+        state.closed = true;
+        try { state.controller.close(); } catch (e) {}
+        closeReadableTransferPort(port);
+        return;
+      }
+
+      if (message.type === "error") {
+        errorReadableTransferPortState(
+          state, errorFromReadableTransferPortMessage(message));
+      }
+    };
+
+    return new ReadableStream({
+      start: function(controller) {
+        state.controller = controller;
+        startReadableTransferPort(port);
+        requestReadableTransferPortChunk(state);
+      },
+      pull: function() {
+        requestReadableTransferPortChunk(state);
+      },
+      cancel: function(reason) {
+        state.canceled = true;
+        tryPostReadableTransferPort(port, { type: "cancel", reason: reason });
+        closeReadableTransferPort(port);
+        return undefined;
+      }
+    });
+  }
+
   function __uxpReceiveReadableStreamTransfer(record) {
     return new ReadableStream({
       start: function(controller) {
@@ -7086,6 +7316,12 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
                           configurable: true });
   Object.defineProperty(global, "__uxpReceiveReadableStreamTransfer",
                         { value: __uxpReceiveReadableStreamTransfer,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpTransferReadableStreamPort",
+                        { value: __uxpTransferReadableStreamPort,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpReceiveReadableStreamTransferFromPort",
+                        { value: __uxpReceiveReadableStreamTransferFromPort,
                           configurable: true });
 
   if (global.ReadableStream && !global.ReadableStream.from) {

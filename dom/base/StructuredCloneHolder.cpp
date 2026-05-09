@@ -152,6 +152,11 @@ struct SameThreadStreamTransferData
   JS::PersistentRootedObject mRecord;
 };
 
+struct MessagePortStreamTransferData
+{
+  MessagePortIdentifier mIdentifier;
+};
+
 bool
 CallStreamTransferHelper(JSContext* aCx,
                          const char* aHelperName,
@@ -228,6 +233,50 @@ TryWriteSameThreadStreamTransfer(JSContext* aCx,
 }
 
 bool
+TryWriteReadableStreamPortTransfer(JSContext* aCx,
+                                   JS::Handle<JSObject*> aObj,
+                                   uint32_t* aTag,
+                                   JS::TransferableOwnership* aOwnership,
+                                   void** aContent,
+                                   uint64_t* aExtraData,
+                                   bool* aHandled)
+{
+  *aHandled = false;
+
+  JS::Rooted<JS::Value> argument(aCx, JS::ObjectValue(*aObj));
+  JS::Rooted<JS::Value> transferPortValue(aCx);
+  if (!CallStreamTransferHelper(aCx, "__uxpTransferReadableStreamPort",
+                                argument, &transferPortValue)) {
+    return false;
+  }
+
+  if (transferPortValue.isUndefined()) {
+    return true;
+  }
+
+  if (!transferPortValue.isObject()) {
+    return false;
+  }
+
+  JS::Rooted<JSObject*> transferPortObj(aCx, &transferPortValue.toObject());
+  MessagePort* port = nullptr;
+  nsresult rv = UNWRAP_OBJECT(MessagePort, &transferPortObj, port);
+  if (NS_FAILED(rv) || !port) {
+    return false;
+  }
+
+  MessagePortStreamTransferData* data = new MessagePortStreamTransferData();
+  port->CloneAndDisentangle(data->mIdentifier);
+
+  *aTag = SCTAG_DOM_TRANSFERRED_READABLESTREAM;
+  *aOwnership = JS::SCTAG_TMO_CUSTOM;
+  *aContent = data;
+  *aExtraData = 0;
+  *aHandled = true;
+  return true;
+}
+
+bool
 ReadSameThreadStreamTransfer(JSContext* aCx,
                              void* aContent,
                              const char* aHelperName,
@@ -240,6 +289,48 @@ ReadSameThreadStreamTransfer(JSContext* aCx,
   JS::Rooted<JS::Value> record(aCx, JS::ObjectValue(*data->mRecord));
   JS::Rooted<JS::Value> result(aCx);
   if (!CallStreamTransferHelper(aCx, aHelperName, record, &result)) {
+    return false;
+  }
+
+  if (!result.isObject()) {
+    return false;
+  }
+
+  aReturnObject.set(&result.toObject());
+  delete data;
+  return true;
+}
+
+bool
+ReadReadableStreamPortTransfer(JSContext* aCx,
+                               nsISupports* aParent,
+                               void* aContent,
+                               JS::MutableHandleObject aReturnObject)
+{
+  MOZ_ASSERT(aContent);
+  MessagePortStreamTransferData* data =
+    static_cast<MessagePortStreamTransferData*>(aContent);
+
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aParent);
+
+  ErrorResult rv;
+  RefPtr<MessagePort> port =
+    MessagePort::Create(global, data->mIdentifier, rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    rv.SuppressException();
+    return false;
+  }
+
+  JS::Rooted<JS::Value> portValue(aCx);
+  if (!GetOrCreateDOMReflector(aCx, port, &portValue)) {
+    JS_ClearPendingException(aCx);
+    return false;
+  }
+
+  JS::Rooted<JS::Value> result(aCx);
+  if (!CallStreamTransferHelper(aCx,
+                                "__uxpReceiveReadableStreamTransferFromPort",
+                                portValue, &result)) {
     return false;
   }
 
@@ -1503,6 +1594,12 @@ StructuredCloneHolder::CustomReadTransferHandler(JSContext* aCx,
     }
   }
 
+  if (mStructuredCloneScope == StructuredCloneScope::SameProcessDifferentThread &&
+      aTag == SCTAG_DOM_TRANSFERRED_READABLESTREAM) {
+    return ReadReadableStreamPortTransfer(aCx, mParent, aContent,
+                                          aReturnObject);
+  }
+
   return false;
 }
 
@@ -1596,6 +1693,17 @@ StructuredCloneHolder::CustomWriteTransferHandler(JSContext* aCx,
     }
   }
 
+  if (mStructuredCloneScope == StructuredCloneScope::SameProcessDifferentThread) {
+    bool handled = false;
+    if (!TryWriteReadableStreamPortTransfer(aCx, obj, aTag, aOwnership,
+                                            aContent, aExtraData, &handled)) {
+      return false;
+    }
+    if (handled) {
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -1640,6 +1748,16 @@ StructuredCloneHolder::CustomFreeTransferHandler(uint32_t aTag,
     MOZ_ASSERT(aContent);
     SameThreadStreamTransferData* data =
       static_cast<SameThreadStreamTransferData*>(aContent);
+    delete data;
+    return;
+  }
+
+  if (aTag == SCTAG_DOM_TRANSFERRED_READABLESTREAM &&
+      mStructuredCloneScope == StructuredCloneScope::SameProcessDifferentThread) {
+    MOZ_ASSERT(aContent);
+    MessagePortStreamTransferData* data =
+      static_cast<MessagePortStreamTransferData*>(aContent);
+    MessagePort::ForceClose(data->mIdentifier);
     delete data;
     return;
   }
