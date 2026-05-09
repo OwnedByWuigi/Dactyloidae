@@ -152,11 +152,6 @@ struct SameThreadStreamTransferData
   JS::PersistentRootedObject mRecord;
 };
 
-struct MessagePortStreamTransferData
-{
-  MessagePortIdentifier mIdentifier;
-};
-
 bool
 CallStreamTransferHelper(JSContext* aCx,
                          const char* aHelperName,
@@ -235,6 +230,7 @@ TryWriteSameThreadStreamTransfer(JSContext* aCx,
 bool
 TryWriteReadableStreamPortTransfer(JSContext* aCx,
                                    JS::Handle<JSObject*> aObj,
+                                   nsTArray<MessagePortIdentifier>& aPortIdentifiers,
                                    uint32_t* aTag,
                                    JS::TransferableOwnership* aOwnership,
                                    void** aContent,
@@ -265,13 +261,13 @@ TryWriteReadableStreamPortTransfer(JSContext* aCx,
     return false;
   }
 
-  MessagePortStreamTransferData* data = new MessagePortStreamTransferData();
-  port->CloneAndDisentangle(data->mIdentifier);
+  *aExtraData = aPortIdentifiers.Length();
+  MessagePortIdentifier* identifier = aPortIdentifiers.AppendElement();
+  port->CloneAndDisentangle(*identifier);
 
   *aTag = SCTAG_DOM_TRANSFERRED_READABLESTREAM;
   *aOwnership = JS::SCTAG_TMO_CUSTOM;
-  *aContent = data;
-  *aExtraData = 0;
+  *aContent = nullptr;
   *aHandled = true;
   return true;
 }
@@ -304,18 +300,19 @@ ReadSameThreadStreamTransfer(JSContext* aCx,
 bool
 ReadReadableStreamPortTransfer(JSContext* aCx,
                                nsISupports* aParent,
-                               void* aContent,
+                               nsTArray<MessagePortIdentifier>& aPortIdentifiers,
+                               uint64_t aExtraData,
                                JS::MutableHandleObject aReturnObject)
 {
-  MOZ_ASSERT(aContent);
-  MessagePortStreamTransferData* data =
-    static_cast<MessagePortStreamTransferData*>(aContent);
+  if (aExtraData >= aPortIdentifiers.Length()) {
+    return false;
+  }
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aParent);
 
   ErrorResult rv;
   RefPtr<MessagePort> port =
-    MessagePort::Create(global, data->mIdentifier, rv);
+    MessagePort::Create(global, aPortIdentifiers[aExtraData], rv);
   if (NS_WARN_IF(rv.Failed())) {
     rv.SuppressException();
     return false;
@@ -339,7 +336,6 @@ ReadReadableStreamPortTransfer(JSContext* aCx,
   }
 
   aReturnObject.set(&result.toObject());
-  delete data;
   return true;
 }
 
@@ -1592,11 +1588,20 @@ StructuredCloneHolder::CustomReadTransferHandler(JSContext* aCx,
                                           "__uxpReceiveReadableStreamTransfer",
                                           aReturnObject);
     }
+
+    if (aTag == SCTAG_DOM_TRANSFERRED_TRANSFORMSTREAM) {
+      return ReadSameThreadStreamTransfer(aCx, aContent,
+                                          "__uxpReceiveTransformStreamTransfer",
+                                          aReturnObject);
+    }
   }
 
-  if (mStructuredCloneScope == StructuredCloneScope::SameProcessDifferentThread &&
+  if ((mStructuredCloneScope == StructuredCloneScope::SameProcessDifferentThread ||
+       mStructuredCloneScope == StructuredCloneScope::DifferentProcess) &&
       aTag == SCTAG_DOM_TRANSFERRED_READABLESTREAM) {
-    return ReadReadableStreamPortTransfer(aCx, mParent, aContent,
+    MOZ_ASSERT(!aContent);
+    return ReadReadableStreamPortTransfer(aCx, mParent, mPortIdentifiers,
+                                          aExtraData,
                                           aReturnObject);
   }
 
@@ -1691,12 +1696,25 @@ StructuredCloneHolder::CustomWriteTransferHandler(JSContext* aCx,
     if (handled) {
       return true;
     }
+
+    if (!TryWriteSameThreadStreamTransfer(aCx, obj,
+                                          "__uxpTransferTransformStream",
+                                          SCTAG_DOM_TRANSFERRED_TRANSFORMSTREAM,
+                                          aTag, aOwnership, aContent,
+                                          aExtraData, &handled)) {
+      return false;
+    }
+    if (handled) {
+      return true;
+    }
   }
 
-  if (mStructuredCloneScope == StructuredCloneScope::SameProcessDifferentThread) {
+  if (mStructuredCloneScope == StructuredCloneScope::SameProcessDifferentThread ||
+      mStructuredCloneScope == StructuredCloneScope::DifferentProcess) {
     bool handled = false;
-    if (!TryWriteReadableStreamPortTransfer(aCx, obj, aTag, aOwnership,
-                                            aContent, aExtraData, &handled)) {
+    if (!TryWriteReadableStreamPortTransfer(aCx, obj, mPortIdentifiers,
+                                            aTag, aOwnership, aContent,
+                                            aExtraData, &handled)) {
       return false;
     }
     if (handled) {
@@ -1743,7 +1761,8 @@ StructuredCloneHolder::CustomFreeTransferHandler(uint32_t aTag,
   }
 
   if ((aTag == SCTAG_DOM_TRANSFERRED_WRITABLESTREAM ||
-       aTag == SCTAG_DOM_TRANSFERRED_READABLESTREAM) &&
+       aTag == SCTAG_DOM_TRANSFERRED_READABLESTREAM ||
+       aTag == SCTAG_DOM_TRANSFERRED_TRANSFORMSTREAM) &&
       mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread) {
     MOZ_ASSERT(aContent);
     SameThreadStreamTransferData* data =
@@ -1753,12 +1772,11 @@ StructuredCloneHolder::CustomFreeTransferHandler(uint32_t aTag,
   }
 
   if (aTag == SCTAG_DOM_TRANSFERRED_READABLESTREAM &&
-      mStructuredCloneScope == StructuredCloneScope::SameProcessDifferentThread) {
-    MOZ_ASSERT(aContent);
-    MessagePortStreamTransferData* data =
-      static_cast<MessagePortStreamTransferData*>(aContent);
-    MessagePort::ForceClose(data->mIdentifier);
-    delete data;
+      (mStructuredCloneScope == StructuredCloneScope::SameProcessDifferentThread ||
+       mStructuredCloneScope == StructuredCloneScope::DifferentProcess)) {
+    MOZ_ASSERT(!aContent);
+    MOZ_ASSERT(aExtraData < mPortIdentifiers.Length());
+    MessagePort::ForceClose(mPortIdentifiers[aExtraData]);
     return;
   }
 }

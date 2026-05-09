@@ -71,6 +71,7 @@ enum StructuredCloneTags {
   // Same-thread transferable stream records. These are not supported by IDB.
   SCTAG_DOM_TRANSFERRED_READABLESTREAM,
   SCTAG_DOM_TRANSFERRED_WRITABLESTREAM,
+  SCTAG_DOM_TRANSFERRED_TRANSFORMSTREAM,
 
   // When adding a new tag for IDB, please don't add it to the end of the list!
   // Tags that are supported by IDB must not ever change. See the static assert

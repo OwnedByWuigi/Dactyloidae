@@ -6735,6 +6735,163 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
     return makeDOMException("The object could not be cloned.", "DataCloneError");
   }
 
+  function cloneTransferReasonError(value) {
+    var constructors = [
+      global.EvalError,
+      global.RangeError,
+      global.ReferenceError,
+      global.SyntaxError,
+      global.TypeError,
+      global.URIError,
+      global.Error
+    ];
+
+    for (var i = 0; i < constructors.length; ++i) {
+      var C = constructors[i];
+      if (typeof C !== "function")
+        continue;
+      try {
+        if (!(value instanceof C))
+          continue;
+      } catch (e) {
+        continue;
+      }
+
+      var message = "";
+      var descriptor;
+      try {
+        descriptor = Object.getOwnPropertyDescriptor(value, "message");
+      } catch (e) {
+        descriptor = undefined;
+      }
+      if (descriptor && hasOwn.call(descriptor, "value"))
+        message = String(descriptor.value);
+      return new C(message);
+    }
+
+    return undefined;
+  }
+
+  function cloneTransferReasonValue(value, memory) {
+    if (typeof value === "function" || typeof value === "symbol")
+      throw makeDataCloneError();
+    if (!isObject(value))
+      return value;
+    if (isUncloneableStreamChunk(value))
+      throw makeDataCloneError();
+
+    memory = memory || new WeakMap();
+    if (memory.has(value))
+      return memory.get(value);
+
+    if (typeof global.DOMException === "function") {
+      try {
+        if (value instanceof global.DOMException) {
+          return new global.DOMException(String(value.message),
+                                         String(value.name));
+        }
+      } catch (e) {}
+    }
+
+    var errorClone = cloneTransferReasonError(value);
+    if (errorClone !== undefined)
+      return errorClone;
+
+    if (typeof global.ArrayBuffer === "function") {
+      try {
+        if (value instanceof global.ArrayBuffer) {
+          var bufferClone = value.slice(0);
+          memory.set(value, bufferClone);
+          return bufferClone;
+        }
+      } catch (e) {}
+    }
+
+    if (global.ArrayBuffer && global.ArrayBuffer.isView &&
+        global.ArrayBuffer.isView(value)) {
+      var clonedBuffer = cloneTransferReasonValue(value.buffer, memory);
+      var viewClone;
+      if (objectToString.call(value) === "[object DataView]") {
+        viewClone = new global.DataView(clonedBuffer, value.byteOffset,
+                                        value.byteLength);
+      } else {
+        viewClone = new value.constructor(clonedBuffer, value.byteOffset,
+                                          value.length);
+      }
+      memory.set(value, viewClone);
+      return viewClone;
+    }
+
+    if (typeof global.Date === "function") {
+      try {
+        if (value instanceof global.Date) {
+          var dateClone = new global.Date(value.getTime());
+          memory.set(value, dateClone);
+          return dateClone;
+        }
+      } catch (e) {}
+    }
+
+    if (typeof global.RegExp === "function") {
+      try {
+        if (value instanceof global.RegExp) {
+          var flags = "";
+          flags += value.global ? "g" : "";
+          flags += value.ignoreCase ? "i" : "";
+          flags += value.multiline ? "m" : "";
+          flags += value.unicode ? "u" : "";
+          flags += value.sticky ? "y" : "";
+          var regexpClone = new global.RegExp(value.source, flags);
+          regexpClone.lastIndex = value.lastIndex;
+          memory.set(value, regexpClone);
+          return regexpClone;
+        }
+      } catch (e) {}
+    }
+
+    if (typeof global.Map === "function") {
+      try {
+        if (value instanceof global.Map) {
+          var mapClone = new global.Map();
+          memory.set(value, mapClone);
+          value.forEach(function(v, k) {
+            mapClone.set(cloneTransferReasonValue(k, memory),
+                         cloneTransferReasonValue(v, memory));
+          });
+          return mapClone;
+        }
+      } catch (e) {
+        throw e;
+      }
+    }
+
+    if (typeof global.Set === "function") {
+      try {
+        if (value instanceof global.Set) {
+          var setClone = new global.Set();
+          memory.set(value, setClone);
+          value.forEach(function(v) {
+            setClone.add(cloneTransferReasonValue(v, memory));
+          });
+          return setClone;
+        }
+      } catch (e) {
+        throw e;
+      }
+    }
+
+    var clone = Array.isArray(value) ? [] : {};
+    memory.set(value, clone);
+
+    var keys = Object.keys(value);
+    for (var i = 0; i < keys.length; ++i) {
+      var key = keys[i];
+      clone[key] = cloneTransferReasonValue(value[key], memory);
+    }
+
+    return clone;
+  }
+
   function abortTransferredWritable(record, reason) {
     try {
       return record.writer.abort(reason);
@@ -6908,12 +7065,16 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
 
   function cancelReadableTransfer(record, reason) {
     record.canceled = true;
-    Promise.resolve().then(function() {
+    var cancelPromise = Promise.resolve().then(function() {
+      var clonedReason = cloneTransferReasonValue(reason);
       try {
-        silenceRejection(record.reader.cancel(reason));
-      } catch (e) {}
+        return record.reader.cancel(clonedReason);
+      } catch (e) {
+        return Promise.reject(e);
+      }
     });
-    return undefined;
+    silenceRejection(cancelPromise);
+    return cancelPromise;
   }
 
   function closeReadableTransferPort(port) {
@@ -7139,11 +7300,48 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
       },
       cancel: function(reason) {
         state.canceled = true;
-        tryPostReadableTransferPort(port, { type: "cancel", reason: reason });
+        try {
+          port.postMessage({ type: "cancel", reason: reason });
+        } catch (e) {
+          closeReadableTransferPort(port);
+          return Promise.reject(e);
+        }
         closeReadableTransferPort(port);
         return undefined;
       }
     });
+  }
+
+  function __uxpTransferTransformStream(stream) {
+    if (!isObject(stream) || !transformState.has(stream))
+      return undefined;
+
+    var state = transformState.get(stream);
+    if (state.readable.locked || state.writable.locked)
+      return null;
+
+    var readableRecord = __uxpTransferReadableStream(state.readable);
+    if (!readableRecord)
+      return null;
+
+    var writableRecord = __uxpTransferWritableStream(state.writable);
+    if (!writableRecord)
+      return null;
+
+    return {
+      readable: readableRecord,
+      writable: writableRecord
+    };
+  }
+
+  function __uxpReceiveTransformStreamTransfer(record) {
+    var stream = Object.create(global.TransformStream.prototype);
+    transformState.set(stream, {
+      readable: __uxpReceiveReadableStreamTransfer(record.readable),
+      writable: __uxpReceiveWritableStreamTransfer(record.writable),
+      controller: undefined
+    });
+    return stream;
   }
 
   function __uxpReceiveReadableStreamTransfer(record) {
@@ -7322,6 +7520,12 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
                           configurable: true });
   Object.defineProperty(global, "__uxpReceiveReadableStreamTransferFromPort",
                         { value: __uxpReceiveReadableStreamTransferFromPort,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpTransferTransformStream",
+                        { value: __uxpTransferTransformStream,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpReceiveTransformStreamTransfer",
+                        { value: __uxpReceiveTransformStreamTransfer,
                           configurable: true });
 
   if (global.ReadableStream && !global.ReadableStream.from) {
