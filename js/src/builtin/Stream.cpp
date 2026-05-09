@@ -6949,6 +6949,9 @@ R"JS(
     return closePromise;
   }
 
+)JS"
+R"JS(
+
   function __uxpTransferWritableStream(stream) {
     if (!isWritableStream(stream))
       return undefined;
@@ -7103,6 +7106,9 @@ R"JS(
       return false;
     }
   }
+
+)JS"
+R"JS(
 
   function postReadableTransferPortError(record, error) {
     var posted = tryPostReadableTransferPort(record.port,
