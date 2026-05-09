@@ -7065,16 +7065,19 @@ js::InitStreamExtras(JSContext* cx, HandleObject global)
 
   function cancelReadableTransfer(record, reason) {
     record.canceled = true;
-    var cancelPromise = Promise.resolve().then(function() {
-      var clonedReason = cloneTransferReasonValue(reason);
+    var clonedReason;
+    try {
+      clonedReason = cloneTransferReasonValue(reason);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+
+    Promise.resolve().then(function() {
       try {
-        return record.reader.cancel(clonedReason);
-      } catch (e) {
-        return Promise.reject(e);
-      }
+        silenceRejection(record.reader.cancel(clonedReason));
+      } catch (e) {}
     });
-    silenceRejection(cancelPromise);
-    return cancelPromise;
+    return undefined;
   }
 
   function closeReadableTransferPort(port) {
