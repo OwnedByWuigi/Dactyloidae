@@ -7021,4 +7021,3 @@ nsComputedDOMStyle::DoGetOverflowBlockEnd()
 {
   return DoGetOverflowBlock();
 }
-
