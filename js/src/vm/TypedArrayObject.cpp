@@ -484,8 +484,9 @@ class TypedArrayObjectTemplate : public TypedArrayObject
     }
 
     static TypedArrayObject*
-    makeInstance(JSContext* cx, Handle<ArrayBufferObjectMaybeShared*> buffer, uint32_t byteOffset, uint32_t len,
-                 HandleObject proto)
+    makeInstance(JSContext* cx, Handle<ArrayBufferObjectMaybeShared*> buffer,
+                 uint32_t byteOffset, uint32_t len, HandleObject proto,
+                 bool lengthTracking = false)
     {
         MOZ_ASSERT_IF(!buffer, byteOffset == 0);
 
@@ -549,7 +550,9 @@ class TypedArrayObjectTemplate : public TypedArrayObject
 #endif
         }
 
-        obj->setFixedSlot(TypedArrayObject::LENGTH_SLOT, Int32Value(len));
+        obj->setFixedSlot(TypedArrayObject::LENGTH_SLOT,
+                          Int32Value(lengthTracking ? TypedArrayObject::LENGTH_TRACKING
+                                                    : int32_t(len)));
         obj->setFixedSlot(TypedArrayObject::BYTEOFFSET_SLOT, Int32Value(byteOffset));
 
 #ifdef DEBUG
@@ -898,6 +901,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject
             return nullptr; // invalid byteOffset
         }
 
+        bool lengthTracking = false;
         uint32_t len;
         if (lengthInt == -1) {
             len = (buffer->byteLength() - byteOffset) / sizeof(NativeType);
@@ -905,6 +909,12 @@ class TypedArrayObjectTemplate : public TypedArrayObject
                 JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                           JSMSG_TYPED_ARRAY_CONSTRUCT_BOUNDS);
                 return nullptr; // given byte array doesn't map exactly to sizeof(NativeType) * N
+            }
+            if ((buffer->is<ArrayBufferObject>() && buffer->as<ArrayBufferObject>().isResizable()) ||
+                (buffer->is<SharedArrayBufferObject>() &&
+                 buffer->as<SharedArrayBufferObject>().isGrowable()))
+            {
+                lengthTracking = true;
             }
         } else {
             len = uint32_t(lengthInt);
@@ -924,7 +934,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject
             return nullptr; // byteOffset + len is too big for the arraybuffer
         }
 
-        return makeInstance(cx, buffer, byteOffset, len, proto);
+        return makeInstance(cx, buffer, byteOffset, len, proto, lengthTracking);
     }
 
     static bool
@@ -1859,7 +1869,8 @@ DataViewNewObjectKind(JSContext* cx, uint32_t byteLength, JSObject* proto)
 
 DataViewObject*
 DataViewObject::create(JSContext* cx, uint32_t byteOffset, uint32_t byteLength,
-                       Handle<ArrayBufferObject*> arrayBuffer, JSObject* protoArg)
+                       Handle<ArrayBufferObject*> arrayBuffer, JSObject* protoArg,
+                       bool lengthTracking)
 {
     if (arrayBuffer->isDetached()) {
         JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_TYPED_ARRAY_DETACHED);
@@ -1901,7 +1912,9 @@ DataViewObject::create(JSContext* cx, uint32_t byteOffset, uint32_t byteLength,
 
     DataViewObject& dvobj = obj->as<DataViewObject>();
     dvobj.setFixedSlot(TypedArrayObject::BYTEOFFSET_SLOT, Int32Value(byteOffset));
-    dvobj.setFixedSlot(TypedArrayObject::LENGTH_SLOT, Int32Value(byteLength));
+    dvobj.setFixedSlot(TypedArrayObject::LENGTH_SLOT,
+                       Int32Value(lengthTracking ? TypedArrayObject::LENGTH_TRACKING
+                                                 : int32_t(byteLength)));
     dvobj.setFixedSlot(TypedArrayObject::BUFFER_SLOT, ObjectValue(*arrayBuffer));
     dvobj.initPrivate(arrayBuffer->dataPointer() + byteOffset);
 
@@ -1921,7 +1934,8 @@ DataViewObject::create(JSContext* cx, uint32_t byteOffset, uint32_t byteLength,
 
 bool
 DataViewObject::getAndCheckConstructorArgs(JSContext* cx, JSObject* bufobj, const CallArgs& args,
-                                           uint32_t* byteOffsetPtr, uint32_t* byteLengthPtr)
+                                           uint32_t* byteOffsetPtr, uint32_t* byteLengthPtr,
+                                           bool* lengthTrackingPtr)
 {
     if (!IsArrayBuffer(bufobj)) {
         JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_NOT_EXPECTED_TYPE,
@@ -1932,6 +1946,7 @@ DataViewObject::getAndCheckConstructorArgs(JSContext* cx, JSObject* bufobj, cons
     Rooted<ArrayBufferObject*> buffer(cx, &AsArrayBuffer(bufobj));
     uint32_t byteOffset = 0;
     uint32_t byteLength = buffer->byteLength();
+    bool lengthTracking = buffer->isResizable() && !args.hasDefined(2);
 
     if (args.length() > 1) {
         if (!ToUint32(cx, args[1], &byteOffset))
@@ -1957,9 +1972,11 @@ DataViewObject::getAndCheckConstructorArgs(JSContext* cx, JSObject* bufobj, cons
 
         if (args.get(2).isUndefined()) {
             byteLength -= byteOffset;
+            lengthTracking = buffer->isResizable();
         } else {
             if (!ToUint32(cx, args[2], &byteLength))
                 return false;
+            lengthTracking = false;
             if (byteLength > INT32_MAX) {
                 JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                           JSMSG_ARG_INDEX_OUT_OF_RANGE, "2");
@@ -1983,6 +2000,7 @@ DataViewObject::getAndCheckConstructorArgs(JSContext* cx, JSObject* bufobj, cons
 
     *byteOffsetPtr = byteOffset;
     *byteLengthPtr = byteLength;
+    *lengthTrackingPtr = lengthTracking;
 
     return true;
 }
@@ -1994,7 +2012,8 @@ DataViewObject::constructSameCompartment(JSContext* cx, HandleObject bufobj, con
     assertSameCompartment(cx, bufobj);
 
     uint32_t byteOffset, byteLength;
-    if (!getAndCheckConstructorArgs(cx, bufobj, args, &byteOffset, &byteLength))
+    bool lengthTracking;
+    if (!getAndCheckConstructorArgs(cx, bufobj, args, &byteOffset, &byteLength, &lengthTracking))
         return false;
 
     RootedObject proto(cx);
@@ -2003,7 +2022,8 @@ DataViewObject::constructSameCompartment(JSContext* cx, HandleObject bufobj, con
         return false;
 
     Rooted<ArrayBufferObject*> buffer(cx, &AsArrayBuffer(bufobj));
-    JSObject* obj = DataViewObject::create(cx, byteOffset, byteLength, buffer, proto);
+    JSObject* obj = DataViewObject::create(cx, byteOffset, byteLength, buffer, proto,
+                                           lengthTracking);
     if (!obj)
         return false;
     args.rval().setObject(*obj);
@@ -2043,8 +2063,12 @@ DataViewObject::constructWrapped(JSContext* cx, HandleObject bufobj, const CallA
 
     // NB: This entails the IsArrayBuffer check
     uint32_t byteOffset, byteLength;
-    if (!getAndCheckConstructorArgs(cx, unwrapped, args, &byteOffset, &byteLength))
+    bool lengthTracking;
+    if (!getAndCheckConstructorArgs(cx, unwrapped, args, &byteOffset, &byteLength,
+                                    &lengthTracking))
+    {
         return false;
+    }
 
     // Make sure to get the [[Prototype]] for the created view from this
     // compartment.
@@ -2060,11 +2084,12 @@ DataViewObject::constructWrapped(JSContext* cx, HandleObject bufobj, const CallA
             return false;
     }
 
-    FixedInvokeArgs<3> args2(cx);
+    FixedInvokeArgs<4> args2(cx);
 
     args2[0].set(PrivateUint32Value(byteOffset));
     args2[1].set(PrivateUint32Value(byteLength));
     args2[2].setObject(*proto);
+    args2[3].setBoolean(lengthTracking);
 
     RootedValue fval(cx, global->createDataViewForThis());
     RootedValue thisv(cx, ObjectValue(*bufobj));
