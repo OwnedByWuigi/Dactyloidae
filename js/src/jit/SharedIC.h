@@ -2307,7 +2307,11 @@ CheckDOMProxyExpandoDoesNotShadow(JSContext* cx, MacroAssembler& masm, Register 
 void
 CheckForTypedObjectWithDetachedStorage(JSContext* cx, MacroAssembler& masm, Label* failure);
 
-MOZ_MUST_USE bool
+void
+GuardResizableOrGrowableTypedArray(MacroAssembler& masm, Register obj, Register scratch,
+                                   Label* failure);
+
+[[nodiscard]] bool
 DoCallNativeGetter(JSContext* cx, HandleFunction callee, HandleObject obj,
                    MutableHandleValue result);
 
