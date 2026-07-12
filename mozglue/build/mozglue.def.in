@@ -34,7 +34,11 @@ EXPORTS
   _wcsdup=wrap_wcsdup
   jemalloc_stats
   jemalloc_free_dirty_pages
+#ifdef GNU_CC
   _Z14mozalloc_abortPKc
+#else
+  ?mozalloc_abort@@YAXQEBD@Z
+#endif
   ; A hack to work around the CRT (see giant comment in Makefile.in)
   frex=dumb_free_thunk
 
