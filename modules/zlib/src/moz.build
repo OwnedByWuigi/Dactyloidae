@@ -7,98 +7,60 @@ EXPORTS += [
     'mozzconf.h',
     'zconf.h',
     'zlib.h',
-    'zlib_name_mangling.h',
 ]
 
-DEFINES['ZLIB_COMPAT'] = True
-DEFINES['WITH_GZFILEOP'] = True
-DEFINES['WITH_OPTIM'] = True
-DEFINES['WITH_NEW_STRATEGIES'] = True
+if CONFIG['CPU_ARCH'] == 'arm':
+    DEFINES['ADLER32_SIMD_NEON'] = True
+    DEFINES['INFLATE_CHUNK_SIMD_NEON'] = True
+    SOURCES += [
+        'adler32_simd.c',
+        'inffast_chunk.c',
+        'inflate_simd.c',
+    ]
 
-# Keep the integration simple and portable across this tree's mixed toolchains:
-# use zlib-ng generic fallbacks and disable runtime CPU dispatch here.
-DEFINES['DISABLE_RUNTIME_CPU_DETECTION'] = True
-DEFINES['WITH_ALL_FALLBACKS'] = True
+if CONFIG['INTEL_ARCHITECTURE']:
+    DEFINES['ADLER32_SIMD_SSSE3'] = True
+    DEFINES['INFLATE_CHUNK_SIMD_SSE2'] = True
+    DEFINES['CRC32_SIMD_SSE42_PCLMUL'] = True
+    SOURCES += [
+        'adler32_simd.c',
+        'crc32_simd.c',
+        'crc_folding.c',
+        'fill_window_sse.c',
+        'inffast_chunk.c',
+        'inflate_simd.c',
+        'x86.c',
+    ]
+else:
+    SOURCES += [
+        'simd_stub.c',
+    ]
+
+if CONFIG['CPU_ARCH'] != 'arm' and not CONFIG['INTEL_ARCHITECTURE']:
+    SOURCES += [
+        'inflate.c',
+    ]
 
 if CONFIG['ZLIB_IN_MOZGLUE']:
     FINAL_LIBRARY = 'mozglue'
     DEFINES['IMPL_MFBT'] = True
 else:
+    # The final library is in config/external/zlib
     FINAL_LIBRARY = 'zlib'
 
 SOURCES += [
     'adler32.c',
-    'arch/generic/adler32_c.c',
-    'arch/generic/chunkset_c.c',
-    'arch/generic/compare256_c.c',
-    'arch/generic/crc32_braid_c.c',
-    'arch/generic/crc32_chorba_c.c',
-    'arch/generic/slide_hash_c.c',
     'compress.c',
     'crc32.c',
-    'crc32_braid_comb.c',
     'deflate.c',
-    'deflate_fast.c',
-    'deflate_huff.c',
-    'deflate_medium.c',
-    'deflate_quick.c',
-    'deflate_rle.c',
-    'deflate_slow.c',
-    'deflate_stored.c',
+    'gzclose.c',
     'gzlib.c',
     'gzread.c',
     'gzwrite.c',
     'infback.c',
-    'inflate.c',
+    'inffast.c',
     'inftrees.c',
-    'insert_string.c',
     'trees.c',
     'uncompr.c',
     'zutil.c',
 ]
-
-if CONFIG['CPU_ARCH'].startswith('x86'):
-    DEFINES['X86_AVX2'] = True
-    DEFINES['X86_FEATURES'] = True
-    DEFINES['X86_PCLMULQDQ_CRC'] = True
-    DEFINES['X86_SSE2'] = True
-    DEFINES['X86_SSE41'] = True
-    DEFINES['X86_SSE42'] = True
-    DEFINES['X86_SSSE3'] = True
-
-    SOURCES += [
-        'arch/x86/adler32_avx2.c',
-        'arch/x86/adler32_sse42.c',
-        'arch/x86/adler32_ssse3.c',
-        'arch/x86/chunkset_avx2.c',
-        'arch/x86/chunkset_sse2.c',
-        'arch/x86/chunkset_ssse3.c',
-        'arch/x86/compare256_avx2.c',
-        'arch/x86/compare256_sse2.c',
-        'arch/x86/crc32_chorba_sse2.c',
-        'arch/x86/crc32_chorba_sse41.c',
-        'arch/x86/crc32_pclmulqdq.c',
-        'arch/x86/slide_hash_avx2.c',
-        'arch/x86/slide_hash_sse2.c',
-    ]
-
-    if CONFIG['GNU_CC']:
-        SOURCES['arch/x86/adler32_avx2.c'].flags += ['-mavx2', '-mbmi2']
-        SOURCES['arch/x86/adler32_sse42.c'].flags += ['-msse4.2']
-        SOURCES['arch/x86/adler32_ssse3.c'].flags += ['-mssse3']
-        SOURCES['arch/x86/chunkset_avx2.c'].flags += ['-mavx2', '-mbmi2']
-        SOURCES['arch/x86/chunkset_sse2.c'].flags += ['-msse2']
-        SOURCES['arch/x86/chunkset_ssse3.c'].flags += ['-mssse3']
-        SOURCES['arch/x86/compare256_avx2.c'].flags += ['-mavx2', '-mbmi2']
-        SOURCES['arch/x86/compare256_sse2.c'].flags += ['-msse2']
-        SOURCES['arch/x86/crc32_chorba_sse2.c'].flags += ['-msse2']
-        SOURCES['arch/x86/crc32_chorba_sse41.c'].flags += ['-msse4.1']
-        SOURCES['arch/x86/crc32_pclmulqdq.c'].flags += ['-msse4.2', '-mpclmul']
-        SOURCES['arch/x86/slide_hash_avx2.c'].flags += ['-mavx2', '-mbmi2']
-        SOURCES['arch/x86/slide_hash_sse2.c'].flags += ['-msse2']
-    elif CONFIG['_MSC_VER']:
-        SOURCES['arch/x86/adler32_avx2.c'].flags += ['/arch:AVX2']
-        SOURCES['arch/x86/chunkset_avx2.c'].flags += ['/arch:AVX2']
-        SOURCES['arch/x86/compare256_avx2.c'].flags += ['/arch:AVX2']
-        SOURCES['arch/x86/crc32_pclmulqdq.c'].flags += ['/arch:AVX2']
-        SOURCES['arch/x86/slide_hash_avx2.c'].flags += ['/arch:AVX2']

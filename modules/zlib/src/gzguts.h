@@ -1,7 +1,5 @@
-#ifndef GZGUTS_H_
-#define GZGUTS_H_
 /* gzguts.h -- zlib internal header definitions for gz* operations
- * Copyright (C) 2004-2024 Mark Adler
+ * Copyright (C) 2004, 2005, 2010, 2011, 2012, 2013, 2016 Mark Adler
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
@@ -9,36 +7,39 @@
 #  ifndef _LARGEFILE_SOURCE
 #    define _LARGEFILE_SOURCE 1
 #  endif
-#  undef _FILE_OFFSET_BITS
-#  undef _TIME_BITS
+#  ifdef _FILE_OFFSET_BITS
+#    undef _FILE_OFFSET_BITS
+#  endif
 #endif
 
-#if defined(HAVE_VISIBILITY_INTERNAL)
-#  define Z_INTERNAL __attribute__((visibility ("internal")))
-#elif defined(HAVE_VISIBILITY_HIDDEN)
-#  define Z_INTERNAL __attribute__((visibility ("hidden")))
+#ifdef HAVE_HIDDEN
+#  define ZLIB_INTERNAL __attribute__((visibility ("hidden")))
 #else
-#  define Z_INTERNAL
+#  define ZLIB_INTERNAL
 #endif
 
 #include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <limits.h>
-#include <fcntl.h>
-
-#if defined(ZLIB_COMPAT)
-#  include "zlib.h"
-#else
-#  include "zlib-ng.h"
+#include "zlib.h"
+#ifdef STDC
+#  include <string.h>
+#  include <stdlib.h>
+#  include <limits.h>
 #endif
+
+#ifndef _POSIX_SOURCE
+#  define _POSIX_SOURCE
+#endif
+#include <fcntl.h>
 
 #ifdef _WIN32
 #  include <stddef.h>
 #endif
 
-#if defined(_WIN32)
+#if defined(__TURBOC__) || defined(_MSC_VER) || defined(_WIN32)
 #  include <io.h>
+#endif
+
+#if defined(_WIN32) || defined(__CYGWIN__)
 #  define WIDECHAR
 #endif
 
@@ -49,28 +50,98 @@
 #  define close _close
 #endif
 
+#ifdef NO_DEFLATE       /* for compatibility with old definition */
+#  define NO_GZCOMPRESS
+#endif
+
+#if defined(STDC99) || (defined(__TURBOC__) && __TURBOC__ >= 0x550)
+#  ifndef HAVE_VSNPRINTF
+#    define HAVE_VSNPRINTF
+#  endif
+#endif
+
+#if defined(__CYGWIN__)
+#  ifndef HAVE_VSNPRINTF
+#    define HAVE_VSNPRINTF
+#  endif
+#endif
+
+#if defined(MSDOS) && defined(__BORLANDC__) && (BORLANDC > 0x410)
+#  ifndef HAVE_VSNPRINTF
+#    define HAVE_VSNPRINTF
+#  endif
+#endif
+
+#ifndef HAVE_VSNPRINTF
+#  ifdef MSDOS
+/* vsnprintf may exist on some MS-DOS compilers (DJGPP?),
+   but for now we just assume it doesn't. */
+#    define NO_vsnprintf
+#  endif
+#  ifdef __TURBOC__
+#    define NO_vsnprintf
+#  endif
+#  ifdef WIN32
 /* In Win32, vsnprintf is available as the "non-ANSI" _vsnprintf. */
-#if !defined(STDC99) && !defined(__CYGWIN__) && !defined(__MINGW__) && defined(_WIN32)
-#  if !defined(vsnprintf)
-#    if !defined(_MSC_VER) || ( defined(_MSC_VER) && _MSC_VER < 1500 )
-#       define vsnprintf _vsnprintf
+#    if !defined(vsnprintf) && !defined(NO_vsnprintf)
+#      if !defined(_MSC_VER) || ( defined(_MSC_VER) && _MSC_VER < 1500 )
+#         define vsnprintf _vsnprintf
+#      endif
 #    endif
+#  endif
+#  ifdef __SASC
+#    define NO_vsnprintf
+#  endif
+#  ifdef VMS
+#    define NO_vsnprintf
+#  endif
+#  ifdef __OS400__
+#    define NO_vsnprintf
+#  endif
+#  ifdef __MVS__
+#    define NO_vsnprintf
 #  endif
 #endif
 
 /* unlike snprintf (which is required in C99), _snprintf does not guarantee
-   null termination of the result -- however this is only used in gzlib.c
-   where the result is assured to fit in the space provided */
+   null termination of the result -- however this is only used in gzlib.c where
+   the result is assured to fit in the space provided */
 #if defined(_MSC_VER) && _MSC_VER < 1900
 #  define snprintf _snprintf
 #endif
 
+#ifndef local
+#  define local static
+#endif
+/* since "static" is used to mean two completely different things in C, we
+   define "local" for the non-static meaning of "static", for readability
+   (compile with -Dlocal if your debugger can't find static symbols) */
+
+/* gz* functions always use library allocation functions */
+#ifndef STDC
+  extern voidp  malloc OF((uInt size));
+  extern void   free   OF((voidpf ptr));
+#endif
+
 /* get errno and strerror definition */
-#ifndef NO_STRERROR
-#  include <errno.h>
-#  define zstrerror() strerror(errno)
+#if defined UNDER_CE
+#  include <windows.h>
+#  define zstrerror() gz_strwinerror((DWORD)GetLastError())
 #else
-#  define zstrerror() "stdio error (consult errno)"
+#  ifndef NO_STRERROR
+#    include <errno.h>
+#    define zstrerror() strerror(errno)
+#  else
+#    define zstrerror() "stdio error (consult errno)"
+#  endif
+#endif
+
+/* provide prototypes for these when building zlib without LFS */
+#if !defined(_LARGEFILE64_SOURCE) || _LFS64_LARGEFILE-0 == 0
+    ZEXTERN gzFile ZEXPORT gzopen64 OF((const char *, const char *));
+    ZEXTERN z_off64_t ZEXPORT gzseek64 OF((gzFile, z_off64_t, int));
+    ZEXTERN z_off64_t ZEXPORT gztell64 OF((gzFile));
+    ZEXTERN z_off64_t ZEXPORT gzoffset64 OF((gzFile));
 #endif
 
 /* default memLevel */
@@ -82,9 +153,7 @@
 
 /* default i/o buffer size -- double this for output when reading (this and
    twice this must be able to fit in an unsigned type) */
-#ifndef GZBUFSIZE
-#  define GZBUFSIZE 131072
-#endif
+#define GZBUFSIZE 8192
 
 /* gzip modes, also provide a little integrity check on the passed structure */
 #define GZ_NONE 0
@@ -112,7 +181,6 @@ typedef struct {
     unsigned want;          /* requested buffer size, default is GZBUFSIZE */
     unsigned char *in;      /* input buffer (double-sized when writing) */
     unsigned char *out;     /* output buffer (double-sized when reading) */
-    unsigned char *buffers; /* Pointer to the real input/output buffer allocation */
     int direct;             /* 0 if processing gzip, 1 if transparent */
         /* just for reading */
     int how;                /* 0: get header, 1: copy, 2: decompress */
@@ -122,7 +190,6 @@ typedef struct {
         /* just for writing */
     int level;              /* compression level */
     int strategy;           /* compression strategy */
-    int reset;              /* true if a reset is pending after a Z_FINISH */
         /* seek request */
     z_off64_t skip;         /* amount to skip (already rewound if backwards) */
     int seek;               /* true if seek request pending */
@@ -130,22 +197,22 @@ typedef struct {
     int err;                /* error code */
     char *msg;              /* error message */
         /* zlib inflate or deflate stream */
-    PREFIX3(stream) strm;  /* stream structure in-place (not a pointer) */
+    z_stream strm;          /* stream structure in-place (not a pointer) */
 } gz_state;
-typedef gz_state *gz_statep;
+typedef gz_state FAR *gz_statep;
 
 /* shared functions */
-void Z_INTERNAL PREFIX(gz_error)(gz_state *, int, const char *);
-int  Z_INTERNAL gz_buffer_alloc(gz_state *state);
-void Z_INTERNAL gz_buffer_free(gz_state *state);
-void Z_INTERNAL gz_state_free(gz_state *state);
-
-#ifdef ZLIB_COMPAT
-unsigned Z_INTERNAL gz_intmax(void);
+void ZLIB_INTERNAL gz_error OF((gz_statep, int, const char *));
+#if defined UNDER_CE
+char ZLIB_INTERNAL *gz_strwinerror OF((DWORD error));
 #endif
+
 /* GT_OFF(x), where x is an unsigned value, is true if x > maximum z_off64_t
    value -- needed when comparing unsigned to z_off64_t, which is signed
    (possible z_off64_t types off_t, off64_t, and long are all signed) */
-#define GT_OFF(x) (sizeof(int) == sizeof(z_off64_t) && (x) > INT_MAX)
-
-#endif /* GZGUTS_H_ */
+#ifdef INT_MAX
+#  define GT_OFF(x) (sizeof(int) == sizeof(z_off64_t) && (x) > INT_MAX)
+#else
+unsigned ZLIB_INTERNAL gz_intmax OF((void));
+#  define GT_OFF(x) (sizeof(int) == sizeof(z_off64_t) && (x) > gz_intmax())
+#endif
