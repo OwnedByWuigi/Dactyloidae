@@ -3,13 +3,12 @@
 ##Uncomment PGO for release build
 
 # 16 jobs for 16 cores
-mk_add_options MOZ_MAKE_FLAGS="-j16"
+mk_add_options MOZ_MAKE_FLAGS="-j6"
 
 # x86 build
 ac_add_options --host=i686-pc-mingw32
 ac_add_options --target=i686-pc-mingw32
 WIN32_REDIST_DIR=$VCINSTALLDIR/Redist/MSVC/14.16.27012/x86
-WIN_UCRT_REDIST_DIR=$WINDOWSSDKDIR/Redist/10.0.19041.0/ucrt/DLLs/r86
 
 # Build only Hydra
 ac_add_options --enable-application=basilisk
@@ -27,10 +26,8 @@ ac_add_options --disable-debug-js-modules
 ac_add_options --disable-debug-symbols
 ac_add_options --disable-tests
 ac_add_options --enable-devtools
-#ac_add_options --enable-install-strip
-ac_add_options --enable-jemalloc
+ac_add_options --disable-jemalloc
 ac_add_options --enable-js-lto
-ac_add_options --enable-optimize="-O2 -Ob2ity -GS- -GFAT -Qpar -Qfast_transcendentals -openmp"
 ac_add_options --enable-phoenix-extensions
 ac_add_options --enable-release
 ac_add_options --enable-shared-js
@@ -39,13 +36,12 @@ MOZ_OPTIMIZE=1
 export MOZ_OPTIMIZE=1
 mk_add_options MOZ_OPTIMIZE=1
 export MOZILLA_OFFICIAL=1
-export STRIP_FLAGS="--strip-debug --strip-unneeded"
 
 # Media settings
-ac_add_options --enable-av1
+ac_add_options --disable-av1
 ac_add_options --enable-jxl
 ac_add_options --enable-raw
-ac_add_options --enable-webrtc
+ac_add_options --disable-webrtc
 
 # Client settings
 ac_add_options --disable-crashreporter
@@ -70,9 +66,9 @@ ac_add_options OPT_LEVEL="3"
 export MOZ_LTO=1
 ac_add_options MOZ_LTO=1
 
-# Compiler and Linker flags
-export CFLAGS="-O2"
-export CPPFLAGS="-O2"
-export CXXFLAGS="-O2"
+# Linker flags
+ac_add_options --enable-optimize="-O2 -Ob2ity- -GS- -Qpar -Qfast_transcendentals -openmp -Oi -Gy -Gw -GF -GT -fp:precise -Zc:inline -Zc:throwingNew -Zc:__cplusplus -arch:SSE2 -std:c++17 -D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS"
+mk_add_options "LDFLAGS=-OPT:REF,ICF,WIN64,LBR -OPT:ICF=3 -INCREMENTAL:NO -LTCG:NO -DYNAMICBASE -NXCOMPAT -MACHINE:X64 -SUBSYSTEM:WINDOWS,5.1 -Brepro -FUNCTIONPADMIN -ALIGN:4096 -RELEASE"
 export POLLY="-mllvm -polly -mllvm -polly-2nd-level-tiling -mllvm -polly-loopfusion-greedy -mllvm -polly-pattern-matching-based-opts -mllvm -polly-position=before-vectorizer -mllvm -polly-vectorizer=stripmine"
+export STRIP_FLAGS="--strip-all --remove-section=.comment --remove-section=.note --remove-section=.eh_frame"
 export VERBOSE=1
