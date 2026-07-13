@@ -28,11 +28,10 @@ ac_add_options --disable-tests
 ac_add_options --enable-devtools
 ac_add_options --disable-jemalloc
 ac_add_options --enable-js-lto
-ac_add_options --enable-optimize="-O2 -Ob2ity- -GS- -GFAT -Qpar -Qfast_transcendentals -openmp -std:c++17 -D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS"
 ac_add_options --enable-phoenix-extensions
 ac_add_options --enable-release
 ac_add_options --enable-shared-js
-ac_add_options --disable-strip
+ac_add_options --enable-strip
 MOZ_OPTIMIZE=1
 export MOZ_OPTIMIZE=1
 mk_add_options MOZ_OPTIMIZE=1
@@ -68,5 +67,8 @@ export MOZ_LTO=1
 ac_add_options MOZ_LTO=1
 
 # Linker flags
+ac_add_options --enable-optimize="-O2 -Ob2ity- -GS- -Qpar -Qfast_transcendentals -openmp -Oi -Gy -Gw -GF -GT -fp:precise -Zc:inline -Zc:throwingNew -Zc:__cplusplus -arch:SSE2 -std:c++17 -D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS"
+mk_add_options "LDFLAGS=-OPT:REF,ICF,WIN64,LBR -OPT:ICF=3 -INCREMENTAL:NO -LTCG:NO -DYNAMICBASE -NXCOMPAT -MACHINE:X64 -SUBSYSTEM:WINDOWS,5.1 -Brepro -FUNCTIONPADMIN -ALIGN:4096 -RELEASE"
 export POLLY="-mllvm -polly -mllvm -polly-2nd-level-tiling -mllvm -polly-loopfusion-greedy -mllvm -polly-pattern-matching-based-opts -mllvm -polly-position=before-vectorizer -mllvm -polly-vectorizer=stripmine"
+export STRIP_FLAGS="--strip-all --remove-section=.comment --remove-section=.note --remove-section=.eh_frame"
 export VERBOSE=1
