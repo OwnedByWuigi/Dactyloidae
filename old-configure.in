@@ -890,11 +890,17 @@ case "$target" in
         MKSHLIB='$(LD) -NOLOGO -DLL -OUT:$@ -PDB:$(LINK_PDBFILE) $(DSO_LDOPTS)'
         MKCSHLIB='$(LD) -NOLOGO -DLL -OUT:$@ -PDB:$(LINK_PDBFILE) $(DSO_LDOPTS)'
         dnl Set subsystem version 4 for NT4/9x, version 5 for XP x64
+        dnl Due to MSVC, set subsystem to 5 for XP x86
         if test "$CPU_ARCH" = "x86"; then
-            WIN32_SUBSYSTEM_VERSION=4.00
+            if test "$CC_TYPE" = "msvc"; then
+                WIN32_SUBSYSTEM_VERSION=5.01
+            else
+                WIN32_SUBSYSTEM_VERSION=4.00
+            fi
         else
             WIN32_SUBSYSTEM_VERSION=5.02
         fi
+
         WIN32_CONSOLE_EXE_LDFLAGS=-SUBSYSTEM:CONSOLE,$WIN32_SUBSYSTEM_VERSION
         WIN32_GUI_EXE_LDFLAGS=-SUBSYSTEM:WINDOWS,$WIN32_SUBSYSTEM_VERSION
         DSO_LDOPTS=-SUBSYSTEM:WINDOWS,$WIN32_SUBSYSTEM_VERSION
