@@ -3,11 +3,14 @@
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
 
-#include "zbuild.h"
-#include "zutil_p.h"
-#include "zutil.h"
+/* @(#) $Id$ */
 
-z_const char * const PREFIX(z_errmsg)[10] = {
+#include "zutil.h"
+#ifndef Z_SOLO
+#  include "gzguts.h"
+#endif
+
+z_const char * const z_errmsg[10] = {
     (z_const char *)"need dictionary",     /* Z_NEED_DICT       2  */
     (z_const char *)"stream end",          /* Z_STREAM_END      1  */
     (z_const char *)"",                    /* Z_OK              0  */
@@ -20,42 +23,36 @@ z_const char * const PREFIX(z_errmsg)[10] = {
     (z_const char *)""
 };
 
-const char PREFIX3(vstring)[] =
-    " zlib-ng 2.3.90 devel";
 
-#ifdef ZLIB_COMPAT
-const char * Z_EXPORT zlibVersion(void) {
+const char * ZEXPORT zlibVersion()
+{
     return ZLIB_VERSION;
 }
-#else
-const char * Z_EXPORT zlibng_version(void) {
-    return ZLIBNG_VERSION;
-}
-#endif
 
-unsigned long Z_EXPORT PREFIX(zlibCompileFlags)(void) {
-    unsigned long flags;
+uLong ZEXPORT zlibCompileFlags()
+{
+    uLong flags;
 
     flags = 0;
-    switch (sizeof(unsigned int)) {
+    switch ((int)(sizeof(uInt))) {
     case 2:     break;
     case 4:     flags += 1;     break;
     case 8:     flags += 2;     break;
     default:    flags += 3;
     }
-    switch (sizeof(unsigned long)) {
+    switch ((int)(sizeof(uLong))) {
     case 2:     break;
     case 4:     flags += 1 << 2;        break;
     case 8:     flags += 2 << 2;        break;
     default:    flags += 3 << 2;
     }
-    switch (sizeof(void *)) {
+    switch ((int)(sizeof(voidpf))) {
     case 2:     break;
     case 4:     flags += 1 << 4;        break;
     case 8:     flags += 2 << 4;        break;
     default:    flags += 3 << 4;
     }
-    switch (sizeof(z_off_t)) {
+    switch ((int)(sizeof(z_off_t))) {
     case 2:     break;
     case 4:     flags += 1 << 6;        break;
     case 8:     flags += 2 << 6;        break;
@@ -64,10 +61,18 @@ unsigned long Z_EXPORT PREFIX(zlibCompileFlags)(void) {
 #ifdef ZLIB_DEBUG
     flags += 1 << 8;
 #endif
+#if defined(ASMV) || defined(ASMINF)
+    flags += 1 << 9;
+#endif
 #ifdef ZLIB_WINAPI
     flags += 1 << 10;
 #endif
-    /* Bit 13 reserved for DYNAMIC_CRC_TABLE */
+#ifdef BUILDFIXED
+    flags += 1 << 12;
+#endif
+#ifdef DYNAMIC_CRC_TABLE
+    flags += 1 << 13;
+#endif
 #ifdef NO_GZCOMPRESS
     flags += 1L << 16;
 #endif
@@ -77,17 +82,46 @@ unsigned long Z_EXPORT PREFIX(zlibCompileFlags)(void) {
 #ifdef PKZIP_BUG_WORKAROUND
     flags += 1L << 20;
 #endif
+#ifdef FASTEST
+    flags += 1L << 21;
+#endif
+#if defined(STDC) || defined(Z_HAVE_STDARG_H)
+#  ifdef NO_vsnprintf
+    flags += 1L << 25;
+#    ifdef HAS_vsprintf_void
+    flags += 1L << 26;
+#    endif
+#  else
+#    ifdef HAS_vsnprintf_void
+    flags += 1L << 26;
+#    endif
+#  endif
+#else
+    flags += 1L << 24;
+#  ifdef NO_snprintf
+    flags += 1L << 25;
+#    ifdef HAS_sprintf_void
+    flags += 1L << 26;
+#    endif
+#  else
+#    ifdef HAS_snprintf_void
+    flags += 1L << 26;
+#    endif
+#  endif
+#endif
     return flags;
 }
 
 #ifdef ZLIB_DEBUG
-#  include <stdlib.h>
+#include <stdlib.h>
 #  ifndef verbose
 #    define verbose 0
 #  endif
-int Z_INTERNAL z_verbose = verbose;
+int ZLIB_INTERNAL z_verbose = verbose;
 
-void Z_INTERNAL z_error(const char *m) {
+void ZLIB_INTERNAL z_error (m)
+    char *m;
+{
     fprintf(stderr, "%s\n", m);
     exit(1);
 }
@@ -96,56 +130,196 @@ void Z_INTERNAL z_error(const char *m) {
 /* exported to allow conversion of error code to string for compress() and
  * uncompress()
  */
-const char * Z_EXPORT PREFIX(zError)(z_int32_t err) {
+const char * ZEXPORT zError(err)
+    int err;
+{
     return ERR_MSG(err);
 }
 
-// Zlib-ng's default alloc/free implementation, used unless
-// application supplies its own alloc/free functions.
-void Z_INTERNAL *PREFIX(zcalloc)(void *opaque, unsigned items, unsigned size) {
-    Z_UNUSED(opaque);
-    return zng_alloc((size_t)items * (size_t)size);
+#if defined(_WIN32_WCE)
+    /* The Microsoft C Run-Time Library for Windows CE doesn't have
+     * errno.  We define it as a global variable to simplify porting.
+     * Its value is always 0 and should not be used.
+     */
+    int errno = 0;
+#endif
+
+#ifndef HAVE_MEMCPY
+
+void ZLIB_INTERNAL zmemcpy(dest, source, len)
+    Bytef* dest;
+    const Bytef* source;
+    uInt  len;
+{
+    if (len == 0) return;
+    do {
+        *dest++ = *source++; /* ??? to be unrolled */
+    } while (--len != 0);
 }
 
-void Z_INTERNAL PREFIX(zcfree)(void *opaque, void *ptr) {
-    Z_UNUSED(opaque);
-    zng_free(ptr);
+int ZLIB_INTERNAL zmemcmp(s1, s2, len)
+    const Bytef* s1;
+    const Bytef* s2;
+    uInt  len;
+{
+    uInt j;
+
+    for (j = 0; j < len; j++) {
+        if (s1[j] != s2[j]) return 2*(s1[j] > s2[j])-1;
+    }
+    return 0;
 }
 
-/* Provide aligned allocations, only used by gz* code */
-void Z_INTERNAL *zng_alloc_aligned(unsigned size, unsigned align) {
-    uintptr_t return_ptr, original_ptr, align_diff;
-    uint32_t alloc_size;
-    void *ptr;
+void ZLIB_INTERNAL zmemzero(dest, len)
+    Bytef* dest;
+    uInt  len;
+{
+    if (len == 0) return;
+    do {
+        *dest++ = 0;  /* ??? to be unrolled */
+    } while (--len != 0);
+}
+#endif
 
-    /* Allocate enough memory for proper alignment and to store the original memory pointer */
-    alloc_size = sizeof(void *) + size + align;
-    ptr = zng_alloc(alloc_size);
-    if (!ptr)
-        return NULL;
+#ifndef Z_SOLO
 
-    /* Calculate return pointer address with space enough to store original pointer */
-    align_diff = ALIGN_DIFF(ptr, align);
-    return_ptr = (uintptr_t)ptr + align_diff;
-    if (align_diff < sizeof(void *))
-        return_ptr += align;
+#ifdef SYS16BIT
 
-    /* Store the original pointer for free() */
-    original_ptr = return_ptr - sizeof(void *);
-    memcpy((void *)original_ptr, &ptr, sizeof(void *));
+#ifdef __TURBOC__
+/* Turbo C in 16-bit mode */
 
-    /* Return properly aligned pointer in allocation */
-    return (void *)return_ptr;
+#  define MY_ZCALLOC
+
+/* Turbo C malloc() does not allow dynamic allocation of 64K bytes
+ * and farmalloc(64K) returns a pointer with an offset of 8, so we
+ * must fix the pointer. Warning: the pointer must be put back to its
+ * original form in order to free it, use zcfree().
+ */
+
+#define MAX_PTR 10
+/* 10*64K = 640K */
+
+local int next_ptr = 0;
+
+typedef struct ptr_table_s {
+    voidpf org_ptr;
+    voidpf new_ptr;
+} ptr_table;
+
+local ptr_table table[MAX_PTR];
+/* This table is used to remember the original form of pointers
+ * to large buffers (64K). Such pointers are normalized with a zero offset.
+ * Since MSDOS is not a preemptive multitasking OS, this table is not
+ * protected from concurrent access. This hack doesn't work anyway on
+ * a protected system like OS/2. Use Microsoft C instead.
+ */
+
+voidpf ZLIB_INTERNAL zcalloc (voidpf opaque, unsigned items, unsigned size)
+{
+    voidpf buf;
+    ulg bsize = (ulg)items*size;
+
+    (void)opaque;
+
+    /* If we allocate less than 65520 bytes, we assume that farmalloc
+     * will return a usable pointer which doesn't have to be normalized.
+     */
+    if (bsize < 65520L) {
+        buf = farmalloc(bsize);
+        if (*(ush*)&buf != 0) return buf;
+    } else {
+        buf = farmalloc(bsize + 16L);
+    }
+    if (buf == NULL || next_ptr >= MAX_PTR) return NULL;
+    table[next_ptr].org_ptr = buf;
+
+    /* Normalize the pointer to seg:0 */
+    *((ush*)&buf+1) += ((ush)((uch*)buf-0) + 15) >> 4;
+    *(ush*)&buf = 0;
+    table[next_ptr++].new_ptr = buf;
+    return buf;
 }
 
-void Z_INTERNAL zng_free_aligned(void *ptr) {
-    if (!ptr)
+void ZLIB_INTERNAL zcfree (voidpf opaque, voidpf ptr)
+{
+    int n;
+
+    (void)opaque;
+
+    if (*(ush*)&ptr != 0) { /* object < 64K */
+        farfree(ptr);
         return;
+    }
+    /* Find the original pointer */
+    for (n = 0; n < next_ptr; n++) {
+        if (ptr != table[n].new_ptr) continue;
 
-    /* Calculate offset to original memory allocation pointer */
-    void *original_ptr = (void *)((uintptr_t)ptr - sizeof(void *));
-    void *free_ptr = *(void **)original_ptr;
-
-    /* Free original memory allocation */
-    zng_free(free_ptr);
+        farfree(table[n].org_ptr);
+        while (++n < next_ptr) {
+            table[n-1] = table[n];
+        }
+        next_ptr--;
+        return;
+    }
+    Assert(0, "zcfree: ptr not found");
 }
+
+#endif /* __TURBOC__ */
+
+
+#ifdef M_I86
+/* Microsoft C in 16-bit mode */
+
+#  define MY_ZCALLOC
+
+#if (!defined(_MSC_VER) || (_MSC_VER <= 600))
+#  define _halloc  halloc
+#  define _hfree   hfree
+#endif
+
+voidpf ZLIB_INTERNAL zcalloc (voidpf opaque, uInt items, uInt size)
+{
+    (void)opaque;
+    return _halloc((long)items, size);
+}
+
+void ZLIB_INTERNAL zcfree (voidpf opaque, voidpf ptr)
+{
+    (void)opaque;
+    _hfree(ptr);
+}
+
+#endif /* M_I86 */
+
+#endif /* SYS16BIT */
+
+
+#ifndef MY_ZCALLOC /* Any system without a special alloc function */
+
+#ifndef STDC
+extern voidp  malloc OF((uInt size));
+extern voidp  calloc OF((uInt items, uInt size));
+extern void   free   OF((voidpf ptr));
+#endif
+
+voidpf ZLIB_INTERNAL zcalloc (opaque, items, size)
+    voidpf opaque;
+    unsigned items;
+    unsigned size;
+{
+    (void)opaque;
+    return sizeof(uInt) > 2 ? (voidpf)malloc(items * size) :
+                              (voidpf)calloc(items, size);
+}
+
+void ZLIB_INTERNAL zcfree (opaque, ptr)
+    voidpf opaque;
+    voidpf ptr;
+{
+    (void)opaque;
+    free(ptr);
+}
+
+#endif /* MY_ZCALLOC */
+
+#endif /* !Z_SOLO */
