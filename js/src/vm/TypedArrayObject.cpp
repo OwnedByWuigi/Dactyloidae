@@ -1643,6 +1643,9 @@ TypedArrayObject::protoFunctions[] = {
     
     /* ES2022 additions */
     JS_SELF_HOSTED_FN("at", "TypedArrayAt", 1, 0),
+
+    /* ES2023 (WIP) */
+    JS_SELF_HOSTED_FN("toSorted", "TypedArrayToSorted", 1, 0),
     
     JS_FS_END
 };
