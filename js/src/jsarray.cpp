@@ -1221,7 +1221,12 @@ js::array_join(JSContext* cx, unsigned argc, Value* vp)
         sepstr = cx->names().comma;
     }
 
-    // Step 6 is implicit in the loops below.
+    // Step 6: empty arrays always join to the empty string.
+    // (Separator ToString above still runs for side effects / OOM.)
+    if (length == 0) {
+        args.rval().setString(cx->names().empty);
+        return true;
+    }
 
     // An optimized version of a special case of steps 7-11: when length==1 and
     // the 0th element is a string, ToString() of that element is a no-op and
@@ -1381,8 +1386,8 @@ template <JSValueType Type>
 DenseElementResult
 ArrayReverseDenseKernel(JSContext* cx, HandleObject obj, uint32_t length)
 {
-    /* An empty array or an array with no elements is already reversed. */
-    if (length == 0 || GetBoxedOrUnboxedInitializedLength<Type>(obj) == 0)
+    /* Empty, singleton, or uninitialized arrays are already reversed. */
+    if (length <= 1 || GetBoxedOrUnboxedInitializedLength<Type>(obj) == 0)
         return DenseElementResult::Success;
 
     if (Type == JSVAL_TYPE_MAGIC) {
@@ -1450,6 +1455,12 @@ js::array_reverse(JSContext* cx, unsigned argc, Value* vp)
     uint32_t len;
     if (!GetLengthProperty(cx, obj, &len))
         return false;
+
+    // length 0/1: reverse is a no-op; return this immediately.
+    if (len <= 1) {
+        args.rval().setObject(*obj);
+        return true;
+    }
 
     if (!ObjectMayHaveExtraIndexedProperties(obj)) {
         ArrayReverseDenseKernelFunctor functor(cx, obj, len);

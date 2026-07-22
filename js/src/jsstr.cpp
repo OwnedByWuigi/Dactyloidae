@@ -2329,6 +2329,12 @@ js::str_startsWith(JSContext* cx, unsigned argc, Value* vp)
     // Step 13
     uint32_t searchLen = searchStr->length();
 
+    // Empty search string always matches (and is extremely common).
+    if (searchLen == 0) {
+        args.rval().setBoolean(true);
+        return true;
+    }
+
     // Step 14
     if (searchLen + start < searchLen || searchLen + start > textLen) {
         args.rval().setBoolean(false);
@@ -2394,6 +2400,12 @@ js::str_endsWith(JSContext* cx, unsigned argc, Value* vp)
 
     // Step 13
     uint32_t searchLen = searchStr->length();
+
+    // Empty search string always matches.
+    if (searchLen == 0) {
+        args.rval().setBoolean(true);
+        return true;
+    }
 
     // Step 15 (reordered)
     if (searchLen > end) {

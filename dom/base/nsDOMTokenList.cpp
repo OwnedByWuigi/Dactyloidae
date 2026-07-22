@@ -127,7 +127,29 @@ void
 nsDOMTokenList::AddInternal(const nsAttrValue* aAttr,
                             const nsTArray<nsString>& aTokens)
 {
-  if (!mElement) {
+  if (!mElement || aTokens.IsEmpty()) {
+    return;
+  }
+
+  // Hot path: single-token classList.add() when the class is already present.
+  // Skip attribute rebuild and SetAttr entirely (avoids mutation observers /
+  // style invalidation). Frameworks hit this constantly.
+  if (aTokens.Length() == 1) {
+    const nsString& token = aTokens[0];
+    if (aAttr && aAttr->Contains(token)) {
+      return;
+    }
+
+    nsAutoString resultStr;
+    if (aAttr) {
+      aAttr->ToString(resultStr);
+      if (!resultStr.IsEmpty() &&
+          !nsContentUtils::IsHTMLWhitespace(resultStr.Last())) {
+        resultStr.Append(' ');
+      }
+    }
+    resultStr.Append(token);
+    mElement->SetAttr(kNameSpaceID_None, mAttrAtom, resultStr, true);
     return;
   }
 
@@ -161,6 +183,11 @@ nsDOMTokenList::AddInternal(const nsAttrValue* aAttr,
     addedClasses.AppendElement(aToken);
   }
 
+  // No new tokens: leave the attribute untouched (do not create class="").
+  if (!oneWasAdded) {
+    return;
+  }
+
   mElement->SetAttr(kNameSpaceID_None, mAttrAtom, resultStr, true);
 }
 
@@ -190,20 +217,37 @@ nsDOMTokenList::RemoveInternal(const nsAttrValue* aAttr,
 {
   MOZ_ASSERT(aAttr, "Need an attribute");
 
+  if (aTokens.IsEmpty()) {
+    return;
+  }
+
+  // Hot path: single-token classList.remove() when the class is absent.
+  if (aTokens.Length() == 1 && !aAttr->Contains(aTokens[0])) {
+    return;
+  }
+
   nsAutoString input;
   aAttr->ToString(input);
 
   WhitespaceTokenizer tokenizer(input);
   nsAutoString output;
+  bool removed = false;
 
   while (tokenizer.hasMoreTokens()) {
     auto& currentToken = tokenizer.nextToken();
-    if (!aTokens.Contains(currentToken)) {
-      if (!output.IsEmpty()) {
-        output.Append(char16_t(' '));
-      }
-      output.Append(currentToken);
+    if (aTokens.Contains(currentToken)) {
+      removed = true;
+      continue;
     }
+    if (!output.IsEmpty()) {
+      output.Append(char16_t(' '));
+    }
+    output.Append(currentToken);
+  }
+
+  // Token set unchanged: skip SetAttr to avoid style/mutation work.
+  if (!removed) {
+    return;
   }
 
   mElement->SetAttr(kNameSpaceID_None, mAttrAtom, output, true);
@@ -302,6 +346,16 @@ nsDOMTokenList::ReplaceInternal(const nsAttrValue* aAttr,
                                 const nsAString& aToken,
                                 const nsAString& aNewToken)
 {
+  // Replacing a token with itself cannot change the token set.
+  if (aToken.Equals(aNewToken)) {
+    return;
+  }
+
+  // Old token absent: no update (and avoid rewriting whitespace).
+  if (!aAttr->Contains(aToken)) {
+    return;
+  }
+
   nsAutoString attribute;
   aAttr->ToString(attribute);
 
