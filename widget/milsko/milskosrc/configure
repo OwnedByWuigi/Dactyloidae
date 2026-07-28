@@ -1,0 +1,363 @@
+#!/usr/bin/env perl
+our $target = `uname -s`;
+$target =~ s/\r?\n$//;
+
+# MSYS with MinGW gives us some other shit idk
+if (index($target, "MINGW") != -1) {
+   $target = "Windows";
+}
+
+foreach my $l (@ARGV) {
+    if ($l =~ /^--.+$/) {
+    }
+    elsif ($l =~ /^(.+)=(.+)$/) {
+        $ENV{$1} = $2;
+    }
+}
+
+our $prefix   = "/usr/local";
+our $cc       = defined($ENV{CC}) ? $ENV{CC} : "*host*gcc";
+our $cxx       = defined($ENV{CXX}) ? $ENV{CXX} : "*host*g++";
+our $ar       = defined($ENV{AR}) ? $ENV{AR} : "*host*ar";
+our $incdir   = "-I include";
+our $incdir2 = "";
+our $cflags   = "-fPIC -D_MILSKO -D_MILSKO_BUILD -fvisibility=hidden";
+our $libdir   = "";
+our $ldflags  = "";
+our $math     = "-lm";
+our @shared   = "-shared";
+our @backends = ();
+
+our $library_prefix    = "lib";
+our $library_suffix    = ".so";
+our $object_suffix     = ".o";
+our $executable_suffix = "";
+
+our @library_targets  = ();
+our @examples_targets = ();
+our %examples_libs    = ();
+
+our $cross = 0;
+our $host  = "";
+
+require("./pl/utils.pl");
+
+param_set("classic-theme",        0);
+param_set("stb-image",            1);
+param_set("opengl",               0);
+param_set("vulkan",               0);
+param_set("vulkan-string-helper", 1);
+param_set("shared",               1);
+param_set("static",               1);
+param_set("examples",             1);
+
+# (option that only makes sense on x11)
+param_set("allow-sloppy-focus", 0);
+
+my %features = (
+    "classic-theme"        => "use classic theme",
+    "stb-image"            => "use stb_image, instead use libjpeg/libpng",
+    "stb-truetype"         => "use stb_truetype",
+    "freetype2"            => "use FreeType2",
+    "gdi-text"             => "(Windows only) use GDI Text",
+    "xrender"              => "(X11 only) use XRender",
+    "opengl"               => "build OpenGL widget",
+    "vulkan"               => "build Vulkan widget",
+    "vulkan-string-helper" => "use Vulkan string helper",
+    "shared"               => "build shared library",
+    "static"               => "build static library",
+    "wayland"              => "enable wayland backend",
+    "gnustep"              => "use gnustep",
+    "dbus" => "use DBus on supported platform",
+    "allow-sloppy-focus" => "prevent the x11 backend from using XSetInputFocus to enforce click-to-focus"
+);
+my @features_keys = (
+    "1classic-theme", "1stb-image",
+    "1stb-truetype",  "1freetype2", "1gdi-text",
+    "1opengl",        "2xrender",
+    "1vulkan",        "2vulkan-string-helper",
+    "1shared",        "1static",
+    "1wayland", "1gnustep",
+    "1dbus"
+);
+
+sub def_platform {
+	if($target eq "Windows") {
+	    param_set("freetype2",        0);
+	    param_set("stb-truetype",     0);
+	} elsif($target ne "Darwin" and $target ne "ClassicMacOS" and $target ne "Haiku") {
+	    param_set("freetype2",        1);
+	    param_set("stb-truetype",     0);
+	} else {
+	    param_set("freetype2",        0);
+	    param_set("stb-truetype",     1);
+	}
+	if($target eq "Linux" || $target eq "FreeBSD") {
+        param_set("x11", 1);
+        param_set("xrender", 1);
+        if(!param_get("tiny")){
+            param_set("wayland", 1);
+        }
+        param_set("dbus", 1);
+    }
+    if($target eq "NetBSD" || $target eq "OpenBSD") {
+        param_set("x11", 1);
+    }
+    if($target eq "Windows") {
+        param_set("gdi-text", 1);
+    } else {
+        param_set("gdi-text", 0);
+    }
+}
+
+foreach my $l (@ARGV) {
+    if ($l =~ /^--target=(.+)$/) {
+        $target = $1;
+    }
+}
+
+def_platform();
+
+
+foreach my $l (@ARGV) {
+    if ($l =~ /^--with-([^=]+)=(.+)$/) {
+        param_set($1, $2);
+    }
+    elsif ($l =~ /^--(?:with|enable)-(.+)$/) {
+        param_set($1, 1);
+    }
+    elsif ($l =~ /^--(?:without|disable)-(.+)$/) {
+        param_set($1, 0);
+    }
+    elsif ($l =~ /^--host=(.+)$/) {
+        $host = $1 . "-";
+    }
+    elsif ($l =~ /^--cflags=(.+)$/) {
+        add_cflags($1);
+    }
+    elsif ($l eq "--cross") {
+        $cross = 1;
+    }
+    elsif ($l eq "--tiny") {
+        param_set("tiny",1);
+    }
+    elsif (($l eq "-h") or ($l eq "--help")) {
+        print("Milsko Toolkit Configuration Utility\n");
+        print("\n");
+        print("Usage: $0 [options]\n");
+        print("\n");
+        print("Options:\n");
+        print("  -h --help                       Display this help\n");
+        print("  --prefix=PREFIX                 Installation prefix\n");
+        print("  --host=TARGET                   Host for compiler/archiver\n");
+        print("  --target=TARGET                 Specify target\n");
+        print("  --cflags=CFLAGS                 Add cflags\n");
+        print("  --tiny                          Build smallest possible library\n");
+        print("  --cross                         Indicate cross compilation\n");
+        print("\n");
+        print("Features:\n");
+        print("  --enable-FEATURE                Use FEATURE\n");
+        print("  --with-FEATURE                  Use FEATURE\n");
+        print("  --disable-FEATURE               Do not use FEATURE\n");
+        print("  --without-FEATURE               Do not use FEATURE\n");
+
+        foreach my $l (@features_keys) {
+            my $flag = (
+                  (substr($l, 0, 1) eq '1')
+                ? (param_get(substr($l, 1)) ? "--disable-" : "--enable-")
+                : (param_get(substr($l, 1)) ? "--without-" : "--with-")
+            ) . substr($l, 1);
+            my $do   = param_get(substr($l, 1)) ? "Do not " : "";
+            my $feat = $features{ substr($l, 1) };
+            if (not(param_get(substr($l, 1)))) {
+                $feat = uc(substr($feat, 0, 1)) . substr($feat, 1);
+            }
+            print("  $flag" . (" " x (32 - length($flag))) . "${do}${feat}\n");
+        }
+        exit(0);
+    }
+}
+
+if (-f "./pl/ostype/${target}.pl") {
+    require("./pl/ostype/${target}.pl");
+}
+else {
+    print(
+"Perl file (pl/ostype/${target}.pl) was not found for your target. Please add one.\n"
+    );
+    exit(1);
+}
+
+require("./pl/rules.pl");
+
+print("Target : " . $target . "\n");
+
+my @l = ();
+foreach my $e (param_list()) {
+    if (not(param_get($e))) {
+        next;
+    }
+    if (($e eq "vulkan-string-helper") and param_get("vulkan")) {
+        push(@l, $e);
+    }
+    elsif (($e eq "xrender") and ($backend eq "x11")) {
+        push(@l, $e);
+    }
+    elsif (not($e eq "vulkan-string-helper") and not($e eq "xrender")) {
+        push(@l, $e);
+    }
+}
+print("Enabled: " . join(" ", @l) . "\n");
+
+$cc =~ s/\*host\*/$host/;
+$cxx =~ s/\*host\*/$host/;
+$ar =~ s/\*host\*/$host/;
+
+open(OUT, ">", "Makefile");
+print(OUT "PREFIX = ${prefix}\n");
+print(OUT "AR = ${ar}\n");
+print(OUT "CC = ${cc}\n");
+print(OUT "CXX = ${cxx}\n");
+print(OUT "INCDIR = ${incdir} ${incdir2}\n");
+print(OUT "CFLAGS = ${cflags}\n");
+print(OUT "LIBDIR = ${libdir}\n");
+print(OUT "LDFLAGS = ${ldflags}\n");
+print(OUT "LIBS = ${math} ${libs}\n");
+print(OUT "MATH = ${math}\n");
+print(OUT "SHARED = @{shared}\n");
+print(OUT "\n");
+print(OUT ".PHONY: all format clean distclean lib examples install\n");
+print(OUT "\n");
+print(OUT "all: lib examples\n");
+print(OUT "\n");
+print(OUT "install: lib\n");
+print(OUT
+      "	mkdir -p \$(DESTDIR)\$(PREFIX)/lib \$(DESTDIR)\$(PREFIX)/include\n");
+print(OUT
+"	-cp src/${library_prefix}Mw${library_suffix} \$(DESTDIR)\$(PREFIX)/lib/\n"
+);
+print(OUT "	-cp src/libMw.a \$(DESTDIR)\$(PREFIX)/lib/\n");
+print(OUT "	cp -rf include \$(DESTDIR)\$(PREFIX)/\n");
+print(OUT "\n");
+print(OUT "format:\n");
+print(OUT
+"	clang-format --verbose -i `find tools src include examples \"(\" -name \"*.c\" -or -name \"*.cc\" -or -name \"*.h\" -or -name \"*.m\" \")\" -and -not -name \"*ttf.c\"`\n"
+);
+print(OUT
+"	perltidy -b -bext=\"/\" --paren-tightness=2 `find tools pl configure -name \"*.pl\"`\n"
+);
+print(OUT "\n");
+print(OUT "lib:");
+
+if (param_get("shared")) {
+    print(OUT " src/${library_prefix}Mw${library_suffix}");
+}
+if (param_get("static")) {
+    print(OUT " src/libMw.a");
+}
+print(OUT "\n");
+print(OUT "\n");
+if (param_get("shared")) {
+    my $linker = "CC";
+if (grep(/^haiku$/, @backends)) {
+	$linker = "CXX";
+}
+    print(  OUT "src/${library_prefix}Mw${library_suffix}: "
+          . join(" ", @library_targets)
+          . "\n");
+    print(OUT
+"	\$($linker) \$(SHARED) \$(LDFLAGS\) \$(LIBDIR) -o src/${library_prefix}Mw${library_suffix} "
+          . join(" ", @library_targets)
+          . " \$(LIBS)\n");
+    print(OUT "\n");
+}
+if (param_get("static")) {
+    print(OUT "src/libMw.a: " . join(" ", @library_targets) . "\n");
+    print(OUT "	\$(AR) rcs src/libMw.a " . join(" ", @library_targets) . "\n");
+}
+
+foreach my $l (@library_targets) {
+    my $warn = "-Wall -Wextra -Wno-sign-compare -Wno-unused-value";
+    my $s    = $l;
+    my $compiler = "CC";
+    my $o    = $object_suffix;
+    $o =~ s/\./\\\./g;
+
+    if ($l =~ /cocoa/) {
+        $s =~ s/$o$/.m/;
+    }
+    elsif ($l =~ /haiku/) {
+	$s =~ s/$o$/.cc/;
+	$compiler = "CXX";
+    }
+    else {
+        $s =~ s/$o$/.c/;
+    }
+
+    if ($l =~ /^external\//) {
+        $warn = "";
+    }
+
+    print(OUT "${l}: ${s}\n");
+    print(OUT "	\$($compiler) $warn \$\(INCDIR) \$(CFLAGS\) -c -o ${l} ${s}\n");
+}
+print(OUT "\n");
+print(OUT "\n");
+if (param_get("examples")) {
+    print(OUT "examples: " . join(" ", @examples_targets) . "\n");
+    print(OUT "\n");
+    foreach my $l (@examples_targets) {
+        my $libs = "";
+        my $s    = $l;
+        my $o    = $executable_suffix;
+        $o =~ s/\./\\\./g;
+        $s =~ s/$o$//;
+
+        if (defined($examples_libs{$l})) {
+            $libs = $examples_libs{$l};
+        }
+
+        if (param_get("shared")) {
+            print(OUT
+    "${l}: ${s}${object_suffix} src/${library_prefix}Mw${library_suffix}\n"
+            );
+        } else {
+            print(OUT
+    "${l}: ${s}${object_suffix} src/${library_prefix}Mw.a\n"
+            );
+        }
+        if (grep(/^cocoa$/, @backends)) {
+            print(OUT
+"	\$(CC) -L./src \$\(LIBDIR) -o ${l} ${s}${object_suffix} -lMw ${math} ${libs}\n"
+            );
+        }
+        else {
+            print(OUT
+"	\$(CC) -L src -Wl,-R./src \$\(LIBDIR) -o ${l} ${s}${object_suffix} -lMw ${math} ${libs}\n"
+            );
+        }
+
+        if($target eq "ClassicMacOS") {
+            print(OUT
+"	".$ENV{RETRO68_TOOLCHAIN_PATH}."/bin/MakePEF ${l} -o ${s}.pef\n");
+            print(OUT
+"	Rez -I ".$ENV{RETRO68_TOOLCHAIN_PATH}."/RIncludes ".$ENV{RETRO68_TOOLCHAIN_PATH}."/RIncludes/Retro68APPL.r -DCFRAG_NAME=\"example\" --data ${l}.pef --cc ${l}.dsk -t APPL\n"
+            );
+        }
+
+        print(OUT "${s}${object_suffix}: ${s}.c\n");
+        print(OUT
+"	\$(CC) -c \$\(INCDIR) -o ${s}${object_suffix} ${s}.c -lMw ${math}\n"
+        );
+    }
+}
+print(OUT "\n");
+print(OUT "clean:\n");
+print(OUT
+"	rm -f */*.o */*/*.o */*/*/*.o */*.exe */*/*.exe */*/*/*.exe src/*.so src/*.dll src/*.dylib src/*.a "
+      . join(" ", @examples_targets)
+      . "\n");
+print(OUT "\n");
+print(OUT "distclean: clean\n");
+print(OUT "	rm -f Makefile\n");
+close(OUT);

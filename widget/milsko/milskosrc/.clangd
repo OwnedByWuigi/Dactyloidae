@@ -1,0 +1,3 @@
+Completion:
+  HeaderInsertion: Never
+ClangFormat: Tab

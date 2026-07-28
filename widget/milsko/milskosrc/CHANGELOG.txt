@@ -1,0 +1,17 @@
+========================= 1.4 =========================
+- CMakeLists.txt downgraded to version 3.13 to allow compiling on Windows XP
+- CMake build now generates a pkgconfig file.
+- GDI backend now natively uses GDI for text rendering
+- Widgets can now be disabled with MwNdisabled
+- Added `MwTabFocus` for letting a tab widget steal focus.
+- New table widget (`MwTableClass`).
+- Added `MwWindowShouldClose` for letting custom loops know when a window should close.
+- Remove VMS build files
+- Entry widgets now have blinking cursor that appears only when you hover over the widget.
+- Wayland backend:
+    - Can now create layer surfaces (Use `MwLLMakeToolWindow` on a parentless window)
+    - Now properly handles keys being held down
+    - has drastically improved CSD (functionality wise)
+    - Uses KMSDRM directly for the OpenGL widget instead of wl_egl for a smoother experience
+    - Various overall performance improvements putting it on the same level as the X11 backend finally
+    - Menu widget works better under compositors that use CSD.

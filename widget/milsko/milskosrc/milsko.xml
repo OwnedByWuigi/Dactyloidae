@@ -1,0 +1,1002 @@
+<?xml version="1.0" ?>
+<!--
+	Basically, you have to implement 10+n types:
+	 - Integer (int)
+	 - Unsigned integer (unsigned int)
+	 - Short integer (short)
+	 - Unsigned short integer (unsigned short)
+	 - String (char*)
+	 - Pointer (void*)
+	 - Struct and pointer to it
+	 - Widget (MwWidget, which is void*)
+	 - Class (MwClass, which is void*)
+	 - Handler (void(*)(MwWidget handle, void* user_data, void* client_data))
+	 - Error handler (void(*)(int code, const char* message, void* user_data))
+
+	For widget functions, you must pass widget and arguments to MwVaWidgetExecute.
+-->
+<milsko>
+	<structs>
+		<struct name="MwPoint">
+			<integer name="x" />
+			<integer name="y" />
+		</struct>
+		<struct name="MwRect">
+			<integer name="x" />
+			<integer name="y" />
+			<integer name="width" />
+			<integer name="height" />
+		</struct>
+		<struct name="MwSizeHints">
+			<integer name="min_width" />
+			<integer name="min_height" />
+			<integer name="max_width" />
+			<integer name="max_height" />
+		</struct>
+		<struct name="MwRGB">
+			<short name="red" unsigned="yes" />
+			<short name="green" unsigned="yes" />
+			<short name="blue" unsigned="yes" />
+		</struct>
+		<struct name="MwMouse">
+			<struct defname="MwPoint" name="point" />
+			<integer name="button" />
+		</struct>
+		<struct name="MwVulkanConfig">
+			<integer name="api_version" unsigned="yes" />
+			<integer name="vk_version" unsigned="yes" />
+			<integer name="validation_layers" />
+		</struct>
+	</structs>
+	<!--
+		All widgets have properties that are common="yes".
+
+		Integer properties must be prefixed with I.
+		String properties must be prefixed with S.
+		Handler properties must be prefixed with C.
+		Other properties must be prefixed with V.
+
+		"Early" properties must have letter "E" as 2nd letter.
+		e.g. vulkanExtension would be SEvulkanExtension
+	-->
+	<properties>
+		<integer name="x" common="yes" />
+		<integer name="y" common="yes" />
+		<integer name="width" common="yes" />
+		<integer name="height" common="yes" />
+		<integer name="orientation" />
+		<integer name="minValue" />
+		<integer name="maxValue" />
+		<integer name="value" />
+		<integer name="changedBy" />
+		<integer name="areaShown" />
+		<integer name="checked" boolean="yes" />
+		<integer name="alignment" />
+		<integer name="bold" boolean="yes" />
+		<integer name="main" boolean="yes" />
+		<integer name="leftPadding" />
+		<integer name="hasHeading" boolean="yes" />
+		<integer name="hasBorder" boolean="yes" />
+		<integer name="inverted" boolean="yes" />
+		<integer name="modernLook" common="yes" boolean="yes" />
+		<integer name="hideInput" boolean="yes" />
+		<integer name="singleClickSelectable" boolean="yes" />
+		<integer name="flat" boolean="yes" />
+		<integer name="showArrows" boolean="yes" />
+		<integer name="padding" />
+		<integer name="borderWidth" common="yes" />
+		<integer name="ratio" common="yes" />
+		<integer name="fixedSize" common="yes" />
+		<integer name="margin" />
+		<integer name="bitmapFont" common="yes" boolean="yes" />
+		<integer name="sevenSegment" boolean="yes" />
+		<integer name="length" />
+		<integer name="forceInverted" common="yes" boolean="yes" />
+		<integer name="isRounded" common="yes" boolean="yes" />
+		<integer name="darkTheme" common="yes" boolean="yes" />
+		<integer name="useMonospace" common="yes" boolean="yes" />
+		<integer name="fillArea" />
+		<integer name="darkThemeAutomatic" common="yes" boolean="yes" />
+		<integer name="year" />
+		<integer name="month" />
+		<integer name="date" />
+		<integer name="day" />
+		<integer name="waitLayout" />
+		<integer name="scale" />
+		<integer name="columns" />
+		<integer name="columnSpan" column="yes" />
+		<integer name="rowSpan" column="yes" />
+
+		<!-- waitMS is a special property, only applies to toplevel widget -->
+		<integer name="waitMS" common="yes" />
+
+		<string name="title" />
+		<string name="text" />
+		<string name="background" common="yes" />
+		<string name="subBackground" common="yes" />
+		<string name="titleBackground" common="yes" />
+		<string name="foreground" common="yes" />
+		<string name="subForeground" common="yes" />
+		<string name="titleForeground" common="yes" />
+
+		<!-- Early string properties -->
+		<string name="vulkanExtension" early="yes" />
+		<string name="vulkanLayer" early="yes" />
+
+		<pixmap name="pixmap" />
+		<pixmap name="iconPixmap" />
+		<struct defname="MwSizeHints" pointer="yes" name="sizeHints" />
+		<pointer name="font" />
+		<pointer name="boldFont" />
+		<pixmap name="backgroundPixmap" common="yes" />
+		<pointer name="monospaceFont" />
+		<pointer name="boldMonospaceFont" />
+
+		<!-- Early void properties -->
+		<struct
+            defname="MwVulkanConfig"
+            early="yes"
+            pointer="yes"
+            name="vulkanConfig"
+        />
+	</properties>
+	<handlers>
+		<handler name="activate" />
+		<handler name="listBoxActivate">
+			<integer pointer="yes" />
+		</handler>
+		<handler name="treeViewActivate">
+			<pointer />
+		</handler>
+		<handler name="resize" common="yes" />
+		<handler name="tick" common="yes" />
+		<handler name="menu">
+			<pointer />
+		</handler>
+		<handler name="mouseDown" common="yes">
+			<struct defname="MwMouse" pointer="yes" />
+		</handler>
+		<handler name="mouseUp" common="yes">
+			<struct defname="MwMouse" pointer="yes" />
+		</handler>
+		<handler name="mouseMove" common="yes">
+			<struct defname="MwPoint" pointer="yes" />
+		</handler>
+		<handler name="changed" />
+		<handler name="comboBoxChanged">
+			<integer pointer="yes" />
+		</handler>
+		<handler name="key" common="yes">
+			<integer pointer="yes" />
+		</handler>
+		<handler name="keyRelease" common="yes">
+			<integer pointer="yes" />
+		</handler>
+		<handler name="close" />
+		<handler name="focusIn" common="yes" />
+		<handler name="focusOut" common="yes" />
+		<handler name="fileChosen">
+			<string />
+		</handler>
+		<handler name="directoryChosen">
+			<string />
+		</handler>
+		<handler name="colorChosen">
+			<struct defname="MwRGB" pointer="yes" />
+		</handler>
+		<handler name="draw" />
+		<handler name="clipboard" common="yes">
+			<string />
+		</handler>
+		<handler name="darkTheme" common="yes">
+			<integer pointer="yes" />
+		</handler>
+	</handlers>
+	<enumerations>
+		<enumeration name="MwDIRECTION">
+			<integer name="MwNORTH">0</integer>
+			<integer name="MwSOUTH" />
+			<integer name="MwEAST" />
+			<integer name="MwWEST" />
+		</enumeration>
+		<enumeration name="MwORIENTATION">
+			<integer name="MwVERTICAL">0</integer>
+			<integer name="MwHORIZONTAL" />
+		</enumeration>
+		<enumeration name="MwALIGNMENT">
+			<integer name="MwALIGNMENT_CENTER">0</integer>
+			<integer name="MwALIGNMENT_BEGINNING" />
+			<integer name="MwALIGNMENT_END" />
+		</enumeration>
+		<enumeration name="MwMB_ICON">
+			<integer name="MwMB_ICONWARNING">0x1</integer>
+			<integer name="MwMB_ICONINFO" />
+			<integer name="MwMB_ICONNOTE" />
+			<integer name="MwMB_ICONQUESTION" />
+			<integer name="MwMB_ICONNEWS" />
+			<integer name="MwMB_ICONERROR" />
+			<integer name="MwMB_ICONCLOCK" />
+		</enumeration>
+		<enumeration name="MwCOORDINATE">
+			<integer name="MwCOORDINATE_GLOBAL">0</integer>
+			<integer name="MwCOORDINATE_LOCAL" />
+		</enumeration>
+		<enumeration name="MwCLIPBOARD">
+			<integer name="MwCLIPBOARD_MAIN">0</integer>
+			<integer name="MwCLIPBOARD_PRIMARY" />
+		</enumeration>
+		<enumeration name="MwMOUSE">
+			<integer name="MwMOUSE_LEFT">1</integer>
+			<integer name="MwMOUSE_MIDDLE" />
+			<integer name="MwMOUSE_RIGHT" />
+			<integer name="MwMOUSE_WHEELUP" />
+			<integer name="MwMOUSE_WHEELDOWN" />
+		</enumeration>
+		<enumeration name="MwKEY">
+			<integer name="MwKEY_BACKSPACE">0x80000001</integer>
+			<integer name="MwKEY_LEFT" />
+			<integer name="MwKEY_RIGHT" />
+			<integer name="MwKEY_UP" />
+			<integer name="MwKEY_DOWN" />
+			<integer name="MwKEY_ENTER" />
+			<integer name="MwKEY_ESCAPE" />
+			<integer name="MwKEY_LEFTSHIFT" />
+			<integer name="MwKEY_RIGHTSHIFT" />
+			<integer name="MwKEY_ALT" />
+			<integer name="MwKEY_CONTROL" />
+		</enumeration>
+		<enumeration name="MwVULKANFIELD">
+        		<integer name="MwVULKANFIELD_GETINSTANCEPROCADDR">0</integer>
+		        <integer name="MwVULKANFIELD_INSTANCE" />
+        		<integer name="MwVULKANFIELD_SURFACE" />
+		        <integer name="MwVULKANFIELD_PHYSICALDEVICE" />
+		        <integer name="MwVULKANFIELD_LOGICALDEVICE" />
+		        <integer name="MwVULKANFIELD_GRAPHICSQUEUEINDEX" />
+		        <integer name="MwVULKANFIELD_PRESENTQUEUEINDEX" />
+		        <integer name="MwVULKANFIELD_GRAPHICSQUEUE" />
+		        <integer name="MwVULKANFIELD_PRESENTQUEUE" />
+		</enumeration>
+	</enumerations>
+	<!-- You can assume all constants are unsigned -->
+	<constants>
+		<integer name="MwDEFAULT">0x0fffffff</integer>
+
+		<integer name="MwMB_ICONMASK">0xf</integer>
+		<integer name="MwMB_BUTTONMASK">0xf0</integer>
+		<integer name="MwMB_BUTTONOK">0x10</integer>
+		<integer name="MwMB_BUTTONCANCEL">0x20</integer>
+		<integer name="MwMB_BUTTONYES">0x40</integer>
+		<integer name="MwMB_BUTTONNO">0x80</integer>
+
+		<integer name="MwKEY_FLAG">0x80000000</integer>
+		<integer name="MwKEY_CONTROL_FLAG">0xc0000000</integer>
+		<integer name="MwKEY_ALT_FLAG">0xa0000000</integer>
+	</constants>
+	<headers>
+		<header name="Dialog/ColorPicker">
+			<functions>
+				<function name="MwColorPicker">
+					<return>
+						<widget type="Window" />
+					</return>
+					<arguments>
+						<widget name="handle" />
+						<string name="title" />
+					</arguments>
+				</function>
+			</functions>
+		</header>
+		<header name="Core">
+			<functions>
+				<function name="MwCreateWidget">
+					<return>
+						<widget />
+					</return>
+					<arguments>
+						<class name="widget_class" />
+						<string name="name" />
+						<widget name="parent" />
+						<integer name="x" />
+						<integer name="y" />
+						<integer name="width" unsigned="yes" />
+						<integer name="height" unsigned="yes" />
+					</arguments>
+				</function>
+				<function name="MwVaCreateWidget">
+					<return>
+						<widget />
+					</return>
+					<arguments>
+						<class name="widget_class" />
+						<string name="name" />
+						<widget name="parent" />
+						<integer name="x" />
+						<integer name="y" />
+						<integer name="width" unsigned="yes" />
+						<integer name="height" unsigned="yes" />
+						<variable />
+					</arguments>
+				</function>
+				<function name="MwVaWidgetExecute">
+					<arguments>
+						<widget name="handle" />
+						<string name="func_name" />
+						<pointer name="output" />
+						<variable />
+					</arguments>
+				</function>
+				<function name="MwDestroyWidget">
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwLoop">
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwStep">
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwPending">
+					<return>
+						<integer />
+					</return>
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwSetInteger">
+					<arguments>
+						<widget name="handle" />
+						<string name="key" />
+						<integer name="n" />
+					</arguments>
+				</function>
+				<function name="MwSetText">
+					<arguments>
+						<widget name="handle" />
+						<string name="key" />
+						<string name="value" />
+					</arguments>
+				</function>
+				<function name="MwSetVoid">
+					<arguments>
+						<widget name="handle" />
+						<string name="key" />
+						<pointer name="value" />
+					</arguments>
+				</function>
+				<function name="MwGetInteger">
+					<return>
+						<integer />
+					</return>
+					<arguments>
+						<widget name="handle" />
+						<string name="key" />
+					</arguments>
+				</function>
+				<function name="MwGetText">
+					<return>
+						<string />
+					</return>
+					<arguments>
+						<widget name="handle" />
+						<string name="key" />
+					</arguments>
+				</function>
+				<function name="MwGetVoid">
+					<return>
+						<pointer />
+					</return>
+					<arguments>
+						<widget name="handle" />
+						<string name="key" />
+					</arguments>
+				</function>
+				<function name="MwSetDefault">
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwVaApply">
+					<arguments>
+						<widget name="handle" />
+						<variable />
+					</arguments>
+				</function>
+				<function name="MwAddUserHandler">
+					<arguments>
+						<widget name="handle" />
+						<string name="key" />
+						<handler name="handler" />
+						<pointer name="user_data" />
+					</arguments>
+				</function>
+				<function name="MwDispatchUserHandler">
+					<arguments>
+						<widget name="handle" />
+						<string name="key" />
+						<pointer name="handler_data" />
+					</arguments>
+				</function>
+				<function name="MwSetErrorHandler">
+					<arguments>
+						<error_handler name="handler" />
+						<pointer name="user_data" />
+					</arguments>
+				</function>
+				<function name="MwDispatchError">
+					<arguments>
+						<integer name="code" />
+						<string name="message" />
+					</arguments>
+				</function>
+				<function name="MwForceRender">
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwForceRender2">
+					<arguments>
+						<widget name="handle" />
+						<pointer name="ptr" />
+					</arguments>
+				</function>
+				<function name="MwAddTickList">
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwFocus">
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwGrabPointer">
+					<arguments>
+						<widget name="handle" />
+						<integer name="toggle" />
+					</arguments>
+				</function>
+				<function name="MwHideCursor">
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwSetDarkTheme">
+					<arguments>
+						<widget name="handle" />
+						<integer name="toggle" />
+					</arguments>
+				</function>
+				<function name="MwGetParent">
+					<return>
+						<widget />
+					</return>
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwLibraryInit" />
+				<function name="MwShow">
+					<arguments>
+						<widget name="handle" />
+						<integer name="toggle" />
+					</arguments>
+				</function>
+				<function name="MwGetName">
+					<return>
+						<string />
+					</return>
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwGetChildren">
+					<return>
+						<widget pointer="yes" />
+					</return>
+					<arguments>
+						<widget name="handle" />
+					</arguments>
+				</function>
+				<function name="MwGetCursorCoord">
+					<arguments>
+						<widget name="handle" />
+						<struct defname="MwPoint" pointer="yes" name="point" />
+					</arguments>
+				</function>
+				<function name="MwGetScreenSize">
+					<arguments>
+						<widget name="handle" />
+						<struct defname="MwRect" pointer="yes" name="rect" />
+					</arguments>
+				</function>
+				<function name="MwGetClipboard">
+    					<arguments>
+    						<widget name="handle" />
+    						<integer enumname="MwClipboardType" name="clipboard_type" />
+    					</arguments>
+				</function>
+				<function name="MwGetClass">
+					<return>
+						<class />
+					</return>
+    					<arguments>
+    						<widget name="handle" />
+    					</arguments>
+				</function>
+				<function name="MwSetUser">
+    					<arguments>
+    						<widget name="handle" />
+						<pointer name="user" />
+    					</arguments>
+				</function>
+				<function name="MwGetUser">
+					<return>
+						<pointer />
+					</return>
+    					<arguments>
+    						<widget name="handle" />
+    					</arguments>
+				</function>
+				<function name="MwFreeWidget">
+    					<arguments>
+    						<widget name="handle" />
+    					</arguments>
+				</function>
+			</functions>
+		</header>
+		<header name="Dialog/FileChooser">
+			<functions>
+				<function name="MwFileChooser">
+					<return>
+						<widget type="Window" />
+					</return>
+					<arguments>
+						<widget name="handle" />
+						<string name="title" />
+					</arguments>
+				</function>
+				<function name="MwFileChooserEx">
+					<return>
+						<widget type="Window" />
+					</return>
+					<arguments>
+						<widget name="handle" />
+						<string name="title" />
+						<integer name="dir" />
+					</arguments>
+				</function>
+			</functions>
+		</header>
+		<header name="Dialog/DirectoryChooser">
+			<functions>
+				<function name="MwDirectoryChooser">
+					<return>
+						<widget type="Window" />
+					</return>
+					<arguments>
+						<widget name="handle" />
+						<string name="title" />
+					</arguments>
+				</function>
+			</functions>
+		</header>
+		<header name="Dialog/MessageBox">
+			<functions>
+				<function name="MwMessageBox">
+					<return>
+						<widget type="Window" />
+					</return>
+					<arguments>
+						<widget name="handle" />
+						<string name="text" />
+						<string name="title" />
+						<integer name="flag" unsigned="yes" />
+					</arguments>
+				</function>
+				<function name="MwMessageBoxGetChild">
+					<return>
+						<widget type="Button" />
+					</return>
+					<arguments>
+						<widget name="handle" type="Window" />
+						<integer name="child" />
+					</arguments>
+				</function>
+			</functions>
+		</header>
+	</headers>
+
+	<!-- Widget functions are prefixed with mw<widget name> -->
+	<widgets>
+		<widget name="Box">
+			<properties>
+				<property name="orientation" />
+				<property name="margin" />
+				<property name="padding" />
+				<property name="hasBorder" />
+				<property name="inverted" />
+				<property name="waitLayout" />
+			</properties>
+		</widget>
+		<widget name="Button">
+			<properties>
+				<property name="pixmap" />
+				<property name="text" />
+				<property name="flat" />
+				<property name="padding" />
+				<property name="fillArea" />
+			</properties>
+			<handlers>
+				<handler name="activate" />
+				<handler name="changed" />
+			</handlers>
+		</widget>
+		<widget name="Calendar">
+			<properties>
+				<property name="year" />
+				<property name="month" />
+				<property name="date" />
+				<property name="day" />
+				<property name="scale" />
+			</properties>
+		</widget>
+		<widget name="CheckBox">
+			<properties>
+				<property name="checked" />
+			</properties>
+			<handlers>
+				<handler name="changed" />
+			</handlers>
+		</widget>
+		<widget name="Entry">
+			<properties>
+				<property name="text" />
+				<property name="hideInput" />
+			</properties>
+			<handlers>
+				<handler name="activate" />
+				<handler name="changed" />
+			</handlers>
+		</widget>
+		<widget name="Frame">
+			<properties>
+				<property name="hasBorder" />
+				<property name="inverted" />
+				<property name="iconPixmap" />
+			</properties>
+		</widget>
+		<widget name="Image">
+			<properties>
+				<property name="pixmap" />
+				<property name="hasBorder" />
+				<property name="inverted" />
+				<property name="fillArea" />
+			</properties>
+		</widget>
+		<widget name="Label">
+			<properties>
+				<property name="text" />
+				<property name="alignment" />
+				<property name="bold" />
+				<property name="sevenSegment" />
+				<property name="length" />
+				<property name="leftPadding" />
+			</properties>
+			<functions>
+				<function name="SetSevenSegment">
+					<arguments>
+						<integer name="index" />
+						<integer name="data" />
+					</arguments>
+				</function>
+			</functions>
+		</widget>
+		<widget name="ListBox">
+			<properties>
+				<property name="leftPadding" />
+				<property name="hasHeading" />
+				<property name="singleClickSelectable" />
+			</properties>
+			<handlers>
+				<handler name="listBoxActivate" />
+			</handlers>
+			<functions>
+				<function name="Set">
+					<return>
+						<integer />
+					</return>
+					<arguments>
+						<integer name="row" />
+						<integer name="col" />
+						<string name="text" />
+					</arguments>
+				</function>
+				<function name="SetIcon">
+					<arguments>
+						<integer name="index" />
+						<pixmap name="icon" />
+					</arguments>
+				</function>
+				<function name="Delete">
+					<arguments>
+						<integer name="index" />
+					</arguments>
+				</function>
+				<function name="Get">
+					<return>
+						<string />
+					</return>
+					<arguments>
+						<integer name="index" />
+					</arguments>
+				</function>
+				<function name="SetWidth">
+					<arguments>
+						<integer name="index" />
+						<integer name="width" />
+					</arguments>
+				</function>
+				<function name="Reset" />
+			</functions>
+		</widget>
+		<widget name="Menu">
+			<handlers>
+				<handler name="menu" />
+			</handlers>
+			<functions>
+				<function name="Add">
+					<return>
+						<pointer />
+					</return>
+					<arguments>
+						<pointer name="menu" />
+						<string name="name" />
+					</arguments>
+				</function>
+			</functions>
+		</widget>
+		<widget name="NumberEntry">
+			<properties>
+				<property name="text" />
+			</properties>
+			<handlers>
+				<handler name="activate" />
+				<handler name="changed" />
+			</handlers>
+		</widget>
+		<widget name="ScrollBar">
+			<properties>
+				<property name="showArrows" />
+				<property name="areaShown" />
+				<property name="value" />
+				<property name="minValue" />
+				<property name="maxValue" />
+				<property name="orientation" />
+			</properties>
+			<handlers>
+				<handler name="changed" />
+			</handlers>
+			<functions>
+				<function name="GetVisibleLength">
+					<return>
+						<integer />
+					</return>
+				</function>
+			</functions>
+		</widget>
+		<widget name="SubMenu">
+			<properties>
+				<property name="leftPadding" />
+			</properties>
+			<functions>
+				<function name="Appear">
+					<arguments>
+						<pointer name="menu" />
+						<struct defname="MwPoint" pointer="yes" name="point" />
+						<integer name="diff_calc" />
+					</arguments>
+				</function>
+				<function name="GetSize">
+					<arguments>
+						<pointer name="menu" />
+						<struct defname="MwRect" pointer="yes" name="rect" />
+					</arguments>
+				</function>
+			</functions>
+		</widget>
+		<widget name="Viewport">
+			<functions>
+				<function name="GetViewport">
+					<return>
+						<widget />
+					</return>
+				</function>
+				<function name="SetSize">
+					<arguments>
+						<integer name="w" />
+						<integer name="h" />
+					</arguments>
+				</function>
+			</functions>
+		</widget>
+		<widget name="Window">
+			<properties>
+				<property name="title" />
+				<property name="main" />
+				<property name="iconPixmap" />
+				<property name="sizeHints" />
+				<property name="hasBorder" />
+				<property name="inverted" />
+			</properties>
+			<handlers>
+				<handler name="colorChosen" />
+				<handler name="fileChosen" />
+				<handler name="directoryChosen" />
+				<handler name="close" />
+			</handlers>
+			<functions>
+				<function name="MakeBorderless" />
+			</functions>
+		</widget>
+		<widget name="ProgressBar">
+			<properties>
+				<property name="minValue" />
+				<property name="maxValue" />
+				<property name="value" />
+			</properties>
+		</widget>
+		<widget name="RadioBox">
+			<properties>
+				<property name="checked" />
+			</properties>
+			<handlers>
+				<handler name="changed" />
+			</handlers>
+		</widget>
+		<widget name="ComboBox">
+			<properties>
+				<property name="areaShown" />
+				<property name="value" />
+			</properties>
+			<handlers>
+				<handler name="comboBoxChanged" />
+			</handlers>
+			<functions>
+				<function name="Add">
+					<integer name="index" />
+					<string name="text" />
+				</function>
+			</functions>
+		</widget>
+		<widget name="TreeView">
+			<properties>
+				<property name="leftPadding" />
+				<property name="singleClickSelectable" />
+			</properties>
+			<handlers>
+				<handler name="treeViewActivate" />
+			</handlers>
+			<functions>
+				<function name="Add">
+					<arguments>
+						<pointer name="parent" />
+						<pixmap name="pixmap" />
+						<string name="item" />
+					</arguments>
+				</function>
+				<function name="Delete">
+					<arguments>
+						<pointer name="item" />
+					</arguments>
+				</function>
+				<function name="SetOpened">
+					<arguments>
+						<pointer name="item" />
+						<integer name="opened" />
+					</arguments>
+				</function>
+				<function name="GetOpened">
+					<return>
+						<integer />
+					</return>
+					<arguments>
+						<pointer name="item" />
+					</arguments>
+				</function>
+				<function name="Reset" />
+			</functions>
+		</widget>
+		<widget name="SubWindow">
+			<properties>
+				<property name="iconPixmap" />
+				<property name="title" />
+			</properties>
+			<handlers>
+				<handler name="close" />
+			</handlers>
+			<functions>
+				<function name="GetFrame">
+					<return>
+						<widget />
+					</return>
+				</function>
+			</functions>
+		</widget>
+		<widget name="Table">
+			<properties>
+				<property name="columns" />
+				<property name="margin" />
+				<property name="padding" />
+				<property name="hasBorder" />
+				<property name="inverted" />
+				<property name="waitLayout" />
+			</properties>
+		</widget>
+		<widget name="Tab">
+			<properties>
+				<property name="value" />
+			</properties>
+			<handlers>
+				<handler name="changed" />
+			</handlers>
+			<functions>
+				<function name="Add">
+					<return>
+						<widget />
+					</return>
+					<arguments>
+						<string name="name" />
+					</arguments>
+				</function>
+				<function name="GetFrame">
+					<return>
+						<widget />
+					</return>
+					<arguments>
+						<string name="name" />
+					</arguments>
+				</function>
+				<function name="Focus">
+					<arguments>
+						<string name="name" />
+					</arguments>
+				</function>
+			</functions>
+		</widget>
+
+		<!-- They are not alphabetically sorted for reasons -->
+		<widget name="OpenGL">
+			<functions>
+				<function name="MakeCurrent" />
+				<function name="GetProcAddress">
+					<return>
+						<pointer />
+					</return>
+					<arguments>
+						<string name="name" />
+					</arguments>
+				</function>
+				<function name="SwapBuffer" />
+			</functions>
+		</widget>
+		<widget name="Vulkan">
+			<functions>
+				<function name="GetField">
+					<return>
+						<pointer />
+					</return>
+					<arguments>
+						<integer enumname="MwVulkanField" name="field" />
+						<integer pointer="yes" name="output" />
+					</arguments>
+				</function>
+			</functions>
+		</widget>
+	</widgets>
+</milsko>

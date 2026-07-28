@@ -1,0 +1,506 @@
+CC = wcc386 -bt=nt -q
+LD = wlink option quiet
+
+MW_CFLAGS = -bd -i=include -i=external/libz/include -d_MILSKO -d_MILSKO_BUILD -dUSE_GDI -dUSE_STB_IMAGE -dSTBI_NO_SIMD -dUSE_GDI_TEXT
+MW_LDFLAGS = system nt_dll
+EXE_CFLAGS = -i=include
+EXE_LDFLAGS = system nt
+all: src/Mw.dll examples/basic/box.exe examples/basic/calculator.exe examples/basic/checkbox.exe examples/basic/clipboard.exe examples/basic/colorpicker.exe examples/basic/combobox.exe examples/basic/example.exe examples/basic/filechooser.exe examples/basic/image.exe examples/basic/listbox.exe examples/basic/messagebox.exe examples/basic/periodic.exe examples/basic/progressbar.exe examples/basic/radiobox.exe examples/basic/rotate.exe examples/basic/scrollbar.exe examples/basic/sevensegment.exe examples/basic/subwindow.exe examples/basic/tab.exe examples/basic/treeview.exe examples/basic/viewport.exe examples/gldemos/boing.exe examples/gldemos/clock.exe examples/gldemos/cube.exe examples/gldemos/gears.exe examples/gldemos/triangle.exe examples/gldemos/tripaint.exe
+lib: src/Mw.dll
+examples: examples/basic/box.exe examples/basic/calculator.exe examples/basic/checkbox.exe examples/basic/clipboard.exe examples/basic/colorpicker.exe examples/basic/combobox.exe examples/basic/example.exe examples/basic/filechooser.exe examples/basic/image.exe examples/basic/listbox.exe examples/basic/messagebox.exe examples/basic/periodic.exe examples/basic/progressbar.exe examples/basic/radiobox.exe examples/basic/rotate.exe examples/basic/scrollbar.exe examples/basic/sevensegment.exe examples/basic/subwindow.exe examples/basic/tab.exe examples/basic/treeview.exe examples/basic/viewport.exe examples/gldemos/boing.exe examples/gldemos/clock.exe examples/gldemos/cube.exe examples/gldemos/gears.exe examples/gldemos/triangle.exe examples/gldemos/tripaint.exe
+clean: .SYMBOLIC
+	%erase external/libz/src/adler32.obj
+	%erase external/libz/src/compress.obj
+	%erase external/libz/src/crc32.obj
+	%erase external/libz/src/deflate.obj
+	%erase external/libz/src/gzclose.obj
+	%erase external/libz/src/gzlib.obj
+	%erase external/libz/src/gzread.obj
+	%erase external/libz/src/gzwrite.obj
+	%erase external/libz/src/infback.obj
+	%erase external/libz/src/inffast.obj
+	%erase external/libz/src/inflate.obj
+	%erase external/libz/src/inftrees.obj
+	%erase external/libz/src/trees.obj
+	%erase external/libz/src/uncompr.obj
+	%erase external/libz/src/zutil.obj
+	%erase external/stb_ds.obj
+	%erase external/stb_image.obj
+	%erase external/stb_truetype.obj
+	%erase src/abstract/charset.obj
+	%erase src/abstract/directory.obj
+	%erase src/abstract/dynamic.obj
+	%erase src/abstract/time.obj
+	%erase src/backend/gdi.obj
+	%erase src/color.obj
+	%erase src/core.obj
+	%erase src/cursor/arrow.obj
+	%erase src/cursor/cross.obj
+	%erase src/cursor/default.obj
+	%erase src/cursor/hidden.obj
+	%erase src/cursor/text.obj
+	%erase src/default.obj
+	%erase src/dialog/colorpicker.obj
+	%erase src/dialog/directorychooser.obj
+	%erase src/dialog/filechooser.obj
+	%erase src/dialog/messagebox.obj
+	%erase src/draw.obj
+	%erase src/icon/back.obj
+	%erase src/icon/clock.obj
+	%erase src/icon/computer.obj
+	%erase src/icon/directory.obj
+	%erase src/icon/down.obj
+	%erase src/icon/error.obj
+	%erase src/icon/file.obj
+	%erase src/icon/forward.obj
+	%erase src/icon/info.obj
+	%erase src/icon/left.obj
+	%erase src/icon/news.obj
+	%erase src/icon/note.obj
+	%erase src/icon/right.obj
+	%erase src/icon/search.obj
+	%erase src/icon/up.obj
+	%erase src/icon/warning.obj
+	%erase src/lowlevel.obj
+	%erase src/string.obj
+	%erase src/text/font/boldfont.obj
+	%erase src/text/font/boldmonottf.obj
+	%erase src/text/font/boldttf.obj
+	%erase src/text/font/font.obj
+	%erase src/text/font/monottf.obj
+	%erase src/text/font/ttf.obj
+	%erase src/text/ft2.obj
+	%erase src/text/gdi.obj
+	%erase src/text/stbtt.obj
+	%erase src/text/text.obj
+	%erase src/truetype.obj
+	%erase src/unicode.obj
+	%erase src/widget/box.obj
+	%erase src/widget/button.obj
+	%erase src/widget/calendar.obj
+	%erase src/widget/checkbox.obj
+	%erase src/widget/combobox.obj
+	%erase src/widget/entry.obj
+	%erase src/widget/frame.obj
+	%erase src/widget/image.obj
+	%erase src/widget/label.obj
+	%erase src/widget/listbox.obj
+	%erase src/widget/menu.obj
+	%erase src/widget/numberentry.obj
+	%erase src/widget/opengl.obj
+	%erase src/widget/progressbar.obj
+	%erase src/widget/radiobox.obj
+	%erase src/widget/scrollbar.obj
+	%erase src/widget/separator.obj
+	%erase src/widget/submenu.obj
+	%erase src/widget/subwindow.obj
+	%erase src/widget/tab.obj
+	%erase src/widget/table.obj
+	%erase src/widget/treeview.obj
+	%erase src/widget/viewport.obj
+	%erase src/widget/window.obj
+	%erase src/Mw.dll
+	%erase src/Mw.lib
+	%erase examples/basic/box.obj
+	%erase examples/basic/calculator.obj
+	%erase examples/basic/checkbox.obj
+	%erase examples/basic/clipboard.obj
+	%erase examples/basic/colorpicker.obj
+	%erase examples/basic/combobox.obj
+	%erase examples/basic/example.obj
+	%erase examples/basic/filechooser.obj
+	%erase examples/basic/image.obj
+	%erase examples/basic/listbox.obj
+	%erase examples/basic/messagebox.obj
+	%erase examples/basic/periodic.obj
+	%erase examples/basic/progressbar.obj
+	%erase examples/basic/radiobox.obj
+	%erase examples/basic/rotate.obj
+	%erase examples/basic/scrollbar.obj
+	%erase examples/basic/sevensegment.obj
+	%erase examples/basic/subwindow.obj
+	%erase examples/basic/tab.obj
+	%erase examples/basic/treeview.obj
+	%erase examples/basic/viewport.obj
+	%erase examples/gldemos/boing.obj
+	%erase examples/gldemos/clock.obj
+	%erase examples/gldemos/cube.obj
+	%erase examples/gldemos/gears.obj
+	%erase examples/gldemos/triangle.obj
+	%erase examples/gldemos/tripaint.obj
+	%erase examples/basic/box.exe
+	%erase examples/basic/calculator.exe
+	%erase examples/basic/checkbox.exe
+	%erase examples/basic/clipboard.exe
+	%erase examples/basic/colorpicker.exe
+	%erase examples/basic/combobox.exe
+	%erase examples/basic/example.exe
+	%erase examples/basic/filechooser.exe
+	%erase examples/basic/image.exe
+	%erase examples/basic/listbox.exe
+	%erase examples/basic/messagebox.exe
+	%erase examples/basic/periodic.exe
+	%erase examples/basic/progressbar.exe
+	%erase examples/basic/radiobox.exe
+	%erase examples/basic/rotate.exe
+	%erase examples/basic/scrollbar.exe
+	%erase examples/basic/sevensegment.exe
+	%erase examples/basic/subwindow.exe
+	%erase examples/basic/tab.exe
+	%erase examples/basic/treeview.exe
+	%erase examples/basic/viewport.exe
+	%erase examples/gldemos/boing.exe
+	%erase examples/gldemos/clock.exe
+	%erase examples/gldemos/cube.exe
+	%erase examples/gldemos/gears.exe
+	%erase examples/gldemos/triangle.exe
+	%erase examples/gldemos/tripaint.exe
+
+examples/basic/box.exe: examples/basic/box.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/box.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/box.obj: examples/basic/box.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/box.c
+
+examples/basic/calculator.exe: examples/basic/calculator.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/calculator.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/calculator.obj: examples/basic/calculator.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/calculator.c
+
+examples/basic/checkbox.exe: examples/basic/checkbox.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/checkbox.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/checkbox.obj: examples/basic/checkbox.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/checkbox.c
+
+examples/basic/clipboard.exe: examples/basic/clipboard.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/clipboard.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/clipboard.obj: examples/basic/clipboard.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/clipboard.c
+
+examples/basic/colorpicker.exe: examples/basic/colorpicker.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/colorpicker.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/colorpicker.obj: examples/basic/colorpicker.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/colorpicker.c
+
+examples/basic/combobox.exe: examples/basic/combobox.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/combobox.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/combobox.obj: examples/basic/combobox.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/combobox.c
+
+examples/basic/example.exe: examples/basic/example.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/example.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/example.obj: examples/basic/example.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/example.c
+
+examples/basic/filechooser.exe: examples/basic/filechooser.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/filechooser.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/filechooser.obj: examples/basic/filechooser.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/filechooser.c
+
+examples/basic/image.exe: examples/basic/image.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/image.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/image.obj: examples/basic/image.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/image.c
+
+examples/basic/listbox.exe: examples/basic/listbox.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/listbox.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/listbox.obj: examples/basic/listbox.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/listbox.c
+
+examples/basic/messagebox.exe: examples/basic/messagebox.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/messagebox.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/messagebox.obj: examples/basic/messagebox.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/messagebox.c
+
+examples/basic/periodic.exe: examples/basic/periodic.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/periodic.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/periodic.obj: examples/basic/periodic.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/periodic.c
+
+examples/basic/progressbar.exe: examples/basic/progressbar.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/progressbar.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/progressbar.obj: examples/basic/progressbar.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/progressbar.c
+
+examples/basic/radiobox.exe: examples/basic/radiobox.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/radiobox.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/radiobox.obj: examples/basic/radiobox.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/radiobox.c
+
+examples/basic/rotate.exe: examples/basic/rotate.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/rotate.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/rotate.obj: examples/basic/rotate.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/rotate.c
+
+examples/basic/scrollbar.exe: examples/basic/scrollbar.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/scrollbar.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/scrollbar.obj: examples/basic/scrollbar.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/scrollbar.c
+
+examples/basic/sevensegment.exe: examples/basic/sevensegment.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/sevensegment.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/sevensegment.obj: examples/basic/sevensegment.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/sevensegment.c
+
+examples/basic/subwindow.exe: examples/basic/subwindow.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/subwindow.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/subwindow.obj: examples/basic/subwindow.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/subwindow.c
+
+examples/basic/tab.exe: examples/basic/tab.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/tab.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/tab.obj: examples/basic/tab.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/tab.c
+
+examples/basic/treeview.exe: examples/basic/treeview.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/treeview.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/treeview.obj: examples/basic/treeview.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/treeview.c
+
+examples/basic/viewport.exe: examples/basic/viewport.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/basic/viewport.obj library clib3r.lib library src/Mw.lib
+
+examples/basic/viewport.obj: examples/basic/viewport.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/basic/viewport.c
+
+examples/gldemos/boing.exe: examples/gldemos/boing.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/gldemos/boing.obj library clib3r.lib library src/Mw.lib library opengl32.lib library glu32.lib
+
+examples/gldemos/boing.obj: examples/gldemos/boing.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/gldemos/boing.c
+
+examples/gldemos/clock.exe: examples/gldemos/clock.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/gldemos/clock.obj library clib3r.lib library src/Mw.lib library opengl32.lib library glu32.lib
+
+examples/gldemos/clock.obj: examples/gldemos/clock.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/gldemos/clock.c
+
+examples/gldemos/cube.exe: examples/gldemos/cube.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/gldemos/cube.obj library clib3r.lib library src/Mw.lib library opengl32.lib library glu32.lib
+
+examples/gldemos/cube.obj: examples/gldemos/cube.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/gldemos/cube.c
+
+examples/gldemos/gears.exe: examples/gldemos/gears.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/gldemos/gears.obj library clib3r.lib library src/Mw.lib library opengl32.lib library glu32.lib
+
+examples/gldemos/gears.obj: examples/gldemos/gears.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/gldemos/gears.c
+
+examples/gldemos/triangle.exe: examples/gldemos/triangle.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/gldemos/triangle.obj library clib3r.lib library src/Mw.lib library opengl32.lib library glu32.lib
+
+examples/gldemos/triangle.obj: examples/gldemos/triangle.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/gldemos/triangle.c
+
+examples/gldemos/tripaint.exe: examples/gldemos/tripaint.obj src/Mw.dll
+	$(LD) $(EXE_LDFLAGS) name $@ file examples/gldemos/tripaint.obj library clib3r.lib library src/Mw.lib library opengl32.lib library glu32.lib
+
+examples/gldemos/tripaint.obj: examples/gldemos/tripaint.c
+	$(CC) $(EXE_CFLAGS) -fo=$@ examples/gldemos/tripaint.c
+
+
+src/Mw.dll:  external/libz/src/adler32.obj external/libz/src/compress.obj external/libz/src/crc32.obj external/libz/src/deflate.obj external/libz/src/gzclose.obj external/libz/src/gzlib.obj external/libz/src/gzread.obj external/libz/src/gzwrite.obj external/libz/src/infback.obj external/libz/src/inffast.obj external/libz/src/inflate.obj external/libz/src/inftrees.obj external/libz/src/trees.obj external/libz/src/uncompr.obj external/libz/src/zutil.obj external/stb_ds.obj external/stb_image.obj external/stb_truetype.obj src/abstract/charset.obj src/abstract/directory.obj src/abstract/dynamic.obj src/abstract/time.obj src/backend/gdi.obj src/color.obj src/core.obj src/cursor/arrow.obj src/cursor/cross.obj src/cursor/default.obj src/cursor/hidden.obj src/cursor/text.obj src/default.obj src/dialog/colorpicker.obj src/dialog/directorychooser.obj src/dialog/filechooser.obj src/dialog/messagebox.obj src/draw.obj src/icon/back.obj src/icon/clock.obj src/icon/computer.obj src/icon/directory.obj src/icon/down.obj src/icon/error.obj src/icon/file.obj src/icon/forward.obj src/icon/info.obj src/icon/left.obj src/icon/news.obj src/icon/note.obj src/icon/right.obj src/icon/search.obj src/icon/up.obj src/icon/warning.obj src/lowlevel.obj src/string.obj src/text/font/boldfont.obj src/text/font/boldmonottf.obj src/text/font/boldttf.obj src/text/font/font.obj src/text/font/monottf.obj src/text/font/ttf.obj src/text/ft2.obj src/text/gdi.obj src/text/stbtt.obj src/text/text.obj src/truetype.obj src/unicode.obj src/widget/box.obj src/widget/button.obj src/widget/calendar.obj src/widget/checkbox.obj src/widget/combobox.obj src/widget/entry.obj src/widget/frame.obj src/widget/image.obj src/widget/label.obj src/widget/listbox.obj src/widget/menu.obj src/widget/numberentry.obj src/widget/opengl.obj src/widget/progressbar.obj src/widget/radiobox.obj src/widget/scrollbar.obj src/widget/separator.obj src/widget/submenu.obj src/widget/subwindow.obj src/widget/tab.obj src/widget/table.obj src/widget/treeview.obj src/widget/viewport.obj src/widget/window.obj
+	$(LD) $(MW_LDFLAGS) option implib=src/Mw.lib name $@  file external/libz/src/adler32.obj file external/libz/src/compress.obj file external/libz/src/crc32.obj file external/libz/src/deflate.obj file external/libz/src/gzclose.obj file external/libz/src/gzlib.obj file external/libz/src/gzread.obj file external/libz/src/gzwrite.obj file external/libz/src/infback.obj file external/libz/src/inffast.obj file external/libz/src/inflate.obj file external/libz/src/inftrees.obj file external/libz/src/trees.obj file external/libz/src/uncompr.obj file external/libz/src/zutil.obj file external/stb_ds.obj file external/stb_image.obj file external/stb_truetype.obj file src/abstract/charset.obj file src/abstract/directory.obj file src/abstract/dynamic.obj file src/abstract/time.obj file src/backend/gdi.obj file src/color.obj file src/core.obj file src/cursor/arrow.obj file src/cursor/cross.obj file src/cursor/default.obj file src/cursor/hidden.obj file src/cursor/text.obj file src/default.obj file src/dialog/colorpicker.obj file src/dialog/directorychooser.obj file src/dialog/filechooser.obj file src/dialog/messagebox.obj file src/draw.obj file src/icon/back.obj file src/icon/clock.obj file src/icon/computer.obj file src/icon/directory.obj file src/icon/down.obj file src/icon/error.obj file src/icon/file.obj file src/icon/forward.obj file src/icon/info.obj file src/icon/left.obj file src/icon/news.obj file src/icon/note.obj file src/icon/right.obj file src/icon/search.obj file src/icon/up.obj file src/icon/warning.obj file src/lowlevel.obj file src/string.obj file src/text/font/boldfont.obj file src/text/font/boldmonottf.obj file src/text/font/boldttf.obj file src/text/font/font.obj file src/text/font/monottf.obj file src/text/font/ttf.obj file src/text/ft2.obj file src/text/gdi.obj file src/text/stbtt.obj file src/text/text.obj file src/truetype.obj file src/unicode.obj file src/widget/box.obj file src/widget/button.obj file src/widget/calendar.obj file src/widget/checkbox.obj file src/widget/combobox.obj file src/widget/entry.obj file src/widget/frame.obj file src/widget/image.obj file src/widget/label.obj file src/widget/listbox.obj file src/widget/menu.obj file src/widget/numberentry.obj file src/widget/opengl.obj file src/widget/progressbar.obj file src/widget/radiobox.obj file src/widget/scrollbar.obj file src/widget/separator.obj file src/widget/submenu.obj file src/widget/subwindow.obj file src/widget/tab.obj file src/widget/table.obj file src/widget/treeview.obj file src/widget/viewport.obj file src/widget/window.obj library clib3r.lib library opengl32.lib library gdi32.lib library winmm.lib library user32.lib library advapi32.lib
+	
+
+
+external/libz/src/adler32.obj: external/libz/src/adler32.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/adler32.c
+external/libz/src/compress.obj: external/libz/src/compress.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/compress.c
+external/libz/src/crc32.obj: external/libz/src/crc32.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/crc32.c
+external/libz/src/deflate.obj: external/libz/src/deflate.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/deflate.c
+external/libz/src/gzclose.obj: external/libz/src/gzclose.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/gzclose.c
+external/libz/src/gzlib.obj: external/libz/src/gzlib.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/gzlib.c
+external/libz/src/gzread.obj: external/libz/src/gzread.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/gzread.c
+external/libz/src/gzwrite.obj: external/libz/src/gzwrite.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/gzwrite.c
+external/libz/src/infback.obj: external/libz/src/infback.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/infback.c
+external/libz/src/inffast.obj: external/libz/src/inffast.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/inffast.c
+external/libz/src/inflate.obj: external/libz/src/inflate.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/inflate.c
+external/libz/src/inftrees.obj: external/libz/src/inftrees.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/inftrees.c
+external/libz/src/trees.obj: external/libz/src/trees.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/trees.c
+external/libz/src/uncompr.obj: external/libz/src/uncompr.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/uncompr.c
+external/libz/src/zutil.obj: external/libz/src/zutil.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/libz/src/zutil.c
+external/stb_ds.obj: external/stb_ds.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/stb_ds.c
+external/stb_image.obj: external/stb_image.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/stb_image.c
+external/stb_truetype.obj: external/stb_truetype.c
+	$(CC) $(MW_CFLAGS) -fo=$@ external/stb_truetype.c
+src/abstract/charset.obj: src/abstract/charset.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/abstract/charset.c
+src/abstract/directory.obj: src/abstract/directory.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/abstract/directory.c
+src/abstract/dynamic.obj: src/abstract/dynamic.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/abstract/dynamic.c
+src/abstract/time.obj: src/abstract/time.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/abstract/time.c
+src/backend/gdi.obj: src/backend/gdi.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/backend/gdi.c
+src/color.obj: src/color.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/color.c
+src/core.obj: src/core.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/core.c
+src/cursor/arrow.obj: src/cursor/arrow.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/cursor/arrow.c
+src/cursor/cross.obj: src/cursor/cross.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/cursor/cross.c
+src/cursor/default.obj: src/cursor/default.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/cursor/default.c
+src/cursor/hidden.obj: src/cursor/hidden.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/cursor/hidden.c
+src/cursor/text.obj: src/cursor/text.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/cursor/text.c
+src/default.obj: src/default.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/default.c
+src/dialog/colorpicker.obj: src/dialog/colorpicker.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/dialog/colorpicker.c
+src/dialog/directorychooser.obj: src/dialog/directorychooser.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/dialog/directorychooser.c
+src/dialog/filechooser.obj: src/dialog/filechooser.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/dialog/filechooser.c
+src/dialog/messagebox.obj: src/dialog/messagebox.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/dialog/messagebox.c
+src/draw.obj: src/draw.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/draw.c
+src/icon/back.obj: src/icon/back.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/back.c
+src/icon/clock.obj: src/icon/clock.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/clock.c
+src/icon/computer.obj: src/icon/computer.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/computer.c
+src/icon/directory.obj: src/icon/directory.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/directory.c
+src/icon/down.obj: src/icon/down.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/down.c
+src/icon/error.obj: src/icon/error.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/error.c
+src/icon/file.obj: src/icon/file.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/file.c
+src/icon/forward.obj: src/icon/forward.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/forward.c
+src/icon/info.obj: src/icon/info.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/info.c
+src/icon/left.obj: src/icon/left.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/left.c
+src/icon/news.obj: src/icon/news.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/news.c
+src/icon/note.obj: src/icon/note.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/note.c
+src/icon/right.obj: src/icon/right.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/right.c
+src/icon/search.obj: src/icon/search.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/search.c
+src/icon/up.obj: src/icon/up.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/up.c
+src/icon/warning.obj: src/icon/warning.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/icon/warning.c
+src/lowlevel.obj: src/lowlevel.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/lowlevel.c
+src/string.obj: src/string.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/string.c
+src/text/font/boldfont.obj: src/text/font/boldfont.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/text/font/boldfont.c
+src/text/font/boldmonottf.obj: src/text/font/boldmonottf.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/text/font/boldmonottf.c
+src/text/font/boldttf.obj: src/text/font/boldttf.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/text/font/boldttf.c
+src/text/font/font.obj: src/text/font/font.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/text/font/font.c
+src/text/font/monottf.obj: src/text/font/monottf.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/text/font/monottf.c
+src/text/font/ttf.obj: src/text/font/ttf.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/text/font/ttf.c
+src/text/ft2.obj: src/text/ft2.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/text/ft2.c
+src/text/gdi.obj: src/text/gdi.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/text/gdi.c
+src/text/stbtt.obj: src/text/stbtt.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/text/stbtt.c
+src/text/text.obj: src/text/text.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/text/text.c
+src/truetype.obj: src/truetype.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/truetype.c
+src/unicode.obj: src/unicode.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/unicode.c
+src/widget/box.obj: src/widget/box.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/box.c
+src/widget/button.obj: src/widget/button.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/button.c
+src/widget/calendar.obj: src/widget/calendar.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/calendar.c
+src/widget/checkbox.obj: src/widget/checkbox.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/checkbox.c
+src/widget/combobox.obj: src/widget/combobox.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/combobox.c
+src/widget/entry.obj: src/widget/entry.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/entry.c
+src/widget/frame.obj: src/widget/frame.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/frame.c
+src/widget/image.obj: src/widget/image.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/image.c
+src/widget/label.obj: src/widget/label.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/label.c
+src/widget/listbox.obj: src/widget/listbox.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/listbox.c
+src/widget/menu.obj: src/widget/menu.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/menu.c
+src/widget/numberentry.obj: src/widget/numberentry.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/numberentry.c
+src/widget/opengl.obj: src/widget/opengl.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/opengl.c
+src/widget/progressbar.obj: src/widget/progressbar.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/progressbar.c
+src/widget/radiobox.obj: src/widget/radiobox.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/radiobox.c
+src/widget/scrollbar.obj: src/widget/scrollbar.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/scrollbar.c
+src/widget/separator.obj: src/widget/separator.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/separator.c
+src/widget/submenu.obj: src/widget/submenu.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/submenu.c
+src/widget/subwindow.obj: src/widget/subwindow.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/subwindow.c
+src/widget/tab.obj: src/widget/tab.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/tab.c
+src/widget/table.obj: src/widget/table.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/table.c
+src/widget/treeview.obj: src/widget/treeview.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/treeview.c
+src/widget/viewport.obj: src/widget/viewport.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/viewport.c
+src/widget/window.obj: src/widget/window.c
+	$(CC) $(MW_CFLAGS) -fo=$@ src/widget/window.c

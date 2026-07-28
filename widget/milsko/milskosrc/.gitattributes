@@ -1,0 +1,17 @@
+/external/*.h linguist-generated
+/external/*.c linguist-generated
+/external/libjpeg/include/*.h linguist-generated
+/external/libjpeg/src/*.c linguist-generated
+/external/libjpeg/src/*.h linguist-generated
+/external/libz/include/*.h linguist-generated
+/external/libz/src/*.c linguist-generated
+/external/libz/src/*.h linguist-generated
+/external/libpng/include/*.h linguist-generated
+/external/libpng/src/*.c linguist-generated
+/external/libpng/src/*.h linguist-generated
+/resource/doxygen-theme/* linguist-generated
+/src/icon/*.c linguist-generated
+/src/font/*.c linguist-generated
+/BorMakefile linguist-generated
+/WatMakefile linguist-generated
+/NTMakefile linguist-generated

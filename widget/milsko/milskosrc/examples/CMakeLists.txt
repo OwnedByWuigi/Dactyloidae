@@ -1,0 +1,7 @@
+add_subdirectory(basic)
+if(${MW_TRY_OPENGL})
+add_subdirectory(gldemos)
+endif()
+if(${MW_TRY_VULKAN})
+add_subdirectory(vkdemos)
+endif()
