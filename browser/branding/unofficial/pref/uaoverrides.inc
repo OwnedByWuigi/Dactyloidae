@@ -65,9 +65,9 @@ pref("@GUAO_PREF@.mewe.com", "Mozilla/5.0 (%OS_SLICE% rv:102.0) Gecko/20100101 F
 
 // UA-sniffing domains that are "app/vendor-specific" and do not like Dactyloidae
 pref("@GUAO_PREF@.web.whatsapp.com","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36");
-pref("@GUAO_PREF@.youtube.com","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36");
-pref("@GUAO_PREF@.studio.youtube.com","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36");
-pref("@GUAO_PREF@.gaming.youtube.com","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36");
+pref("@GUAO_PREF@.youtube.com","Mozilla/5.0 (%OS_SLICE%; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0");
+pref("@GUAO_PREF@.studio.youtube.com","Mozilla/5.0 (%OS_SLICE%; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0");
+pref("@GUAO_PREF@.gaming.youtube.com","Mozilla/5.0 (%OS_SLICE%; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0");
 
 // The following domains do not like the Goanna slice
 pref("@GUAO_PREF@.bab.la","Mozilla/5.0 (%OS_SLICE% rv:@GK_VERSION@) @GK_SLICE@ @FX_SLICE@");
