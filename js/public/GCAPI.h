@@ -9,6 +9,7 @@
 #include "mozilla/Vector.h"
 
 #include "js/GCAnnotations.h"
+#include "js/HeapAPI.h"
 #include "js/UniquePtr.h"
 
 struct JSCompartment;

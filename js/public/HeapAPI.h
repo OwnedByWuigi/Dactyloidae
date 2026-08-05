@@ -45,6 +45,11 @@ const size_t CellShift = 3;
 const size_t CellSize = size_t(1) << CellShift;
 const size_t CellMask = CellSize - 1;
 
+const size_t CellAlignShift = CellShift;
+const size_t CellAlignBytes = CellSize;
+const size_t CellBytesPerMarkBit = CellSize;
+const size_t CellAlignMask = CellMask;
+
 /*
  * We sometimes use an index to refer to a cell in an arena. The index for a
  * cell is found by dividing by the cell alignment so not all indicies refer to
@@ -89,6 +94,8 @@ enum class ColorBit : uint32_t
     GrayOrBlackBit = 1
 };
 
+const uint32_t GRAY = uint32_t(ColorBit::GrayOrBlackBit);
+
 /*
  * The "location" field in the Chunk trailer is a enum indicating various roles
  * of the chunk.
@@ -127,6 +134,17 @@ namespace shadow {
 
 struct Zone
 {
+    // The GC state values must match those in gc/Zone.h.
+    enum GCState : uint8_t
+    {
+        NoGC,
+        Mark,
+        MarkGray,
+        Sweep,
+        Finished,
+        Compact
+    };
+
   protected:
     JSRuntime* const runtime_;
     JSTracer* const barrierTracer_;     // A pointer to the JSRuntime's |gcMarker|.
@@ -137,11 +155,13 @@ struct Zone
     template <typename T> friend class JS::Rooted;
 
     bool needsIncrementalBarrier_;
+    GCState gcState_;
 
     Zone(JSRuntime* runtime, JSTracer* barrierTracerArg)
       : runtime_(runtime),
         barrierTracer_(barrierTracerArg),
-        needsIncrementalBarrier_(false)
+        needsIncrementalBarrier_(false),
+        gcState_(GCState::NoGC)
     {
         for (auto& stackRootPtr : stackRoots_)
             stackRootPtr = nullptr;
@@ -166,6 +186,10 @@ struct Zone
     // thread can easily lead to races. Use this method very carefully.
     JSRuntime* runtimeFromAnyThread() const {
         return runtime_;
+    }
+
+    bool isGCSweepingOrCompacting() const {
+        return gcState_ == GCState::Sweep || gcState_ == GCState::Compact;
     }
 
     static MOZ_ALWAYS_INLINE JS::shadow::Zone* asShadowZone(JS::Zone* zone) {
@@ -352,6 +376,16 @@ CellIsMarkedGray(const Cell* cell)
 extern JS_PUBLIC_API(bool)
 CellIsMarkedGrayIfKnown(const Cell* cell);
 
+static MOZ_ALWAYS_INLINE bool
+TenuredCellIsMarkedGray(const Cell* cell)
+{
+    MOZ_ASSERT(cell);
+    MOZ_ASSERT(!js::gc::IsInsideNursery(cell));
+    uintptr_t* word, mask;
+    js::gc::detail::GetGCThingMarkWordAndMask(uintptr_t(cell), js::gc::GRAY, &word, &mask);
+    return *word & mask;
+}
+
 MOZ_ALWAYS_INLINE ChunkLocation GetCellLocation(const void* cell) {
   uintptr_t addr = uintptr_t(cell);
   addr &= ~js::gc::ChunkMask;
@@ -469,6 +503,13 @@ IncrementalPreWriteBarrier(JSObject* obj);
 extern JS_PUBLIC_API(void)
 IncrementalReadBarrier(GCCellPtr thing);
 
+/*
+ * Notify the GC that a reference to a JSObject may have changed.
+ * This method must be called if IsIncrementalBarrierNeeded.
+ */
+extern JS_PUBLIC_API(void)
+IncrementalObjectBarrier(JSObject* obj);
+
 /**
  * Unsets the gray bit for anything reachable from |thing|. |kind| should not be
  * JS::TraceKind::Shape. |thing| should be non-null. The return value indicates
@@ -482,15 +523,14 @@ UnmarkGrayGCThingRecursively(GCCellPtr thing);
 namespace js {
 namespace gc {
 
+extern JS_PUBLIC_API(void)
+MarkGCThingAsLive(JSRuntime* rt, JS::GCCellPtr thing);
+
 static MOZ_ALWAYS_INLINE bool
-IsIncrementalBarrierNeededOnTenuredGCThing(JS::shadow::Runtime* rt, const JS::GCCellPtr thing)
+IsIncrementalBarrierNeededOnTenuredGCThing(const JS::GCCellPtr thing)
 {
     MOZ_ASSERT(thing);
     MOZ_ASSERT(!js::gc::IsInsideNursery(thing.asCell()));
-
-    // TODO: I'd like to assert !isHeapBusy() here but this gets called while we
-    // are tracing the heap, e.g. during memory reporting (see bug 1313318).
-    MOZ_ASSERT(!rt->isHeapCollecting());
 
     JS::Zone* zone = JS::GetTenuredGCThingZone(thing);
     return JS::shadow::Zone::asShadowZone(zone)->needsIncrementalBarrier();
@@ -541,7 +581,7 @@ EdgeNeedsSweepUnbarriered(JSObject** objp)
 }
 
 } // namespace gc
-} // namesapce js
+} // namespace js
 
 namespace JS {
 
@@ -558,7 +598,6 @@ ExposeObjectToActiveJS(JSObject* obj)
     MOZ_ASSERT(!js::gc::EdgeNeedsSweepUnbarrieredSlow(&obj));
     js::gc::ExposeGCThingToActiveJS(GCCellPtr(obj));
 }
-#endif
 
 static MOZ_ALWAYS_INLINE void
 ExposeScriptToActiveJS(JSScript* script)
@@ -568,5 +607,6 @@ ExposeScriptToActiveJS(JSScript* script)
 }
 
 } /* namespace JS */
+#endif
 
 #endif /* js_HeapAPI_h */
