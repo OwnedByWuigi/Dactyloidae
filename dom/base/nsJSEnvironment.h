@@ -91,7 +91,7 @@ public:
                               int32_t aExtraForgetSkippableCalls = 0);
 
   // Run a cycle collector slice, using a heuristic to decide how long to run it.
-  static void RunCycleCollectorSlice();
+  static void RunCycleCollectorSlice(const mozilla::TimeStamp& aDeadline = mozilla::TimeStamp());
 
   // Run a cycle collector slice, using the given work budget.
   static void RunCycleCollectorWorkSlice(int64_t aWorkBudget);
@@ -105,8 +105,10 @@ public:
 
   static void RunNextCollectorTimer();
 
-  static void PokeGC(JS::gcreason::Reason aReason, int aDelay = 0);
+  static void PokeGC(JS::gcreason::Reason aReason, int aDelay = 0, JSObject* aObj = nullptr);
   static void KillGCTimer();
+
+  static void KillCCTimer();
 
   static void PokeShrinkingGC();
   static void KillShrinkingGCTimer();
@@ -116,6 +118,8 @@ public:
   static void KillICCRunner();
   static void KillFullGCTimer();
   static void KillInterSliceGCRunner();
+
+  static void NotifyDidPaint();
 
   // Calling LikelyShortLivingObjectCreated() makes a GC more likely.
   static void LikelyShortLivingObjectCreated();

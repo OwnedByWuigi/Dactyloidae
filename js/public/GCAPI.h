@@ -323,7 +323,7 @@ typedef void
  * can be called off the main thread.
  */
 struct JSStringFinalizer {
-    void (*finalize)(const JSStringFinalizer* fin, char16_t* chars);
+    void (*finalize)(JS::Zone* zone, const JSStringFinalizer* fin, char16_t* chars);
 };
 
 
@@ -346,6 +346,7 @@ struct Zone;
     D(OUT_OF_NURSERY)                           \
     D(EVICT_NURSERY)                            \
     D(FULL_STORE_BUFFER)                        \
+    D(FULL_SLOT_BUFFER)                         \
     D(SHARED_MEMORY_LIMIT)                      \
     D(UNUSED1)                                  \
     D(INCREMENTAL_TOO_SLOW)                     \
@@ -985,6 +986,9 @@ JS_UpdateWeakPointerAfterGCUnbarriered(JSObject** objp);
 
 extern JS_PUBLIC_API(void)
 JS_SetGCParameter(JSContext* cx, JSGCParamKey key, uint32_t value);
+
+extern JS_PUBLIC_API(void)
+JS_SetGGCMode(JSContext* cx, bool enabled);
 
 extern JS_PUBLIC_API(void)
 JS_ResetGCParameter(JSContext* cx, JSGCParamKey key);

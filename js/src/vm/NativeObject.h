@@ -1030,7 +1030,7 @@ class NativeObject : public ShapedObject
         for (size_t i = 0; i < count; i++) {
             const Value& v = elements_[start + i];
             if (v.isObject() && IsInsideNursery(&v.toObject())) {
-                JS::shadow::Runtime* shadowRuntime = shadowRuntimeFromMainThread();
+                JS::shadow::Runtime* shadowRuntime = JS::shadow::Runtime::asShadowRuntime(runtimeFromMainThread());
                 shadowRuntime->gcStoreBufferPtr()->putSlot(this, HeapSlot::Element,
                                                            start + i, count - i);
                 return;

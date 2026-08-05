@@ -613,7 +613,7 @@ struct ChunkBitmap
                                               uintptr_t** wordp, uintptr_t* maskp)
     {
         MOZ_ASSERT(size_t(colorBit) < MarkBitsPerCell);
-        detail::GetGCThingMarkWordAndMask(uintptr_t(cell), colorBit, wordp, maskp);
+        detail::GetGCThingMarkWordAndMask(uintptr_t(cell), uint32_t(colorBit), wordp, maskp);
     }
 
     MOZ_ALWAYS_INLINE MOZ_TSAN_BLACKLIST bool markBit(const TenuredCell* cell, ColorBit colorBit) {
@@ -637,7 +637,7 @@ struct ChunkBitmap
     // The return value indicates if the cell went from unmarked to marked.
     MOZ_ALWAYS_INLINE bool markIfUnmarked(const TenuredCell* cell, MarkColor color) {
         uintptr_t* word, mask;
-        getMarkWordAndMask(cell, BLACK, &word, &mask);
+        getMarkWordAndMask(cell, ColorBit::BlackBit, &word, &mask);
         if (*word & mask)
             return false;
         if (color == MarkColor::Black) {
@@ -647,7 +647,7 @@ struct ChunkBitmap
              * We use getMarkWordAndMask to recalculate both mask and word as
              * doing just mask << color may overflow the mask.
              */
-            getMarkWordAndMask(cell, color, &word, &mask);
+            getMarkWordAndMask(cell, ColorBit(uint32_t(color)), &word, &mask);
             if (*word & mask)
                 return false;
             *word |= mask;
@@ -657,8 +657,8 @@ struct ChunkBitmap
 
     MOZ_ALWAYS_INLINE void markBlack(const TenuredCell* cell) {
         uintptr_t* word, mask;
-        getMarkWordAndMask(cell, color, &word, &mask);
-        *word &= ~mask;
+        getMarkWordAndMask(cell, ColorBit::BlackBit, &word, &mask);
+        *word |= mask;
     }
 
     MOZ_ALWAYS_INLINE void copyMarkBit(TenuredCell* dst, const TenuredCell* src,

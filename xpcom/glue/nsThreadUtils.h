@@ -917,6 +917,20 @@ struct IsParameterStorageClass<StorensRefPtrPassByPtr<S>>
   : public mozilla::TrueType {};
 
 template<typename T>
+struct StorensAutoPtrPassByRRef
+{
+  typedef nsAutoPtr<T> stored_type;
+  typedef nsAutoPtr<T> passed_type;
+  stored_type m;
+  template <typename A>
+  MOZ_IMPLICIT StorensAutoPtrPassByRRef(A&& a) : m(mozilla::Forward<A>(a)) {}
+  passed_type PassAsParameter() { return mozilla::Move(m); }
+};
+template<typename S>
+struct IsParameterStorageClass<StorensAutoPtrPassByRRef<S>>
+  : public mozilla::TrueType {};
+
+template<typename T>
 struct StorePtrPassByPtr
 {
   typedef T* stored_type;
@@ -1021,6 +1035,12 @@ struct SmartPointerStorageClass
                            typename mozilla::RemoveSmartPointer<T>::Type>,
                          StoreCopyPassByConstLRef<T>>
 {};
+
+template<typename T>
+struct SmartPointerStorageClass<nsAutoPtr<T>>
+{
+  typedef StorensAutoPtrPassByRRef<T> Type;
+};
 
 template<typename T>
 struct NonLValueReferenceStorageClass

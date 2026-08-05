@@ -108,6 +108,8 @@ const size_t gStackSize = 8192;
 // Maximum amount of time that should elapse between incremental GC slices
 #define NS_INTERSLICE_GC_DELAY      100 // ms
 
+#define NS_INTERSLICE_GC_BUDGET      5   // ms
+
 // Maximum amount of time that should elapse between incremental GC slices
 #define NS_INTERSLICE_GC_DELAY      100 // ms
 
@@ -189,6 +191,8 @@ static bool sNeedsFullGC = false;
 static bool sNeedsGCAfterCC = false;
 static bool sIncrementalCC = false;
 static int32_t sActiveIntersliceGCBudget = 5; // ms;
+static bool sDidPaintAfterPreviousICCSlice = false;
+static uint32_t sCCTimerFireCount = 0;
 static nsScriptNameSpaceManager *gNameSpaceManager;
 
 static PRTime sFirstCollectionTime;
@@ -1531,7 +1535,7 @@ nsJSContext::CycleCollectNow(nsICycleCollectorListener *aListener,
 
 //static
 void
-nsJSContext::RunCycleCollectorSlice()
+nsJSContext::RunCycleCollectorSlice(const TimeStamp& aDeadline)
 {
   if (!NS_IsMainThread()) {
     return;
@@ -1637,7 +1641,7 @@ ICCTimerFired(nsITimer* aTimer, void* aClosure)
     }
   }
 
-  nsJSContext::RunCycleCollectorSlice();
+  nsJSContext::RunCycleCollectorSlice(TimeStamp());
 }
 
 //static
@@ -1816,6 +1820,7 @@ InterSliceGCTimerFired(nsITimer *aTimer, void *aClosure)
   // We use longer budgets when the CC has been locked out but the CC has tried
   // to run since that means we may have significant amount garbage to collect
   // and better to GC in several longer slices than in a very long one.
+  TimeStamp aDeadline; // no idle deadline available in timer callback
   int64_t budget = aDeadline.IsNull() ?
     int64_t(sActiveIntersliceGCBudget * 2) :
     int64_t((aDeadline - TimeStamp::Now()).ToMilliseconds());
@@ -1829,8 +1834,8 @@ InterSliceGCTimerFired(nsITimer *aTimer, void *aClosure)
         std::max((double)budget, percentOfLockedTime * maxSliceGCBudget));
   }
 
-  uintptr_t reason = reinterpret_cast<uintptr_t>(aData);
-  nsJSContext::GarbageCollectNow(aData ?
+  uintptr_t reason = reinterpret_cast<uintptr_t>(aClosure);
+  nsJSContext::GarbageCollectNow(aClosure ?
                                    static_cast<JS::gcreason::Reason>(reason) :
                                    JS::gcreason::INTER_SLICE_GC,
                                  nsJSContext::IncrementalGC,
@@ -1906,9 +1911,10 @@ CCTimerFired(nsITimer *aTimer, void *aClosure)
   int32_t numEarlyTimerFires = std::max((int32_t)ccDelay / NS_CC_SKIPPABLE_DELAY - 2, 1);
   bool isLateTimerFire = sCCRunnerFireCount > numEarlyTimerFires;
   uint32_t suspected = nsCycleCollector_suspectedCount();
+  TimeStamp deadline; // no idle deadline in timer callback
   if (isLateTimerFire && ShouldTriggerCC(suspected)) {
     if (sCCRunnerFireCount == numEarlyTimerFires + 1) {
-      FireForgetSkippable(suspected, true, aDeadline);
+      FireForgetSkippable(suspected, true, deadline);
       didDoWork = true;
       if (ShouldTriggerCC(nsCycleCollector_suspectedCount())) {
         // Our efforts to avoid a CC have failed, so we return to let the
@@ -1919,14 +1925,14 @@ CCTimerFired(nsITimer *aTimer, void *aClosure)
       // We are in the final timer fire and still meet the conditions for
       // triggering a CC. Let RunCycleCollectorSlice finish the current IGC, if
       // any because that will allow us to include the GC time in the CC pause.
-      nsJSContext::RunCycleCollectorSlice(aDeadline);
+      nsJSContext::RunCycleCollectorSlice(deadline);
       didDoWork = true;
     }
   } else if (((sPreviousSuspectedCount + 100) <= suspected) ||
              (sCleanupsSinceLastGC < NS_MAJOR_FORGET_SKIPPABLE_CALLS)) {
       // Only do a forget skippable if there are more than a few new objects
       // or we're doing the initial forget skippables.
-      FireForgetSkippable(suspected, false, aDeadline);
+      FireForgetSkippable(suspected, false, deadline);
       didDoWork = true;
   }
 
@@ -2034,7 +2040,7 @@ nsJSContext::RunNextCollectorTimer()
 
 // static
 void
-nsJSContext::PokeGC(JS::gcreason::Reason aReason, int aDelay)
+nsJSContext::PokeGC(JS::gcreason::Reason aReason, int aDelay, JSObject* aObj)
 {
   sNeedsFullGC = sNeedsFullGC || aReason != JS::gcreason::CC_WAITING;
 
@@ -2144,6 +2150,16 @@ nsJSContext::KillGCTimer()
   if (sGCTimer) {
     sGCTimer->Cancel();
     NS_RELEASE(sGCTimer);
+  }
+}
+
+//static
+void
+nsJSContext::KillCCTimer()
+{
+  if (sCCTimer) {
+    sCCTimer->Cancel();
+    NS_RELEASE(sCCTimer);
   }
 }
 

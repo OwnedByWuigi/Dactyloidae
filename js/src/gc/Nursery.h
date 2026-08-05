@@ -9,6 +9,7 @@
 #define gc_Nursery_h
 
 #include "mozilla/EnumeratedArray.h"
+#include "mozilla/TimeStamp.h"
 
 #include "js/Class.h"
 #include "js/HeapAPI.h"
@@ -381,6 +382,8 @@ class Nursery
      */
     unsigned chunkCountLimit_;
 
+    mozilla::Atomic<JS::gcreason::Reason, mozilla::Relaxed> minorGCTriggerReason_;
+
     mozilla::TimeDuration timeInChunkAlloc_;
 
     /* Promotion rate for the previous minor collection. */
@@ -471,7 +474,7 @@ class Nursery
      *       sweep. This is because this structure is used to help implement
      *       stable object hashing and we have to break the cycle somehow.
      */
-    using CellsWithUniqueIdSet = HashSet<gc::Cell*, PointerHasher<gc::Cell*, 3>, SystemAllocPolicy>;
+    using CellsWithUniqueIdSet = HashSet<gc::Cell*, PointerHasher<gc::Cell*>, SystemAllocPolicy>;
     CellsWithUniqueIdSet cellsWithUid_;
 
     struct SweepAction;
@@ -502,7 +505,6 @@ class Nursery
     MOZ_ALWAYS_INLINE uintptr_t currentEnd() const;
 
     uintptr_t position() const { return position_; }
-    void* addressOfPosition() const { return (void*)&position_; }
 
     JSRuntime* runtime() const { return runtime_; }
 

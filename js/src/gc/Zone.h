@@ -625,6 +625,13 @@ struct Zone : public JS::shadow::Zone,
     js::ZoneGroupData<bool> gcPreserveCode_;
     js::ZoneGroupData<bool> keepShapeTables_;
 
+    js::ZoneGroupData<js::DenseBitmap> markedAtoms_;
+
+  public:
+    js::DenseBitmap& markedAtoms() { return markedAtoms_.ref(); }
+
+  private:
+
     // Allow zones to be linked into a list
     friend class js::gc::ZoneList;
     static Zone * const NotOnList;
