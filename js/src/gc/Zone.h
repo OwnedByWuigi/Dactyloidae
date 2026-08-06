@@ -18,6 +18,12 @@
 
 struct JSContext;
 
+namespace JS {
+namespace detail {
+class WeakCacheBase;
+} // namespace detail
+} // namespace JS
+
 namespace js {
 
 class Debugger;

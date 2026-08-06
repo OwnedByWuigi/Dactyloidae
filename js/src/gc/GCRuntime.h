@@ -41,6 +41,9 @@ class MarkingValidator;
 class AutoTraceSession;
 struct MovingTracer;
 enum class ShouldCheckThresholds;
+
+template <typename... Args>
+struct SweepAction;
 class SweepGroupsIter;
 class WeakCacheSweepIterator;
 

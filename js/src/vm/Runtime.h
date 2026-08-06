@@ -20,6 +20,7 @@
 #include "jsatom.h"
 #include "jsclist.h"
 #include "jsscript.h"
+#include "irregexp/RegExpStack.h"
 
 #ifdef XP_DARWIN
 # include "wasm/WasmSignalHandlers.h"
@@ -1041,6 +1042,8 @@ struct JSRuntime : public JS::shadow::Runtime,
     bool keepAtoms() {
         return keepAtoms_ != 0 || exclusiveThreadsPresent();
     }
+
+    bool exclusiveThreadsPresent() const { return false; }
 
   private:
     const JSPrincipals* trustedPrincipals_;

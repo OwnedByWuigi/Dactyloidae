@@ -18,6 +18,20 @@ namespace jit { class JitZoneGroup; }
 class AutoKeepAtoms;
 
 typedef Vector<JS::Zone*, 4, SystemAllocPolicy> ZoneVector;
+typedef Vector<ZoneGroup*, 4, SystemAllocPolicy> ZoneGroupVector;
+
+// In UXP there is only one cooperating context per thread, represented
+// as a simple wrapper around JSContext*.
+class CooperatingContext
+{
+    JSContext* cx_;
+  public:
+    explicit CooperatingContext(JSContext* cx) : cx_(cx) {}
+    JSContext* operator*() const { return cx_; }
+    JSContext* operator->() const { return cx_; }
+    explicit operator bool() const { return !!cx_; }
+    JSContext* get() const { return cx_; }
+};
 
 // Zone groups encapsulate data about a group of zones that are logically
 // related in some way.

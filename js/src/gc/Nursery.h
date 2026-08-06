@@ -411,6 +411,7 @@ class Nursery
     };
 
     using ProfileTimes = mozilla::EnumeratedArray<ProfileKey, ProfileKey::KeyCount, int64_t>;
+    using ProfileDurations = mozilla::EnumeratedArray<ProfileKey, ProfileKey::KeyCount, mozilla::TimeDuration>;
 
     ProfileTimes startTimes_;
     ProfileTimes profileTimes_;

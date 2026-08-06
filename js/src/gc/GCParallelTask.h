@@ -87,5 +87,24 @@ class GCParallelTask
     void runFromHelperThread(AutoLockHelperThreadState& locked);
 };
 
+// A CRTP helper to create a GCParallelTask from a derived class
+// that already has a run() method.
+template <typename Derived>
+class GCParallelTaskHelper : public GCParallelTask
+{
+  public:
+    explicit GCParallelTaskHelper(JSRuntime* runtime)
+      : GCParallelTask(runtime)
+    {}
+
+    GCParallelTaskHelper(GCParallelTaskHelper&& other)
+      : GCParallelTask(mozilla::Move(other))
+    {}
+
+    void run() override {
+        static_cast<Derived*>(this)->run();
+    }
+};
+
 } /* namespace js */
 #endif /* gc_GCParallelTask_h */
