@@ -52,6 +52,12 @@ InitWeakRefClass(JSContext* cx, HandleObject obj);
 extern JSObject*
 InitBareWeakRefCtor(JSContext* cx, HandleObject obj);
 
+static inline bool
+CanBeHeldWeakly(const Value& value)
+{
+    return value.isObject() || value.isSymbol();
+}
+
 } // namespace js
 
 #endif /* builtin_WeakRefObject_h */
