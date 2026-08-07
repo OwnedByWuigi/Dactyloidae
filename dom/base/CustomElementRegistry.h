@@ -16,8 +16,6 @@
 #include "mozilla/dom/WebComponentsBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsGenericHTMLElement.h"
-#include "nsHashKeys.h"
-#include "nsTHashtable.h"
 #include "nsWrapperCache.h"
 
 class nsDocument;
@@ -168,9 +166,6 @@ struct CustomElementDefinition
   // The list of attributes that this custom element observes.
   nsCOMArray<nsIAtom> mObservedAttributes;
 
-  // Hash set for O(1) lookup of observed attributes.
-  nsTHashtable<nsISupportsHashKey> mObservedAttributesSet;
-
   // The prototype to use for new custom elements of this type.
   JS::Heap<JSObject *> mPrototype;
 
@@ -194,7 +189,7 @@ struct CustomElementDefinition
       return false;
     }
 
-    return mObservedAttributesSet.Contains(aName);
+    return mObservedAttributes.Contains(aName);
   }
 
 private:

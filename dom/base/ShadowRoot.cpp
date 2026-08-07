@@ -136,7 +136,7 @@ ShadowRoot::AddSlot(HTMLSlotElement* aSlot)
   MOZ_ASSERT(aSlot);
 
   // Note that if name attribute missing, the slot is a default slot.
-  nsAutoString name;
+ nsAutoString name;
   aSlot->GetName(name);
 
   nsTArray<HTMLSlotElement*>* currentSlots = mSlotMap.LookupOrAdd(name);
@@ -162,14 +162,25 @@ ShadowRoot::AddSlot(HTMLSlotElement* aSlot)
 
       oldSlot->RemoveAssignedNode(assignedNode);
       currentSlot->AppendAssignedNode(assignedNode);
+
+      Element* restyleElement;
+      if (assignedNode->IsElement()) {
+        restyleElement = assignedNode->AsElement();
+      } else {
+        // This is likely a text node. Use the host instead.
+        restyleElement = GetHost();
+      }
+      if (restyleElement) {
+        nsLayoutUtils::PostRestyleEvent(
+          restyleElement, eRestyle_Subtree, nsChangeHint(0));
+      }
+
       doEnqueueSlotChange = true;
     }
 
     if (doEnqueueSlotChange) {
       oldSlot->EnqueueSlotChangeEvent();
       currentSlot->EnqueueSlotChangeEvent();
-      nsLayoutUtils::PostRestyleEvent(
-        GetHost(), eRestyle_Subtree, nsChangeHint(0));
     }
   } else {
     // Otherwise add appropriate nodes to this slot from the host.
@@ -464,10 +475,7 @@ ShadowRoot::MaybeReassignElement(Element* aElement,
 void
 ShadowRoot::DistributionChanged()
 {
-  if (mSlotMap.IsEmpty()) {
-    return;
-  }
-
+  // FIXME(emilio): We could be more granular in a bunch of cases.
   auto* host = GetHost();
   if (!host || !host->IsInComposedDoc()) {
     return;
@@ -543,11 +551,8 @@ ShadowRoot::AttributeChanged(nsIDocument* aDocument,
     return;
   }
 
-  if (aElement->GetPrimaryFrame()) {
-    shell->DestroyFramesForAndRestyle(aElement);
-  } else {
-    nsLayoutUtils::PostRestyleEvent(aElement, eRestyle_Subtree, nsChangeHint(0));
-  }
+  //XXX optimize this!
+  shell->DestroyFramesForAndRestyle(aElement);
 }
 
 void
@@ -559,7 +564,7 @@ ShadowRoot::ContentAppended(nsIDocument* aDocument,
   for (nsIContent* content = aFirstNewContent;
        content;
        content = content->GetNextSibling()) {
-    ContentInserted(aDocument, aContainer, content, aNewIndexInContainer);
+    ContentInserted(aDocument, aContainer, aFirstNewContent, aNewIndexInContainer);
   }
 }
 

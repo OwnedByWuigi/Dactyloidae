@@ -1278,9 +1278,6 @@ CustomElementDefinition::CustomElementDefinition(nsIAtom* aType,
     mCallbacks(aCallbacks),
     mDocOrder(aDocOrder)
 {
-  for (uint32_t i = 0; i < mObservedAttributes.Length(); ++i) {
-    mObservedAttributesSet.PutEntry(mObservedAttributes[i]);
-  }
 }
 
 //-----------------------------------------------------
