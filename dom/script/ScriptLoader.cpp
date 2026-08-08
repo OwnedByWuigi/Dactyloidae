@@ -2334,8 +2334,7 @@ ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest)
     }
 
     if (aRequest->IsModuleRequest()) {
-      // For modules, currentScript is set to null.
-      AutoCurrentScriptUpdater scriptUpdater(this, nullptr);
+      AutoCurrentScriptUpdater scriptUpdater(this, aRequest->Element());
 
       ModuleLoadRequest* request = aRequest->AsModuleRequest();
       MOZ_ASSERT(request->mModuleScript);
