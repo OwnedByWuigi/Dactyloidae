@@ -54,6 +54,11 @@
 
 #include "vm/Stack-inl.h"
 
+// The execution context is stored in thread-local storage and is declared in
+// jscntxt.h.  Keep the single definition here so every user of the GC and
+// zone-group code links against the same TLS slot.
+MOZ_THREAD_LOCAL(JSContext*) js::TlsContext;
+
 using namespace js;
 using namespace js::gc;
 

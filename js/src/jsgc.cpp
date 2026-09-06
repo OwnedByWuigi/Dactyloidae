@@ -8144,6 +8144,16 @@ JS::IsIncrementalBarrierNeeded(JSContext* cx)
     return state != gc::State::NotActive && state <= gc::State::Sweep;
 }
 
+JS_PUBLIC_API(void)
+js::gc::MarkGCThingAsLive(JSRuntime* rt, JS::GCCellPtr thing)
+{
+    if (!thing || js::gc::IsInsideNursery(thing.asCell()))
+        return;
+
+    MOZ_ASSERT(thing.asCell()->runtimeFromAnyThread() == rt);
+    thing.asCell()->asTenured().markIfUnmarked(js::gc::MarkColor::Black);
+}
+
 struct IncrementalReferenceBarrierFunctor {
     template <typename T> void operator()(T* t) { T::writeBarrierPre(t); }
 };

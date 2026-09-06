@@ -111,7 +111,7 @@ class ZoneGroup
 
     bool init();
 
-    inline Nursery& nursery();
+    Nursery& nursery();
     inline gc::StoreBuffer& storeBuffer();
 
     inline bool isCollecting();

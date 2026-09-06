@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gc/ZoneGroup.h"
+#include "gc/Nursery.h"
 
 #include "jscntxt.h"
 
@@ -14,6 +15,12 @@
 using namespace js;
 
 namespace js {
+
+Nursery&
+ZoneGroup::nursery()
+{
+    return runtime->gc.getNursery();
+}
 
 ZoneGroup::ZoneGroup(JSRuntime* runtime)
   : runtime(runtime),
