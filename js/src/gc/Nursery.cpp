@@ -638,6 +638,14 @@ js::Nursery::printProfileTimes(const ProfileTimes& times)
     fprintf(stderr, "\n");
 }
 
+/* static */ void
+js::Nursery::printProfileDurations(const ProfileDurations& times)
+{
+    for (auto duration : times)
+        fprintf(stderr, " %6" PRIi64, int64_t(duration.ToMicroseconds()));
+    fprintf(stderr, "\n");
+}
+
 void
 js::Nursery::printTotalProfileTimes()
 {

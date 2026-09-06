@@ -19,21 +19,13 @@
 #define wasm_ion_compile_h
 
 #include "jit/MacroAssembler.h"
-#include "wasm/WasmTypes.h"
-
-#include "wasm/WasmTypes.h"
+#include "wasm/WasmGenerator.h"
 
 namespace js {
 namespace wasm {
 
-struct ModuleGeneratorData;
-
-typedef Vector<jit::MIRType, 8, SystemAllocPolicy> MIRTypeVector;
-typedef jit::ABIArgIter<MIRTypeVector> ABIArgMIRTypeIter;
-typedef jit::ABIArgIter<ValTypeVector> ABIArgValTypeIter;
-
 [[nodiscard]] bool
-IonCompileFunction(CompileTask* task, FuncCompileUnit* unit, UniqueChars* error);
+IonCompileFunction(IonCompileTask* task, FuncCompileUnit* unit, UniqueChars* error);
 
 } // namespace wasm
 } // namespace js

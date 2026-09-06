@@ -332,7 +332,7 @@ JSRuntime::init(uint32_t maxbytes, uint32_t maxNurseryBytes)
     if (!symbolRegistry_.init())
         return false;
 
-    if (!scriptDataTable_.init())
+    if (!scriptDataTable_.ref().init())
         return false;
 
     /* The garbage collector depends on everything before this point being initialized. */
@@ -468,6 +468,7 @@ JSRuntime::destroyRuntime()
 void
 JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf, JS::RuntimeSizes* rtSizes)
 {
+    JSContext* cx = contextFromMainThread();
     rtSizes->object += mallocSizeOf(this);
 
     {
@@ -800,7 +801,8 @@ JSRuntime::updateMallocCounter(size_t nbytes)
 void
 JSRuntime::updateMallocCounter(JS::Zone* zone, size_t nbytes)
 {
-    gc.updateMallocCounter(zone, nbytes);
+    (void)zone;
+    gc.updateMallocCounter(nbytes);
 }
 
 JS_FRIEND_API(void*)
@@ -862,27 +864,12 @@ JSRuntime::setUsedByExclusiveThread(Zone* zone)
 {
     MOZ_ASSERT(!zone->usedByExclusiveThread);
     zone->usedByExclusiveThread = true;
-    numExclusiveThreads++;
 }
 
 void
 JSRuntime::clearUsedByExclusiveThread(Zone* zone)
 {
-    MOZ_ASSERT(!zone->group()->usedByHelperThread());
-    MOZ_ASSERT(!zone->wasGCStarted());
-    zone->group()->setUsedByHelperThread();
-    numActiveHelperThreadZones++;
-}
-
-void
-JSRuntime::clearUsedByHelperThread(Zone* zone)
-{
-    MOZ_ASSERT(zone->group()->usedByHelperThread());
-    zone->group()->clearUsedByHelperThread();
-    numActiveHelperThreadZones--;
-    JSContext* cx = TlsContext.get();
-    if (gc.fullGCForAtomsRequested() && cx->canCollectAtoms())
-        gc.triggerFullGCForAtoms(cx);
+    zone->usedByExclusiveThread = false;
 }
 
 bool

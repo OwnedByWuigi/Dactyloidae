@@ -6659,7 +6659,7 @@ struct ScopedCacheEntryOpenedForWrite
 
     ~ScopedCacheEntryOpenedForWrite() {
         if (memory)
-            cx->asmJSCacheOps().closeEntryForWrite(serializedSize, memory, handle);
+            cx->runtime()->asmJSCacheOps.closeEntryForWrite(serializedSize, memory, handle);
     }
 };
 
@@ -6676,7 +6676,7 @@ struct ScopedCacheEntryOpenedForRead
 
     ~ScopedCacheEntryOpenedForRead() {
         if (memory)
-            cx->asmJSCacheOps().closeEntryForRead(serializedSize, memory, handle);
+            cx->runtime()->asmJSCacheOps.closeEntryForRead(serializedSize, memory, handle);
     }
 };
 
@@ -6698,7 +6698,7 @@ StoreAsmJSModuleInCache(AsmJSParser& parser, Module& module, ExclusiveContext* c
                             compiledSize +
                             moduleChars.serializedSize();
 
-    JS::OpenAsmJSCacheEntryForWriteOp open = cx->asmJSCacheOps().openEntryForWrite;
+    JS::OpenAsmJSCacheEntryForWriteOp open = cx->runtime()->asmJSCacheOps.openEntryForWrite;
     if (!open)
         return JS::AsmJSCache_Disabled_Internal;
 
@@ -6737,7 +6737,7 @@ LookupAsmJSModuleInCache(ExclusiveContext* cx, AsmJSParser& parser, bool* loaded
 
     *loadedFromCache = false;
 
-    JS::OpenAsmJSCacheEntryForReadOp open = cx->asmJSCacheOps().openEntryForRead;
+    JS::OpenAsmJSCacheEntryForReadOp open = cx->runtime()->asmJSCacheOps.openEntryForRead;
     if (!open)
         return true;
 

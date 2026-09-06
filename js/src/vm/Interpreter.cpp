@@ -264,7 +264,7 @@ SetPropertyOperation(JSContext* cx, JSOp op, HandleValue lval, HandleId id, Hand
 }
 
 JSFunction*
-MakeDefaultConstructor(JSContext* cx, HandleScript script, jsbytecode* pc, HandleObject proto)
+js::MakeDefaultConstructor(JSContext* cx, HandleScript script, jsbytecode* pc, HandleObject proto)
 {
     JSOp op = JSOp(*pc);
     JSAtom* atom = script->getAtom(pc);
@@ -4180,7 +4180,7 @@ CASE(JSOP_DERIVEDCONSTRUCTOR)
     MOZ_ASSERT(REGS.sp[-1].isObject());
     ReservedRooted<JSObject*> proto(&rootObject0, &REGS.sp[-1].toObject());
 
-    JSFunction* constructor = MakeDefaultConstructor(cx, script, REGS.pc, proto);
+    JSFunction* constructor = js::MakeDefaultConstructor(cx, script, REGS.pc, proto);
 
     if (!constructor)
         goto error;
@@ -4191,7 +4191,7 @@ END_CASE(JSOP_DERIVEDCONSTRUCTOR)
 
 CASE(JSOP_CLASSCONSTRUCTOR)
 {
-    JSFunction* constructor = MakeDefaultConstructor(cx, script, REGS.pc, nullptr);
+    JSFunction* constructor = js::MakeDefaultConstructor(cx, script, REGS.pc, nullptr);
     if (!constructor)
         goto error;
     PUSH_OBJECT(*constructor);

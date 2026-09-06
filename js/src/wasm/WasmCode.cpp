@@ -72,8 +72,9 @@ AllocateCodeSegment(JSContext* cx, uint32_t codeLength)
     // to purge all memory (which, in gecko, does a purging GC/CC/GC), do that
     // then retry the allocation.
     if (!p) {
-        if (OnLargeAllocationFailure) {
-            OnLargeAllocationFailure();
+        JSRuntime* rt = cx->runtime();
+        if (rt->largeAllocationFailureCallback) {
+            rt->largeAllocationFailureCallback(rt->largeAllocationFailureCallbackData);
             p = AllocateExecutableMemory(codeLength, ProtectionSetting::Writable);
         }
     }

@@ -229,9 +229,9 @@ JSFlatString::new_(js::ExclusiveContext* cx, const CharT* chars, size_t length)
 
     JSFlatString* str;
     if (cx->compartment()->isAtomsCompartment())
-        str = js::Allocate<js::NormalAtom, allowGC>(cx);
+        str = js::Allocate<js::NormalAtom, allowGC>(cx->asJSContext());
     else
-        str = js::Allocate<JSFlatString, allowGC>(cx, js::gc::DefaultHeap);
+        str = js::Allocate<JSFlatString, allowGC>(cx->asJSContext(), js::gc::DefaultHeap);
     if (!str)
         return nullptr;
 
@@ -273,7 +273,7 @@ MOZ_ALWAYS_INLINE JSThinInlineString*
 JSThinInlineString::new_(js::ExclusiveContext* cx)
 {
     if (cx->compartment()->isAtomsCompartment())
-        return (JSThinInlineString*)(js::Allocate<js::NormalAtom, allowGC>(cx));
+        return (JSThinInlineString*)(js::Allocate<js::NormalAtom, allowGC>(cx->asJSContext()));
 
     return js::Allocate<JSThinInlineString, allowGC>(cx->asJSContext(), js::gc::DefaultHeap);
 }
@@ -283,7 +283,7 @@ MOZ_ALWAYS_INLINE JSFatInlineString*
 JSFatInlineString::new_(js::ExclusiveContext* cx)
 {
     if (cx->compartment()->isAtomsCompartment())
-        return (JSFatInlineString*)(js::Allocate<js::FatInlineAtom, allowGC>(cx));
+        return (JSFatInlineString*)(js::Allocate<js::FatInlineAtom, allowGC>(cx->asJSContext()));
 
     return js::Allocate<JSFatInlineString, allowGC>(cx->asJSContext(), js::gc::DefaultHeap);
 }

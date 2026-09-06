@@ -464,6 +464,14 @@ class BufferGrayRootsTracer : public JS::CallbackTracer
 #endif
 };
 
+template <typename T>
+inline void
+BufferGrayRootsTracer::bufferRoot(T* thing)
+{
+    if (thing)
+        onChild(JS::GCCellPtr(thing));
+}
+
 #ifdef DEBUG
 // Return true if this trace is happening on behalf of gray buffering during
 // the marking phase of incremental GC.

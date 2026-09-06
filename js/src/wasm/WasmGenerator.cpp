@@ -428,13 +428,12 @@ bool
 ModuleGenerator::finishTask(IonCompileTask* task)
 {
     const FuncBytes& func = task->func();
-    FuncCompileResults& results = task->results();
 
     masm_.haltingAlign(CodeAlignment);
 
     // Before merging in the new function's code, if calls in a prior function
     // body might go out of range, insert far jumps to extend the range.
-    if ((masm_.size() - startOfUnpatchedCallsites_) + results.masm().size() > JumpRange()) {
+    if ((masm_.size() - startOfUnpatchedCallsites_) + task->masm().size() > JumpRange()) {
         startOfUnpatchedCallsites_ = masm_.size();
         if (!patchCallSites())
             return false;
@@ -443,11 +442,12 @@ ModuleGenerator::finishTask(IonCompileTask* task)
     // Offset the recorded FuncOffsets by the offset of the function in the
     // whole module's code segment.
     uint32_t offsetInWhole = masm_.size();
-    results.offsets().offsetBy(offsetInWhole);
+    FuncOffsets offsets = task->units().back().offsets();
+    offsets.offsetBy(offsetInWhole);
 
     // Add the CodeRange for this function.
     uint32_t funcCodeRangeIndex = metadata_->codeRanges.length();
-    if (!metadata_->codeRanges.emplaceBack(func.index(), func.lineOrBytecode(), results.offsets()))
+    if (!metadata_->codeRanges.emplaceBack(func.index(), func.lineOrBytecode(), offsets))
         return false;
 
     MOZ_ASSERT(!funcIsCompiled(func.index()));
@@ -455,9 +455,9 @@ ModuleGenerator::finishTask(IonCompileTask* task)
 
     // Merge the compiled results into the whole-module masm.
     mozilla::DebugOnly<size_t> sizeBefore = masm_.size();
-    if (!masm_.asmMergeWith(results.masm()))
+    if (!masm_.asmMergeWith(task->masm()))
         return false;
-    MOZ_ASSERT(masm_.size() == offsetInWhole + results.masm().size());
+    MOZ_ASSERT(masm_.size() == offsetInWhole + task->masm().size());
 
     freeTasks_.infallibleAppend(task);
     return true;
@@ -934,11 +934,11 @@ ModuleGenerator::finishFuncDef(uint32_t funcIndex, FunctionGenerator* fg)
     if (!func)
         return false;
 
-    CompileMode mode;
+    IonCompileTask::CompileMode mode;
     if ((alwaysBaseline_ || debugEnabled_) && BaselineCanCompile(fg)) {
-      mode = CompileMode::Baseline;
+      mode = IonCompileTask::CompileMode::Baseline;
     } else {
-      mode = CompileMode::Ion;
+      mode = IonCompileTask::CompileMode::Ion;
       // Ion does not support debugging -- reset debugEnabled_ flags to avoid
       // turning debugging for wasm::Code.
       debugEnabled_ = false;
@@ -1177,7 +1177,7 @@ ModuleGenerator::finish(const ShareableBytes& bytecode)
 }
 
 bool
-wasm::CompileFunction(CompileTask* task, UniqueChars* error)
+wasm::CompileFunction(IonCompileTask* task, UniqueChars* error)
 {
     TraceLoggerThread* logger = TraceLoggerForCurrentThread();
     AutoTraceLog logCompile(logger, TraceLogger_WasmCompilation);

@@ -290,8 +290,11 @@ class BaseCompiler
         RegI32() : reg(Register::Invalid()) {}
         explicit RegI32(Register reg) : reg(reg) {}
         Register reg;
+        operator Register() const { return reg; }
         bool operator==(const RegI32& that) { return reg == that.reg; }
         bool operator!=(const RegI32& that) { return reg != that.reg; }
+        bool operator==(Register that) const { return reg == that; }
+        bool operator!=(Register that) const { return reg != that; }
     };
 
     struct RegI64
@@ -299,6 +302,7 @@ class BaseCompiler
         RegI64() : reg(Register64::Invalid()) {}
         explicit RegI64(Register64 reg) : reg(reg) {}
         Register64 reg;
+        operator Register64() const { return reg; }
         bool operator==(const RegI64& that) { return reg == that.reg; }
         bool operator!=(const RegI64& that) { return reg != that.reg; }
     };
@@ -308,6 +312,7 @@ class BaseCompiler
         RegF32() {}
         explicit RegF32(FloatRegister reg) : reg(reg) {}
         FloatRegister reg;
+        operator FloatRegister() const { return reg; }
         bool operator==(const RegF32& that) { return reg == that.reg; }
         bool operator!=(const RegF32& that) { return reg != that.reg; }
     };
@@ -317,6 +322,7 @@ class BaseCompiler
         RegF64() {}
         explicit RegF64(FloatRegister reg) : reg(reg) {}
         FloatRegister reg;
+        operator FloatRegister() const { return reg; }
         bool operator==(const RegF64& that) { return reg == that.reg; }
         bool operator!=(const RegF64& that) { return reg != that.reg; }
     };
@@ -409,6 +415,17 @@ class BaseCompiler
         uint32_t stackSize;             // Value stack height
         bool deadOnArrival;             // deadCode_ was set on entry to the region
         bool deadThenBranch;            // deadCode_ was set on exit from "then"
+    };
+
+    struct BranchState {
+        enum { NoPop = UINT32_MAX };
+        Label* label;
+        uint32_t framePushed;
+        InvertBranch invert;
+        ExprType type;
+        BranchState(Label* label, uint32_t framePushed, InvertBranch invert,
+                    ExprType type = ExprType::Void)
+          : label(label), framePushed(framePushed), invert(invert), type(type) {}
     };
 
     struct BaseCompilePolicy : OpIterPolicy
@@ -519,7 +536,9 @@ class BaseCompiler
     NonAssertingLabel           stackOverflowLabel_;
     TrapOffset                  prologueTrapOffset_;
 
-    FuncCompileResults&         compileResults_;
+    FuncOffsets                 offsets_;
+    NonAssertingLabel           bodyLabel_;
+    Label                       outOfLinePrologue_;
     MacroAssembler&             masm;            // No '_' suffix - too tedious...
 
     AllocatableGeneralRegisterSet availGPR_;
@@ -580,6 +599,7 @@ class BaseCompiler
     MOZ_MUST_USE bool init();
 
     void finish();
+    const FuncOffsets& offsets() const { return offsets_; }
 
     MOZ_MUST_USE bool emitFunction();
 
@@ -923,6 +943,7 @@ class BaseCompiler
     };
 
     Vector<Stk, 8, SystemAllocPolicy> stk_;
+    Vector<Control, 8, SystemAllocPolicy> ctl_;
 
     Stk& push() {
         stk_.infallibleEmplaceBack(Stk());
@@ -1109,8 +1130,8 @@ class BaseCompiler
     }
 
     void loadRegisterI32(Register r, Stk& src) {
-        if (src.i32reg() != r)
-            masm.move32(src.i32reg(), r);
+        if (src.i32reg().reg != r)
+            masm.move32(src.i32reg().reg, r);
     }
 
     void loadConstI64(Register64 r, Stk &src) {
@@ -1126,8 +1147,8 @@ class BaseCompiler
     }
 
     void loadRegisterI64(Register64 r, Stk& src) {
-        if (src.i64reg() != r)
-            masm.move64(src.i64reg(), r);
+        if (src.i64reg().reg != r)
+            masm.move64(src.i64reg().reg, r);
     }
 
     void loadConstF64(FloatRegister r, Stk &src) {
@@ -1145,8 +1166,8 @@ class BaseCompiler
     }
 
     void loadRegisterF64(FloatRegister r, Stk& src) {
-        if (src.f64reg() != r)
-            masm.moveDouble(src.f64reg(), r);
+        if (src.f64reg().reg != r)
+            masm.moveDouble(src.f64reg().reg, r);
     }
 
     void loadConstF32(FloatRegister r, Stk &src) {
@@ -1164,8 +1185,8 @@ class BaseCompiler
     }
 
     void loadRegisterF32(FloatRegister r, Stk& src) {
-        if (src.f32reg() != r)
-            masm.moveFloat32(src.f32reg(), r);
+        if (src.f32reg().reg != r)
+            masm.moveFloat32(src.f32reg().reg, r);
     }
 
     void loadI32(Register r, Stk& src) {
@@ -1265,7 +1286,9 @@ class BaseCompiler
     void loadF64(FloatRegister r, Stk& src) {
         switch (src.kind()) {
           case Stk::ConstF64:
-            masm.loadConstantDouble(src.f64val(), r);
+            double value;
+            src.f64val(&value);
+            masm.loadConstantDouble(value, r);
             break;
           case Stk::MemF64:
             loadFromFrameF64(r, src.offs());
@@ -1287,7 +1310,9 @@ class BaseCompiler
     void loadF32(FloatRegister r, Stk& src) {
         switch (src.kind()) {
           case Stk::ConstF32:
-            masm.loadConstantFloat32(src.f32val(), r);
+            float value;
+            src.f32val(&value);
+            masm.loadConstantFloat32(value, r);
             break;
           case Stk::MemF32:
             loadFromFrameF32(r, src.offs());
@@ -1842,6 +1867,23 @@ class BaseCompiler
         }
     }
 
+    MOZ_MUST_USE AnyReg captureJoinRegUnlessVoid(ExprType type) {
+        switch (type) {
+          case ExprType::I32:
+            return AnyReg(joinRegI32);
+          case ExprType::I64:
+            return AnyReg(joinRegI64);
+          case ExprType::F32:
+            return AnyReg(joinRegF32);
+          case ExprType::F64:
+            return AnyReg(joinRegF64);
+          case ExprType::Void:
+            return AnyReg();
+          default:
+            MOZ_CRASH("Compiler bug: unexpected join type");
+        }
+    }
+
     MOZ_MUST_USE AnyReg allocJoinReg(ExprType type) {
         switch (type) {
           case ExprType::I32:
@@ -1881,6 +1923,20 @@ class BaseCompiler
             pushF32(r.f32());
             break;
         }
+    }
+
+    void pushJoinRegUnlessVoid(AnyReg r) {
+        if (r.tag != AnyReg::NONE)
+            pushJoinReg(r);
+    }
+
+    void emitBranchSetup(BranchState* b) {
+        if (b->framePushed != BranchState::NoPop)
+            popStackOnBlockExit(b->framePushed);
+    }
+
+    void emitBranchPerform(BranchState* b) {
+        masm.jump(b->label);
     }
 
     void freeJoinReg(AnyReg r) {
@@ -2165,17 +2221,17 @@ class BaseCompiler
           case ExprType::Void:
             break;
           case ExprType::I32:
-            masm.store32(RegI32(ReturnReg), resultsAddress);
+            masm.store32(RegI32(ReturnReg).reg, resultsAddress);
             break;
 
           case ExprType::I64:
-            masm.store64(RegI64(ReturnReg64), resultsAddress);
+            masm.store64(RegI64(ReturnReg64).reg, resultsAddress);
             break;
           case ExprType::F64:
-            masm.storeDouble(RegF64(ReturnDoubleReg), resultsAddress);
+            masm.storeDouble(RegF64(ReturnDoubleReg).reg, resultsAddress);
             break;
           case ExprType::F32:
-            masm.storeFloat32(RegF32(ReturnFloat32Reg), resultsAddress);
+            masm.storeFloat32(RegF32(ReturnFloat32Reg).reg, resultsAddress);
             break;
           default:
             MOZ_CRASH("Function return type");
@@ -2251,7 +2307,7 @@ class BaseCompiler
         // Restore the TLS register in case it was overwritten by the function.
         loadFromFramePtr(WasmTlsReg, frameOffsetFromSlot(tlsSlot_, MIRType::Pointer));
 
-        GenerateFunctionEpilogue(masm, localSize_, &compileResults_.offsets());
+        GenerateFunctionEpilogue(masm, localSize_, &offsets_);
 
 #if defined(JS_ION_PERF)
         // FIXME - profiling code missing.  Bug 1286948.
@@ -2265,7 +2321,7 @@ class BaseCompiler
 
         masm.wasmEmitTrapOutOfLineCode();
 
-        compileResults_.offsets().end = masm.currentOffset();
+        offsets_.end = masm.currentOffset();
 
         // A frame greater than 256KB is implausible, probably an attack,
         // so fail the compilation.
@@ -2683,7 +2739,7 @@ class BaseCompiler
         return rv;
     }
 
-    void returnCleanup(bool popStack) {
+    void returnCleanup(bool popStack = false) {
         if (popStack)
             popStackBeforeBranch(controlOutermost().framePushed);
         masm.jump(&returnLabel_);
@@ -5528,6 +5584,7 @@ BaseCompiler::emitIf()
     if (!iter_.readIf(&unused_cond))
         return false;
 
+    RegI32 rc;
     BranchState b(&controlItem().otherLabel, BranchState::NoPop, InvertBranch(true));
     if (!deadCode_) {
         rc = popI32();
@@ -5537,7 +5594,7 @@ BaseCompiler::emitIf()
     initControl(controlItem());
 
     if (!deadCode_) {
-        masm.branch32(Assembler::Equal, rc.reg, Imm32(0), controlItem(0).otherLabel);
+        masm.branch32(Assembler::Equal, rc.reg, Imm32(0), &controlItem(0).otherLabel);
         freeI32(rc);
     }
 
@@ -6483,7 +6540,7 @@ BaseCompiler::emitSetGlobal()
 {
     uint32_t id;
     Nothing unused_value;
-    if (!iter_.readSetGlobal(mg_.globals, &id, &unused_value))
+    if (!iter_.readSetGlobal(env_.globals, &id, &unused_value))
         return false;
 
     if (deadCode_)
@@ -6523,6 +6580,7 @@ BaseCompiler::emitSetGlobal()
     return true;
 }
 
+#if 0
 bool
 BaseCompiler::emitSetGlobal()
 {
@@ -6533,6 +6591,7 @@ BaseCompiler::emitSetGlobal()
 
     return emitSetOrTeeGlobal<true>(id);
 }
+#endif
 
 bool
 BaseCompiler::emitTeeGlobal()
@@ -6545,7 +6604,7 @@ BaseCompiler::emitTeeGlobal()
     if (deadCode_)
         return true;
 
-    const GlobalDesc& global = mg_.globals[id];
+    const GlobalDesc& global = env_.globals[id];
 
     switch (global.type()) {
       case ValType::I32: {
@@ -6788,7 +6847,7 @@ BaseCompiler::emitTeeStore(ValType resultType, Scalar::Type viewType)
 
     MemoryAccessDesc access(viewType, addr.align, addr.offset, trapIfNotAsmJS());
 
-    size_t temps = loadStoreTemps(access);
+    size_t temps = storeTemps(access);
     RegI32 tmp1 = temps >= 1 ? needI32() : invalidI32();
     RegI32 tmp2 = temps >= 2 ? needI32() : invalidI32();
 
@@ -6796,7 +6855,7 @@ BaseCompiler::emitTeeStore(ValType resultType, Scalar::Type viewType)
       case ValType::I32: {
         RegI32 rp, rv;
         pop2xI32(&rp, &rv);
-        if (!store(access, rp, AnyReg(rv), tmp1, tmp2))
+        if (!store(access, rp, false, AnyReg(rv), tmp1))
             return false;
         freeI32(rp);
         pushI32(rv);
@@ -6805,7 +6864,7 @@ BaseCompiler::emitTeeStore(ValType resultType, Scalar::Type viewType)
       case ValType::I64: {
         RegI64 rv = popI64();
         RegI32 rp = popI32();
-        if (!store(access, rp, AnyReg(rv), tmp1, tmp2))
+        if (!store(access, rp, false, AnyReg(rv), tmp1))
             return false;
         freeI32(rp);
         pushI64(rv);
@@ -6814,7 +6873,7 @@ BaseCompiler::emitTeeStore(ValType resultType, Scalar::Type viewType)
       case ValType::F32: {
         RegF32 rv = popF32();
         RegI32 rp = popI32();
-        if (!store(access, rp, AnyReg(rv), tmp1, tmp2))
+        if (!store(access, rp, false, AnyReg(rv), tmp1))
             return false;
         freeI32(rp);
         pushF32(rv);
@@ -6823,7 +6882,7 @@ BaseCompiler::emitTeeStore(ValType resultType, Scalar::Type viewType)
       case ValType::F64: {
         RegF64 rv = popF64();
         RegI32 rp = popI32();
-        if (!store(access, rp, AnyReg(rv), tmp1, tmp2))
+        if (!store(access, rp, false, AnyReg(rv), tmp1))
             return false;
         freeI32(rp);
         pushF64(rv);
@@ -8037,7 +8096,7 @@ BaseCompiler::BaseCompiler(const ModuleEnvironment& env,
       iter_(decoder, func.lineOrBytecode()),
       func_(func),
       lastReadCallSite_(0),
-      alloc_(compileResults.alloc()),
+      alloc_(*alloc),
       locals_(locals),
       localSize_(0),
       varLow_(0),
@@ -8046,8 +8105,7 @@ BaseCompiler::BaseCompiler(const ModuleEnvironment& env,
       deadCode_(false),
       debugEnabled_(debugEnabled),
       prologueTrapOffset_(trapOffset()),
-      compileResults_(compileResults),
-      masm(compileResults_.masm()),
+      masm(*masm),
       availGPR_(GeneralRegisterSet::All()),
       availFPU_(FloatRegisterSet::All()),
 #ifdef DEBUG
@@ -8248,7 +8306,7 @@ js::wasm::BaselineCanCompile(const FunctionGenerator* fg)
 }
 
 bool
-js::wasm::BaselineCompileFunction(CompileTask* task, FuncCompileUnit* unit, UniqueChars *error)
+js::wasm::BaselineCompileFunction(IonCompileTask* task, FuncCompileUnit* unit, UniqueChars *error)
 {
     MOZ_ASSERT(task->mode() == IonCompileTask::CompileMode::Baseline);
 
@@ -8272,7 +8330,7 @@ js::wasm::BaselineCompileFunction(CompileTask* task, FuncCompileUnit* unit, Uniq
 
     // The MacroAssembler will sometimes access the jitContext.
 
-    JitContext jitContext(&results.alloc());
+    JitContext jitContext(&task->alloc());
 
     // One-pass baseline compilation.
 
@@ -8284,6 +8342,8 @@ js::wasm::BaselineCompileFunction(CompileTask* task, FuncCompileUnit* unit, Uniq
         return false;
 
     f.finish();
+
+    unit->finish(f.offsets());
 
     return true;
 }

@@ -22,6 +22,7 @@
 
 #include "fdlibm.h"
 
+#include "gc/Zone.h"
 #include "jslibmath.h"
 #include "jsmath.h"
 
@@ -359,9 +360,9 @@ wasm::AddressOf(SymbolicAddress imm, ExclusiveContext* cx)
 {
     switch (imm) {
       case SymbolicAddress::Context:
-        return cx->contextAddressForJit();
+        return cx->zone()->group()->addressOfOwnerContext();
       case SymbolicAddress::InterruptUint32:
-        return cx->runtimeAddressOfInterruptUint32();
+        return cx->runtime()->addressOfInterruptUint32();
       case SymbolicAddress::ReportOverRecursed:
         return FuncCast(WasmReportOverRecursed, Args_General0);
       case SymbolicAddress::HandleExecutionInterrupt:

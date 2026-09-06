@@ -229,8 +229,8 @@ js::Allocate(ExclusiveContext* cx)
 }
 
 #define DECL_ALLOCATOR_INSTANCES(allocKind, traceKind, type, sizedType, bgFinal, nursery) \
-    template type* js::Allocate<type, NoGC>(JSContext* cx);\
-    template type* js::Allocate<type, CanGC>(JSContext* cx);
+    template type* js::Allocate<type, NoGC>(ExclusiveContext* cx);\
+    template type* js::Allocate<type, CanGC>(ExclusiveContext* cx);
 FOR_EACH_NONOBJECT_NONNURSERY_ALLOCKIND(DECL_ALLOCATOR_INSTANCES)
 #undef DECL_ALLOCATOR_INSTANCES
 

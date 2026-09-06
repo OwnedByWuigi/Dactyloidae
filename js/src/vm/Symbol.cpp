@@ -59,7 +59,7 @@ Symbol::for_(js::ExclusiveContext* cx, HandleString description)
 
     AutoLockForExclusiveAccess lock(cx);
 
-    SymbolRegistry& registry = cx->symbolRegistry(lock);
+    SymbolRegistry& registry = cx->runtime()->symbolRegistry(lock);
     SymbolRegistry::AddPtr p = registry.lookupForAdd(atom);
     if (p)
         return *p;

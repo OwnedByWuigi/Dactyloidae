@@ -44,7 +44,6 @@ namespace wasm {
   class FuncIR;
   class FunctionCompileResults;
   class IonCompileTask;
-  class CompileTask;
   typedef Vector<IonCompileTask*, 0, SystemAllocPolicy> IonCompileTaskPtrVector;
 } // namespace wasm
 
@@ -417,13 +416,15 @@ PauseCurrentHelperThread();
 
 /* Perform MIR optimization and LIR generation on a single function. */
 bool
-StartOffThreadWasmCompile(wasm::CompileTask* task);
+StartOffThreadWasmCompile(wasm::IonCompileTask* task);
 
 namespace wasm {
 
 // Performs MIR optimization and LIR generation on one or several functions.
 [[nodiscard]]  bool
-CompileFunction(CompileTask* task, UniqueChars* error);
+CompileFunction(IonCompileTask* task, UniqueChars* error);
+bool
+CompileFunction(IonCompileTask* task);
 
 }
 

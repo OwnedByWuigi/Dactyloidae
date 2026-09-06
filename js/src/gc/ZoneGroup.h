@@ -30,6 +30,7 @@ class CooperatingContext
     JSContext* operator*() const { return cx_; }
     JSContext* operator->() const { return cx_; }
     explicit operator bool() const { return !!cx_; }
+    JSContext* context() const { return cx_; }
     JSContext* get() const { return cx_; }
     void* addressOfContext() { return &cx_; }
 };

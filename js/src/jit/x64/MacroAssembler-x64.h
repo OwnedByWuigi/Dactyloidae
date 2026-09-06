@@ -605,6 +605,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared
             load32(Address(scratch, 0x0), dest);
         }
     }
+
+    void load32(const Address& address, Register dest) {
+        MacroAssemblerX86Shared::load32(Operand(address), dest);
+    }
     void load64(const Address& address, Register64 dest) {
         movq(Operand(address), dest.reg);
     }

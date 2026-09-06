@@ -166,8 +166,6 @@ class FunctionCompiler
     uint32_t                   blockDepth_;
     ControlFlowPatchsVector    blockPatches_;
 
-    FuncCompileResults&        compileResults_;
-
     // TLS pointer argument to the current function.
     MWasmParameter*            tlsPointer_;
 
@@ -190,14 +188,12 @@ class FunctionCompiler
         maxStackArgBytes_(0),
         loopDepth_(0),
         blockDepth_(0),
-        compileResults_(compileResults),
         tlsPointer_(nullptr)
     {}
 
     const ModuleEnvironment&   env() const   { return env_; }
     IonOpIter&                 iter()        { return iter_; }
     TempAllocator&             alloc() const { return alloc_; }
-    MacroAssembler&            masm() const  { return compileResults_.masm(); }
     const Sig&                 sig() const   { return func_.sig(); }
 
     TrapOffset trapOffset() const {
@@ -2891,7 +2887,7 @@ EmitExpr(FunctionCompiler& f)
 }
 
 bool
-wasm::IonCompileFunction(CompileTask* task, FuncCompileUnit* unit, UniqueChars* error)
+wasm::IonCompileFunction(IonCompileTask* task, FuncCompileUnit* unit, UniqueChars* error)
 {
     MOZ_ASSERT(task->mode() == IonCompileTask::CompileMode::Ion);
 
@@ -2919,11 +2915,11 @@ wasm::IonCompileFunction(CompileTask* task, FuncCompileUnit* unit, UniqueChars* 
 
     // Set up for Ion compilation.
 
-    JitContext jitContext(&results.alloc());
+    JitContext jitContext(&task->alloc());
     const JitCompileOptions options;
-    MIRGraph graph(&results.alloc());
+    MIRGraph graph(&task->alloc());
     CompileInfo compileInfo(locals.length());
-    MIRGenerator mir(nullptr, options, &results.alloc(), &graph, &compileInfo,
+    MIRGenerator mir(nullptr, options, &task->alloc(), &graph, &compileInfo,
                      IonOptimizations.get(OptimizationLevel::Wasm));
 	mir.initMinWasmHeapLength(env.minMemoryLength);
 
@@ -2975,9 +2971,11 @@ wasm::IonCompileFunction(CompileTask* task, FuncCompileUnit* unit, UniqueChars* 
 
         SigIdDesc sigId = env.funcSigs[func.index()]->id;
 
-        CodeGenerator codegen(&mir, lir, &results.masm());
-        if (!codegen.generateWasm(sigId, prologueTrapOffset, &results.offsets()))
+        CodeGenerator codegen(&mir, lir, &task->masm());
+        FuncOffsets offsets;
+        if (!codegen.generateWasm(sigId, prologueTrapOffset, &offsets))
             return false;
+        unit->finish(offsets);
     }
 
     return true;
@@ -2986,17 +2984,18 @@ wasm::IonCompileFunction(CompileTask* task, FuncCompileUnit* unit, UniqueChars* 
 bool
 wasm::CompileFunction(IonCompileTask* task)
 {
-    TraceLoggerThread* logger = TraceLoggerForCurrentThread();
-    AutoTraceLog logCompile(logger, TraceLogger_WasmCompilation);
-
-    switch (task->mode()) {
-      case wasm::IonCompileTask::CompileMode::Ion:
-        return wasm::IonCompileFunction(task);
-      case wasm::IonCompileTask::CompileMode::Baseline:
-        return wasm::BaselineCompileFunction(task);
-      case wasm::IonCompileTask::CompileMode::None:
-        break;
+    UniqueChars error;
+    for (FuncCompileUnit& unit : task->units()) {
+        switch (unit.mode()) {
+          case CompileMode::Ion:
+            if (!IonCompileFunction(task, &unit, &error))
+                return false;
+            break;
+          case CompileMode::Baseline:
+            if (!BaselineCompileFunction(task, &unit, &error))
+                return false;
+            break;
+        }
     }
-
-    MOZ_CRASH("Uninitialized task");
+    return true;
 }

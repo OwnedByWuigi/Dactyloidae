@@ -1075,6 +1075,15 @@ BaselineCacheIRCompiler::init(CacheKind kind)
     return true;
 }
 
+// These operations are not supported by this branch's Baseline CacheIR
+// format. Keep explicit handlers so every operation declared by CACHE_IR_OPS
+// has a linkable implementation.
+bool BaselineCacheIRCompiler::emitAllocateAndStoreDynamicSlot() { return false; }
+bool BaselineCacheIRCompiler::emitAddAndStoreFixedSlot() { return false; }
+bool BaselineCacheIRCompiler::emitAddAndStoreDynamicSlot() { return false; }
+bool BaselineCacheIRCompiler::emitCallNativeGetterResult() { return false; }
+bool BaselineCacheIRCompiler::emitLoadEnclosingEnvironment() { return false; }
+
 template <typename T>
 static GCPtr<T>*
 AsGCPtr(uintptr_t* ptr)

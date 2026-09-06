@@ -4004,8 +4004,7 @@ TypeNewScript::rollbackPartiallyInitializedObjects(JSContext* cx, ObjectGroup* g
     RootedFunction function(cx, this->function());
     Vector<uint32_t, 32> pcOffsets(cx);
     JSRuntime::AutoProhibitActiveContextChange apacc(cx->runtime());
-    for (const CooperatingContext& target : cx->runtime()->cooperatingContexts()) {
-        for (AllScriptFramesIter iter(cx, target); !iter.done(); ++iter) {
+    for (AllScriptFramesIter iter(cx); !iter.done(); ++iter) {
             {
                 AutoEnterOOMUnsafeRegion oomUnsafe;
                 if (!pcOffsets.append(iter.script()->pcToOffset(iter.pc())))
@@ -4089,7 +4088,6 @@ TypeNewScript::rollbackPartiallyInitializedObjects(JSContext* cx, ObjectGroup* g
                 (void) NativeObject::rollbackProperties(cx, obj, numProperties);
                 found = true;
             }
-        }
     }
 
     return found;
@@ -4490,23 +4488,22 @@ Zone::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
 
 TypeZone::TypeZone(Zone* zone)
   : zone_(zone),
-    typeLifoAlloc(zone->group(), (size_t) TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
-    generation(zone->group(), 0),
-    compilerOutputs(zone->group(), nullptr),
-    sweepTypeLifoAlloc(zone->group(), (size_t) TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
-    sweepCompilerOutputs(zone->group(), nullptr),
-    sweepReleaseTypes(zone->group(), false),
-    sweepingTypes(zone->group(), false),
+    typeLifoAlloc((size_t) TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
+    generation(0),
+    compilerOutputs(nullptr),
+    sweepTypeLifoAlloc((size_t) TYPE_LIFO_ALLOC_PRIMARY_CHUNK_SIZE),
+    sweepCompilerOutputs(nullptr),
+    sweepReleaseTypes(false),
     keepTypeScripts(zone->group(), false),
-    activeAnalysis(zone->group(), nullptr)
+    activeAnalysis(nullptr)
 {
 }
 
 TypeZone::~TypeZone()
 {
-    js_delete(compilerOutputs.ref());
-    js_delete(sweepCompilerOutputs.ref());
-    MOZ_RELEASE_ASSERT(!sweepingTypes);
+    js_delete(compilerOutputs);
+    js_delete(sweepCompilerOutputs);
+    MOZ_RELEASE_ASSERT(!sweepReleaseTypes);
     MOZ_ASSERT(!keepTypeScripts);
 }
 

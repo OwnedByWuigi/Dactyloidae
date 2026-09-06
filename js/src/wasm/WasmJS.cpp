@@ -57,7 +57,7 @@ wasm::HasCompilerSupport(ExclusiveContext* cx)
     if (!cx->jitSupportsFloatingPoint())
         return false;
 
-    if (!cx->jitSupportsUnalignedAccesses())
+    if (!cx->runtime()->jitSupportsUnalignedAccesses)
         return false;
 
     if (!wasm::HaveSignalHandlers())

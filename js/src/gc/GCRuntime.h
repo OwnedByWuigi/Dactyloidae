@@ -1615,6 +1615,8 @@ class GCRuntime
     friend class AutoEnterIteration;
 };
 
+MOZ_MUST_USE bool InitializeStaticData();
+
 /* Prevent compartments and zones from being collected during iteration. */
 class MOZ_RAII AutoEnterIteration {
     GCRuntime* gc;

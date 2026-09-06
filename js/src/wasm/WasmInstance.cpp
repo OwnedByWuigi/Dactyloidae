@@ -327,7 +327,7 @@ Instance::Instance(JSContext* cx,
     tlsData()->instance = this;
     tlsData()->globalData = globals_->globalData();
     tlsData()->memoryBase = memory ? memory->buffer().dataPointerEither().unwrap() : nullptr;
-    tlsData()->stackLimit = *(void**)cx->stackLimitAddressForJitCode(JS::StackForUntrustedScript);
+    tlsData()->stackLimit = *(void**)cx->stackLimitAddressForJitCode(js::StackForUntrustedScript);
 
     for (size_t i = 0; i < metadata().funcImports.length(); i++) {
         HandleFunction f = funcImports[i];

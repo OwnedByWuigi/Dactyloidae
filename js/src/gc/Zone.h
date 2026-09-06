@@ -158,6 +158,8 @@ struct Zone : public JS::shadow::Zone,
     explicit Zone(JSRuntime* rt, js::ZoneGroup* group = nullptr);
     ~Zone();
     bool active = false;
+    js::ZoneGroup* group_;
+    js::ZoneGroup* group() const { return group_; }
     MOZ_MUST_USE bool init(bool isSystem);
 
     void findOutgoingEdges(js::gc::ZoneComponentFinder& finder);
@@ -478,7 +480,7 @@ struct Zone : public JS::shadow::Zone,
     js::ZoneGroupData<uint32_t> tenuredStrings;
     js::ZoneGroupData<bool> allocNurseryStrings;
 
-  private:
+  public:
     // Shared Shape property tree.
     js::PropertyTree propertyTree;
 
@@ -507,6 +509,7 @@ struct Zone : public JS::shadow::Zone,
     void setData(void* value) { data = value; }
     void* getData() const { return data; }
     bool isSystemZone() const { return isSystem; }
+    void setIsSystemZone(bool value) { isSystem = value; }
     js::PropertyTree& propertyTreeRef() { return propertyTree; }
 
     bool usedByExclusiveThread = false;

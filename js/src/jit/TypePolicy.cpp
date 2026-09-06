@@ -1196,6 +1196,14 @@ namespace jit {
     TEMPLATE_TYPE_POLICY_LIST(template<> DEFINE_TYPE_POLICY_SINGLETON_INSTANCES_)
 #undef DEFINE_TYPE_POLICY_SINGLETON_INSTANCES_
 
+    template<>
+    TypePolicy*
+    MixPolicy<BoxPolicy<0>, CacheIdPolicy<1>>::Data::thisTypePolicy()
+    {
+        static MixPolicy<BoxPolicy<0>, CacheIdPolicy<1>> singletonType;
+        return &singletonType;
+    }
+
 } // namespace jit
 } // namespace js
 

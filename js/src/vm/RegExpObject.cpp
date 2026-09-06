@@ -1285,6 +1285,58 @@ RegExpShared::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf)
     return n;
 }
 
+/* RegExpZone */
+
+RegExpZone::RegExpZone(Zone* zone)
+  : set_(zone, ZoneAllocPolicy(zone))
+{}
+
+bool
+RegExpZone::init()
+{
+    return set_.init(0);
+}
+
+bool
+RegExpZone::get(JSContext* cx, HandleAtom source, RegExpFlag flags,
+                MutableHandleRegExpShared result)
+{
+    DependentAddPtr<Set> p(cx, set_.get(), Key(source, flags));
+    if (p) {
+        result.set(*p);
+        return true;
+    }
+
+    auto shared = Allocate<RegExpShared>(cx);
+    if (!shared)
+        return false;
+
+    new (shared) RegExpShared(source, flags);
+    if (!p.add(cx, set_.get(), Key(source, flags), shared)) {
+        ReportOutOfMemory(cx);
+        return false;
+    }
+
+    result.set(shared);
+    return true;
+}
+
+bool
+RegExpZone::get(JSContext* cx, HandleAtom atom, JSString* opt,
+                MutableHandleRegExpShared shared)
+{
+    RegExpFlag flags = RegExpFlag(0);
+    if (opt && !ParseRegExpFlags(cx, opt, &flags))
+        return false;
+    return get(cx, atom, flags, shared);
+}
+
+size_t
+RegExpZone::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf)
+{
+    return set_.sizeOfExcludingThis(mallocSizeOf);
+}
+
 /* RegExpCompartment */
 
 RegExpCompartment::RegExpCompartment(Zone* zone)

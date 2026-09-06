@@ -605,7 +605,7 @@ FrameIter::Data::Data(JSContext* cx, const CooperatingContext& target,
     state_(DONE),
     pc_(nullptr),
     interpFrames_(nullptr),
-    activations_(cx, target),
+    activations_(cx->runtime()),
     jitFrames_(),
     ionInlineFrameNo_(0),
     wasmFrames_()

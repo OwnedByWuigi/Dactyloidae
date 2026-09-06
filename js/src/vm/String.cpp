@@ -497,7 +497,7 @@ JSRope::flattenInternal(ExclusiveContext* maybecx)
             else
                 left.d.u1.flags = DEPENDENT_FLAGS | LATIN1_CHARS_BIT;
             left.d.s.u3.base = (JSLinearString*)this;  /* will be true on exit */
-			Nursery& nursery = zone()->group()->nursery();
+			Nursery& nursery = zone()->runtimeFromAnyThread()->gc.getNursery();
             bool inTenured = !bufferIfNursery;
             if (!inTenured && left.isTenured()) {
                 // tenured leftmost child is giving its chars buffer to the
@@ -521,7 +521,7 @@ JSRope::flattenInternal(ExclusiveContext* maybecx)
     }
 
     if (!isTenured()) {
-        Nursery& nursery = zone()->group()->nursery();
+        Nursery& nursery = zone()->runtimeFromAnyThread()->gc.getNursery();
         if (!nursery.registerMallocedBuffer(wholeChars)) {
             js_free(wholeChars);
             if (maybecx)
@@ -1186,7 +1186,7 @@ JSLinearString*
 js::NewDependentString(JSContext* cx, JSString* baseArg, size_t start, size_t length)
 {
     if (length == 0)
-        return cx->emptyString();
+        return cx->ExclusiveContext::emptyString();
 
     JSLinearString* base = baseArg->ensureLinear(cx);
     if (!base)

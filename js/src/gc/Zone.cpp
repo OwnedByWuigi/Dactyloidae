@@ -20,10 +20,17 @@
 using namespace js;
 using namespace js::gc;
 
+bool
+js::RuntimeFromActiveCooperatingThreadIsHeapMajorCollecting(JS::shadow::Zone* shadowZone)
+{
+    return reinterpret_cast<Zone*>(shadowZone)->runtimeFromAnyThread()->isHeapMajorCollecting();
+}
+
 Zone * const Zone::NotOnList = reinterpret_cast<Zone*>(1);
 
 JS::Zone::Zone(JSRuntime* rt, ZoneGroup* group)
   : JS::shadow::Zone(rt, &rt->gc.marker),
+    group_(group),
     debuggers(nullptr),
     suppressAllocationMetadataBuilder(false),
     arenas(rt, group),

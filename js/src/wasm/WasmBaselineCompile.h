@@ -19,6 +19,7 @@
 #define asmjs_wasm_baseline_compile_h
 
 #include "wasm/WasmTypes.h"
+#include "wasm/WasmGenerator.h"
 
 namespace js {
 namespace wasm {
@@ -39,7 +40,7 @@ BaselineCanCompile(const FunctionGenerator* fg);
 
 // Generate adequate code quickly.
 bool
-BaselineCompileFunction(CompileTask* task, FuncCompileUnit* unit, UniqueChars* error);
+BaselineCompileFunction(IonCompileTask* task, FuncCompileUnit* unit, UniqueChars* error);
 
 } // namespace wasm
 } // namespace js

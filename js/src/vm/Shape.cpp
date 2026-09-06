@@ -1264,6 +1264,7 @@ Shape::setObjectFlags(ExclusiveContext* cx, BaseShape::Flag flags, TaggedProto p
     return replaceLastProperty(cx, base, proto, lastRoot);
 }
 
+ #if 0
 /* static */ inline HashNumber
 StackBaseShape::hash(const Lookup& lookup)
 {
@@ -1278,6 +1279,7 @@ StackBaseShape::match(ReadBarriered<UnownedBaseShape*> key, const Lookup& lookup
     return key.unbarrieredGet()->flags == lookup.flags &&
            key.unbarrieredGet()->clasp_ == lookup.clasp;
 }
+#endif
 
 inline
 BaseShape::BaseShape(const StackBaseShape& base)
@@ -1439,6 +1441,7 @@ InitialShapeEntry::InitialShapeEntry(Shape* shape, const Lookup::ShapeProto& pro
 {
 }
 
+#if 0
 /* static */ inline HashNumber
 InitialShapeEntry::hash(const Lookup& lookup)
 {
@@ -1455,6 +1458,7 @@ InitialShapeEntry::match(const InitialShapeEntry& key, const Lookup& lookup)
         && lookup.baseFlags == shape->getObjectFlags()
         && lookup.proto.match(key.proto);
 }
+#endif
 
 #ifdef JSGC_HASH_TABLE_CHECKS
 
@@ -1530,6 +1534,7 @@ HashChildren(Shape* kid1, Shape* kid2)
     return hash;
 }
 
+#if 0
 bool
 PropertyTree::insertChild(JSContext* cx, Shape* parent, Shape* child)
 {
@@ -1678,6 +1683,7 @@ PropertyTree::getChild(JSContext* cx, Shape* parent, Handle<StackShape> child)
 {
     return inlinedGetChild(cx, parent, child);
 }
+#endif
 
 void
 Shape::sweep()
@@ -1798,6 +1804,7 @@ Shape::fixupAfterMovingGC()
         fixupShapeTreeAfterMovingGC();
 }
 
+#if 0
 void
 NurseryShapesRef::trace(JSTracer* trc)
 {
@@ -1806,6 +1813,7 @@ NurseryShapesRef::trace(JSTracer* trc)
         shape->fixupGetterSetterForBarrier(trc);
     shapes.clearAndFree();
 }
+#endif
 
 void
 Shape::fixupGetterSetterForBarrier(JSTracer* trc)

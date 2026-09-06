@@ -54,6 +54,15 @@ class FuncBytes
         lineOrBytecode_(UINT32_MAX)
     {}
 
+    FuncBytes(Bytes bytes, uint32_t index, const SigWithId& sig,
+              uint32_t lineOrBytecode, Uint32Vector callSiteLineNums)
+      : bytes_(Move(bytes)),
+        index_(index),
+        sig_(&sig),
+        lineOrBytecode_(lineOrBytecode),
+        callSiteLineNums_(Move(callSiteLineNums))
+    {}
+
     Bytes& bytes() {
         return bytes_;
     }
@@ -137,8 +146,12 @@ typedef Vector<FuncCompileUnit, 8, SystemAllocPolicy> FuncCompileUnitVector;
 // finally sent back to the validation thread. To save time allocating and
 // freeing memory, CompileTasks are reset() and reused.
 
-class CompileTask
+class IonCompileTask
 {
+  public:
+    enum class CompileMode { None, Baseline, Ion };
+
+  private:
     const ModuleEnvironment&   env_;
     LifoAlloc                  lifo_;
     Maybe<jit::TempAllocator>  alloc_;
@@ -146,8 +159,8 @@ class CompileTask
     FuncCompileUnitVector      units_;
     bool                       debugEnabled_;
 
-    CompileTask(const CompileTask&) = delete;
-    CompileTask& operator=(const CompileTask&) = delete;
+    IonCompileTask(const IonCompileTask&) = delete;
+    IonCompileTask& operator=(const IonCompileTask&) = delete;
 
     void init() {
         alloc_.emplace(&lifo_);
@@ -156,7 +169,7 @@ class CompileTask
     }
 
   public:
-    CompileTask(const ModuleEnvironment& env, size_t defaultChunkSize)
+    IonCompileTask(const ModuleEnvironment& env, size_t defaultChunkSize)
       : env_(env),
         lifo_(defaultChunkSize)
     {
@@ -177,11 +190,37 @@ class CompileTask
     FuncCompileUnitVector& units() {
         return units_;
     }
+    const FuncBytes& func() const {
+        MOZ_ASSERT(!units_.empty());
+        return units_[0].func();
+    }
+    CompileMode mode() const {
+        if (units_.empty())
+            return CompileMode::None;
+        return units_[0].mode() == ::js::wasm::CompileMode::Baseline
+             ? CompileMode::Baseline
+             : CompileMode::Ion;
+    }
     bool debugEnabled() const {
         return debugEnabled_;
     }
     void setDebugEnabled(bool enabled) {
         debugEnabled_ = enabled;
+    }
+    void init(UniqueFuncBytes func, CompileMode mode) {
+        units_.infallibleEmplaceBack(Move(func),
+                                     mode == CompileMode::Baseline
+                                     ? ::js::wasm::CompileMode::Baseline
+                                     : ::js::wasm::CompileMode::Ion);
+    }
+    bool reset(Bytes* unused) {
+        (void)unused;
+        units_.clear();
+        masm_.reset();
+        alloc_.reset();
+        lifo_.releaseAll();
+        init();
+        return true;
     }
     bool reset(UniqueFuncBytesVector* freeFuncBytes) {
         for (FuncCompileUnit& unit : units_) {
@@ -240,6 +279,8 @@ class MOZ_STACK_CLASS ModuleGenerator
     uint32_t                        outstanding_;
     IonCompileTaskVector            tasks_;
     IonCompileTaskPtrVector         freeTasks_;
+    IonCompileTask*                 currentTask_ = nullptr;
+    size_t                          batchedBytecode_ = 0;
 
     // Assertions
     DebugOnly<FunctionGenerator*>   activeFuncDef_;
@@ -254,7 +295,7 @@ public:
 private:
     [[nodiscard]] bool patchCallSites(TrapExitOffsetArray* maybeTrapExits = nullptr);
     [[nodiscard]] bool patchFarJumps(const TrapExitOffsetArray& trapExits, const Offsets& debugTrapStub);
-    [[nodiscard]] bool finishTask(CompileTask* task);
+    [[nodiscard]] bool finishTask(IonCompileTask* task);
     [[nodiscard]] bool finishOutstandingTask();
     [[nodiscard]] bool finishFuncExports();
     [[nodiscard]] bool finishCodegen();

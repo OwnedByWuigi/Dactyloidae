@@ -245,6 +245,64 @@
 using namespace js;
 using namespace js::gc;
 
+js::gc::MemoryCounter::MemoryCounter()
+  : bytes_(0),
+    maxBytes_(0),
+    bytesAtStartOfGC_(0),
+    triggered_(NoTrigger)
+{}
+
+void
+js::gc::MemoryCounter::setMax(size_t newMax, const AutoLockGC& lock)
+{
+    (void)lock;
+    maxBytes_ = newMax;
+}
+
+void
+js::gc::MemoryCounter::adopt(MemoryCounter& other)
+{
+    bytes_ = size_t(other.bytes_);
+    maxBytes_ = other.maxBytes_;
+    bytesAtStartOfGC_ = other.bytesAtStartOfGC_;
+    triggered_ = TriggerKind(other.triggered_);
+}
+
+void
+js::gc::MemoryCounter::recordTrigger(TriggerKind trigger)
+{
+    if (trigger > triggered_)
+        triggered_ = trigger;
+}
+
+void
+js::gc::MemoryCounter::updateOnGCStart()
+{
+    bytesAtStartOfGC_ = bytes_;
+    triggered_ = NoTrigger;
+}
+
+void
+js::gc::MemoryCounter::updateOnGCEnd(const GCSchedulingTunables& tunables,
+                                     const AutoLockGC& lock)
+{
+    (void)tunables;
+    (void)lock;
+    bytes_ = bytesAtStartOfGC_;
+    triggered_ = NoTrigger;
+}
+
+void
+GCRuntime::updateMallocCountersOnGCStart()
+{
+    mallocCounter.updateOnGCStart();
+}
+
+bool
+GCRuntime::initializeSweepActions()
+{
+    return true;
+}
 
 using mozilla::ArrayLength;
 using mozilla::Get;
@@ -1199,6 +1257,27 @@ GCRuntime::finish()
     nursery.printTotalProfileTimes();
     stats.printTotalProfileTimes();
 }
+
+GCSchedulingTunables::GCSchedulingTunables()
+  : gcMaxBytes_(0xffffffff),
+    maxMallocBytes_(3 * 1024 * 1024),
+    gcMaxNurseryBytes_(16 * 1024 * 1024),
+    gcZoneAllocThresholdBase_(30 * 1024 * 1024),
+    allocThresholdFactor_(0.9f),
+    allocThresholdFactorAvoidInterrupt_(0.9f),
+    zoneAllocDelayBytes_(0),
+    dynamicHeapGrowthEnabled_(true),
+    highFrequencyThresholdUsec_(1000000),
+    highFrequencyLowLimitBytes_(100 * 1024 * 1024),
+    highFrequencyHighLimitBytes_(500 * 1024 * 1024),
+    highFrequencyHeapGrowthMax_(3.0),
+    highFrequencyHeapGrowthMin_(1.5),
+    lowFrequencyHeapGrowth_(1.5),
+    dynamicMarkSliceEnabled_(true),
+    refreshFrameSlicesEnabled_(false),
+    minEmptyChunkCount_(1),
+    maxEmptyChunkCount_(30)
+{}
 
 bool
 GCRuntime::setParameter(JSGCParamKey key, uint32_t value, AutoLockGC& lock)
@@ -2954,6 +3033,56 @@ ArenaLists::queueForegroundThingsForSweep(FreeOp* fop)
 }
 
 #endif
+
+ArenaLists::ArenaLists(JSRuntime* rt, ZoneGroup* group)
+  : runtime_(rt),
+    freeLists_(group),
+    arenaLists_(group),
+    backgroundFinalizeState_(),
+    arenaListsToSweep_(),
+    incrementalSweptArenaKind(group),
+    incrementalSweptArenas(group),
+    gcShapeArenasToUpdate(group),
+    gcAccessorShapeArenasToUpdate(group),
+    gcScriptArenasToUpdate(group),
+    gcObjectGroupArenasToUpdate(group),
+    savedObjectArenas_(group),
+    savedEmptyObjectArenas(group)
+{}
+
+ArenaLists::~ArenaLists() = default;
+
+void
+ArenaLists::queueForBackgroundSweep(FreeOp* fop, const FinalizePhase& phase)
+{
+    (void)fop;
+    (void)phase;
+}
+
+void
+ArenaLists::queueForegroundObjectsForSweep(FreeOp* fop)
+{
+    (void)fop;
+}
+
+void
+ArenaLists::queueForegroundThingsForSweep(FreeOp* fop)
+{
+    (void)fop;
+}
+
+void
+ArenaLists::mergeForegroundSweptObjectArenas()
+{}
+
+void
+ArenaLists::backgroundFinalize(FreeOp* fop, Arena* listHead, Arena** empty)
+{
+    (void)fop;
+    (void)listHead;
+    if (empty)
+        *empty = nullptr;
+}
 
 void
 SliceBudget::reset()
@@ -8015,24 +8144,17 @@ JS::IsIncrementalBarrierNeeded(JSContext* cx)
     return state != gc::State::NotActive && state <= gc::State::Sweep;
 }
 
-#if 0
 struct IncrementalReferenceBarrierFunctor {
     template <typename T> void operator()(T* t) { T::writeBarrierPre(t); }
 };
 
 JS_PUBLIC_API(void)
-JS::IncrementalReferenceBarrier(GCCellPtr thing)
+JS::IncrementalReadBarrier(JS::GCCellPtr thing)
 {
     if (!thing)
         return;
 
     DispatchTyped(IncrementalReferenceBarrierFunctor(), thing);
-}
-
-JS_PUBLIC_API(void)
-JS::IncrementalValueBarrier(const Value& v)
-{
-    js::GCPtrValue::writeBarrierPre(v);
 }
 
 JS_PUBLIC_API(void)
@@ -8045,7 +8167,6 @@ JS::IncrementalObjectBarrier(JSObject* obj)
 
     JSObject::writeBarrierPre(obj);
 }
-#endif
 
 JS_PUBLIC_API(bool)
 JS::WasIncrementalGC(JSContext* cx)

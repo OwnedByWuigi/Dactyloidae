@@ -137,9 +137,9 @@ GetSelectorRuntime(CompilationSelector selector)
 {
     struct Matcher
     {
-        JSRuntime* match(JSScript* script)    { return script->runtimeFromActiveCooperatingThread(); }
-        JSRuntime* match(JSCompartment* comp) { return comp->runtimeFromActiveCooperatingThread(); }
-        JSRuntime* match(Zone* zone)          { return zone->runtimeFromActiveCooperatingThread(); }
+        JSRuntime* match(JSScript* script)    { return script->runtimeFromAnyThread(); }
+        JSRuntime* match(JSCompartment* comp) { return comp->runtimeFromMainThread(); }
+        JSRuntime* match(Zone* zone)          { return zone->runtimeFromMainThread(); }
         JSRuntime* match(ZonesInState zbs)    { return zbs.runtime; }
         JSRuntime* match(JSRuntime* runtime)  { return runtime; }
         JSRuntime* match(AllCompilations all) { return nullptr; }
@@ -171,10 +171,10 @@ CompiledScriptMatches(CompilationSelector selector, JSScript* target)
     {
         JSScript* target_;
 
-        bool match(JSScript* script)    { return script == builder_->script(); }
-        bool match(JSCompartment* comp) { return comp == builder_->script()->compartment(); }
-        bool match(Zone* zone)          { return zone == builder_->script()->zoneFromAnyThread(); }
-        bool match(JSRuntime* runtime)  { return runtime == builder_->script()->runtimeFromAnyThread(); }
+        bool match(JSScript* script)    { return script == target_; }
+        bool match(JSCompartment* comp) { return comp == target_->compartment(); }
+        bool match(Zone* zone)          { return zone == target_->zoneFromAnyThread(); }
+        bool match(JSRuntime* runtime)  { return runtime == target_->runtimeFromAnyThread(); }
         bool match(AllCompilations all) { return true; }
         bool match(ZonesInState zbs)    {
             return zbs.runtime == target_->runtimeFromAnyThread() &&
@@ -557,7 +557,7 @@ class AutoClearUsedByHelperThread
 
   public:
     AutoClearUsedByHelperThread(JSObject* global)
-      : group(global->zone()->group())
+      : group(nullptr)
     {}
 
     void forget() {
@@ -598,8 +598,6 @@ CreateGlobalForOffThreadParse(JSContext* cx, ParseTaskKind kind,
 
     // Mark this zone group as created for a helper thread. This prevents it
     // from being collected until clearUsedByHelperThread() is called.
-     ZoneGroup* group = global->zone()->group();
-     group->setCreatedForHelperThread();
      clearUseGuard.emplace(global);
 
     // Initialize all classes required for parsing while still on the active
@@ -656,7 +654,7 @@ StartOffThreadParseTask(JSContext* cx, const ReadOnlyCompileOptions& options,
 
     ScopedJSDeletePtr<ExclusiveContext> helpercx(
         cx->new_<ExclusiveContext>(cx->runtime(), (PerThreadData*) nullptr,
-                                   ExclusiveContext::Context_Exclusive, cx->options()));
+                                   ContextKind::Context_Exclusive, cx->options()));
     if (!helpercx)
         return false;
 
@@ -1228,28 +1226,29 @@ js::GCParallelTask::join()
 }
 
 void
-js::GCParallelTask::runFromMainThread(JSRuntime* rt)
-{
-    MOZ_ASSERT(state == NotStarted);
-    MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(rt));
-    uint64_t timeStart = PRMJ_Now();
-    runTask();
-    duration_ = PRMJ_Now() - timeStart;
-}
-
-void
 js::GCParallelTask::runFromHelperThread(AutoLockHelperThreadState& locked)
 {
     {
         AutoUnlockHelperThreadState parallelSection(locked);
         gc::AutoSetThreadIsPerformingGC performingGC;
         uint64_t timeStart = PRMJ_Now();
-        runTask();
-        duration_ = PRMJ_Now() - timeStart;
+        run();
+        duration_ = mozilla::TimeDuration::FromMicroseconds(
+            double(PRMJ_Now() - timeStart));
     }
 
     state = Finished;
     HelperThreadState().notifyAll(GlobalHelperThreadState::CONSUMER, locked);
+}
+
+void
+js::GCParallelTask::runFromActiveCooperatingThread(JSRuntime* rt)
+{
+    MOZ_ASSERT(rt == runtime_);
+    uint64_t timeStart = PRMJ_Now();
+    run();
+    duration_ = mozilla::TimeDuration::FromMicroseconds(
+        double(PRMJ_Now() - timeStart));
 }
 
 bool
@@ -1520,7 +1519,7 @@ HelperThread::handleWasmWorkload(AutoLockHelperThreadState& locked)
     wasm::IonCompileTask* task = wasmTask();
     {
         AutoUnlockHelperThreadState unlock(locked);
-        success = wasm::CompileFunction(task, &error);
+        success = wasm::CompileFunction(task);
     }
 
     // On success, try to move work to the finished list.
@@ -1674,13 +1673,6 @@ js::PauseCurrentHelperThread()
         HelperThreadState().wait(lock, GlobalHelperThreadState::PAUSE);
 }
 
-void
-ExclusiveContext::setHelperThread(HelperThread* thread)
-{
-    helperThread_ = thread;
-    perThreadData = thread->threadData.ptr();
-}
-
 bool
 ExclusiveContext::addPendingCompileError(frontend::CompileError** error)
 {
@@ -1694,21 +1686,6 @@ ExclusiveContext::addPendingCompileError(frontend::CompileError** error)
 }
 
 void
-ExclusiveContext::addPendingOverRecursed()
-{
-    if (helperThread()->parseTask())
-        helperThread()->parseTask()->overRecursed = true;
-}
-
-void
-ExclusiveContext::addPendingOutOfMemory()
-{
-    // Keep in sync with recoverFromOutOfMemory.
-    if (helperThread()->parseTask())
-        helperThread()->parseTask()->outOfMemory = true;
-}
-
-void
 HelperThread::handleParseWorkload(AutoLockHelperThreadState& locked, uintptr_t stackLimit)
 {
     MOZ_ASSERT(HelperThreadState().canStartParseTask(locked));
@@ -1716,8 +1693,6 @@ HelperThread::handleParseWorkload(AutoLockHelperThreadState& locked, uintptr_t s
 
     currentTask.emplace(HelperThreadState().parseWorklist(locked).popCopy());
     ParseTask* task = parseTask();
-    task->cx->setHelperThread(this);
-
     for (size_t i = 0; i < ArrayLength(task->cx->nativeStackLimit); i++)
         task->cx->nativeStackLimit[i] = stackLimit;
 
@@ -1930,18 +1905,6 @@ HelperThread::handleGCHelperWorkload(AutoLockHelperThreadState& locked)
 
     currentTask.reset();
     HelperThreadState().notifyAll(GlobalHelperThreadState::CONSUMER, locked);
-}
-
-void
-JSContext::setHelperThread(HelperThread* thread)
-{
-    if (helperThread_)
-        allowNurseryAllocations();
-
-    helperThread_ = thread;
-
-    if (helperThread_)
-        suppressNurseryAllocations();
 }
 
 void

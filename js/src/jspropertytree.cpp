@@ -191,6 +191,7 @@ PropertyTree::getChild(ExclusiveContext* cx, Shape* parentArg, Handle<StackShape
     return shape;
 }
 
+#if 0
 void
 Shape::sweep()
 {
@@ -351,6 +352,7 @@ Shape::fixupGetterSetterForBarrier(JSTracer* trc)
     MOZ_ASSERT_IF(parent && !parent->inDictionary() && parent->kids.isHash(),
                   parent->kids.toHash()->has(StackShape(this)));
 }
+#endif
 
 #ifdef DEBUG
 

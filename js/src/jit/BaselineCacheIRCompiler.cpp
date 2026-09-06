@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "jit/BaselineCacheIRCompiler.h"
+#include "jit/CacheIRCompiler.h"
 
 #include "jit/CacheIR.h"
 #include "jit/Linker.h"
@@ -2196,4 +2196,3 @@ ICCacheIR_Updated::Clone(JSContext* cx, ICStubSpace* space, ICStub* firstMonitor
     stubInfo->copyStubData(&other, res);
     return res;
 }
-

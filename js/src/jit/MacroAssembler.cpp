@@ -31,6 +31,15 @@
 using namespace js;
 using namespace js::jit;
 
+void
+MacroAssembler::loadJSContext(Register dest)
+{
+    // The wasm Context symbolic address points at the current thread's
+    // cooperating-context slot. Load the JSContext pointer stored there.
+    movePtr(wasm::SymbolicAddress::Context, dest);
+    loadPtr(Address(dest, 0), dest);
+}
+
 template <typename T>
 void branchTestStringHelper(MacroAssembler& masm, Assembler::Condition cond, const T& src, Label* label) {
     if constexpr (std::is_same_v<T, ValueOperand>) {

@@ -63,6 +63,21 @@
 using namespace js;
 using namespace js::jit;
 
+bool
+JitZone::init(JSContext* cx)
+{
+    (void)cx;
+    return baselineCacheIRStubCodes_.init() && ionCacheIRStubInfoSet_.init();
+}
+
+void
+JitZone::sweep(FreeOp* fop)
+{
+    (void)fop;
+    baselineCacheIRStubCodes_.sweep();
+    ionCacheIRStubInfoSet_.clear();
+}
+
 // Assert that JitCode is gc::Cell aligned.
 JS_STATIC_ASSERT(sizeof(JitCode) % gc::CellSize == 0);
 

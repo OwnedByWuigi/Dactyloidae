@@ -328,7 +328,8 @@ class TraceLoggerThreadState
     bool offThreadEnabled;
     bool graphSpewingEnabled;
     bool spewErrors;
-    mozilla::LinkedList<TraceLoggerThread> threadLoggers;
+    mozilla::LinkedList<TraceLoggerMainThread> traceLoggerMainThreadList;
+    ThreadLoggerHashMap threadLoggers;
 
     typedef HashMap<const void*,
                     TraceLoggerEventPayload*,

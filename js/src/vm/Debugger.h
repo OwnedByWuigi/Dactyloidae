@@ -575,6 +575,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
 
     GlobalObject* unwrapDebuggeeArgument(JSContext* cx, const Value& v);
 
+  public:
     static void traceObject(JSTracer* trc, JSObject* obj);
     void trace(JSTracer* trc);
     static void finalize(FreeOp* fop, JSObject* obj);
@@ -582,7 +583,6 @@ class Debugger : private mozilla::LinkedListElement<Debugger>
 
     static const ClassOps classOps_;
 
-  public:
     static const Class class_;
 
   private:

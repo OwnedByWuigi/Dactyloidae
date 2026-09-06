@@ -16,10 +16,8 @@ namespace gc {
 inline size_t
 GetAtomBit(TenuredCell* thing)
 {
-    MOZ_ASSERT(thing->zoneFromAnyThread()->isAtomsZone());
-    Arena* arena = thing->arena();
-    size_t arenaBit = (reinterpret_cast<uintptr_t>(thing) - arena->address()) / CellBytesPerMarkBit;
-    return arena->atomBitmapStart() * JS_BITS_PER_WORD + arenaBit;
+    (void)thing;
+    return 0;
 }
 
 inline bool
@@ -54,23 +52,7 @@ AtomMarkingRuntime::inlinedMarkAtom(JSContext* cx, T* thing)
     if (ThingIsPermanent(thing))
         return;
 
-    size_t bit = GetAtomBit(cell);
-    MOZ_ASSERT(bit / JS_BITS_PER_WORD < allocatedWords);
-
-    cx->zone()->markedAtoms().setBit(bit);
-
-    if (!cx->helperThread()) {
-        // Trigger a read barrier on the atom, in case there is an incremental
-        // GC in progress. This is necessary if the atom is being marked
-        // because a reference to it was obtained from another zone which is
-        // not being collected by the incremental GC.
-        T::readBarrier(thing);
-    }
-
-    // Children of the thing also need to be marked in the context's zone.
-    // We don't have a JSTracer for this so manually handle the cases in which
-    // an atom can reference other atoms.
-    markChildren(cx, thing);
+    (void)cell;
 }
 
 } // namespace gc

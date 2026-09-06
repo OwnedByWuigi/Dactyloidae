@@ -1154,6 +1154,8 @@ js::AddPropertyTypesAfterProtoChange(JSContext* cx, NativeObject* obj, ObjectGro
         return;
     }
 
+    RootedNativeObject rootedObj(cx, obj);
+
     // Add dense element types.
     for (size_t i = 0; i < obj->getDenseInitializedLength(); i++) {
         Value val = obj->getDenseElement(i);
@@ -1164,6 +1166,7 @@ js::AddPropertyTypesAfterProtoChange(JSContext* cx, NativeObject* obj, ObjectGro
     // Add property types.
     for (Shape::Range<NoGC> r(obj->lastProperty()); !r.empty(); r.popFront()) {
         Shape* shape = &r.front();
+        RootedShape rootedShape(cx, shape);
         jsid id = shape->propid();
         if (JSID_IS_EMPTY(id))
             continue;
@@ -1174,7 +1177,7 @@ js::AddPropertyTypesAfterProtoChange(JSContext* cx, NativeObject* obj, ObjectGro
         }
 
         Value val = shape->hasSlot() ? obj->getSlot(shape->slot()) : UndefinedValue();
-        UpdateShapeTypeAndValue(cx, obj, shape, id, val);
+        UpdateShapeTypeAndValue(cx, rootedObj, rootedShape, val);
     }
 }
 static bool
@@ -1461,13 +1464,13 @@ js::NativeDefineProperty(ExclusiveContext* cx, HandleNativeObject obj, HandleId 
             // resolving, the JSPROP_RESOLVING mask is set; whereas the first
             // time it is redefined, it isn't set.
             if ((desc_.attributes() & JSPROP_RESOLVING) == 0) {
-                if (!ArgumentsObject::reifyLength(cx, argsobj))
+                if (!cx->shouldBeJSContext() || !ArgumentsObject::reifyLength(cx->asJSContext(), argsobj))
                     return false;
             }
         } else if (JSID_IS_SYMBOL(id) && JSID_TO_SYMBOL(id) == cx->wellKnownSymbols().iterator) {
             // Do same thing as .length for [@@iterator].
             if ((desc_.attributes() & JSPROP_RESOLVING) == 0) {
-                if (!ArgumentsObject::reifyIterator(cx, argsobj))
+                if (!cx->shouldBeJSContext() || !ArgumentsObject::reifyIterator(cx->asJSContext(), argsobj))
                     return false;
             }
         } else if (JSID_IS_INT(id)) {

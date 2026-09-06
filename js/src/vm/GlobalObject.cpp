@@ -396,7 +396,7 @@ GlobalObject::new_(JSContext* cx, const Class* clasp, JSPrincipals* principals,
     // Lazily create the system zone.
     if (!rt->gc.systemZone && zoneSpecifier == JS::SystemZone) {
         rt->gc.systemZone = compartment->zone();
-        rt->gc.systemZone->isSystem = true;
+        rt->gc.systemZone->setIsSystemZone(true);
     }
 
     Rooted<GlobalObject*> global(cx);
@@ -863,7 +863,7 @@ GlobalObject::addIntrinsicValue(JSContext* cx, Handle<GlobalObject*> global,
 
     RootedId id(cx, NameToId(name));
     Rooted<StackShape> child(cx, StackShape(base, id, slot, 0, 0));
-    Shape* shape = cx->zone()->propertyTree.getChild(cx, last, child);
+    Shape* shape = cx->zone()->propertyTreeRef().getChild(cx, last, child);
     if (!shape)
         return false;
 
