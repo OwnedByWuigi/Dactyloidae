@@ -4617,15 +4617,19 @@ extern JS_PUBLIC_API(bool)
 JS::Evaluate(JSContext* cx, const ReadOnlyCompileOptions& options,
              const char* bytes, size_t length, MutableHandleValue rval)
 {
-    char16_t* chars;
+    // Keep the converted source owned by this stack frame for the entire
+    // compilation.  SourceBufferHolder only borrows it; transferring
+    // ownership here can leave the parser reading freed/poisoned memory when
+    // self-hosted code is initialized.
+    UniqueTwoByteChars chars;
     if (options.utf8)
-        chars = UTF8CharsToNewTwoByteCharsZ(cx, JS::UTF8Chars(bytes, length), &length).get();
+        chars.reset(UTF8CharsToNewTwoByteCharsZ(cx, JS::UTF8Chars(bytes, length), &length).get());
     else
-        chars = InflateString(cx, bytes, &length);
+        chars.reset(InflateString(cx, bytes, &length));
     if (!chars)
         return false;
 
-    SourceBufferHolder srcBuf(chars, length, SourceBufferHolder::GiveOwnership);
+    SourceBufferHolder srcBuf(chars.get(), length, SourceBufferHolder::NoOwnership);
     RootedObject globalLexical(cx, &cx->global()->lexicalEnvironment());
     bool ok = ::Evaluate(cx, ScopeKind::Global, globalLexical, options, srcBuf, rval);
     return ok;
