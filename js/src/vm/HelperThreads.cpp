@@ -1936,12 +1936,12 @@ void
 JSContext::setHelperThread(HelperThread* thread)
 {
     if (helperThread_)
-        nurserySuppressions_--;
+        allowNurseryAllocations();
 
     helperThread_ = thread;
 
     if (helperThread_)
-        nurserySuppressions_++;
+        suppressNurseryAllocations();
 }
 
 void

@@ -476,6 +476,16 @@ GetPropIRGenerator::tryAttachPrimitive(CacheIRWriter& writer, ValOperandId valId
     return true;
 }
 
+// These legacy attachment helpers are not part of the GetPropIRGenerator
+// interface in this source tree.  Keep the dense-hole predicate available to
+// the HasProp generator while excluding the stale, incompatible definitions.
+static bool
+CanAttachDenseElementHole(JSObject*, bool)
+{
+    return false;
+}
+
+#if 0
 bool
 GetPropIRGenerator::tryAttachStringLength(ValOperandId valId, HandleId id)
 {
@@ -836,6 +846,9 @@ SetPropIRGenerator::maybeEmitIdGuard(jsid id)
     emitIdGuard(setElemKeyValueId(), id);
 }
 
+#endif
+
+#if 0
 GetNameIRGenerator::GetNameIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
                                        ICState::Mode mode, HandleObject env,
                                        HandlePropertyName name)
@@ -2798,3 +2811,5 @@ CallIRGenerator::tryAttachStub()
     MOZ_ASSERT(strategy == OptStrategy::None);
     return false;
 }
+
+#endif // legacy CacheIR generator implementations

@@ -2557,8 +2557,7 @@ UpdateExecutionObservabilityOfScriptsInZone(JSContext* cx, Zone* zone,
     //
     // Mark active baseline scripts in the observable set so that they don't
     // get discarded. They will be recompiled.
-    for (const CooperatingContext& target : cx->runtime()->cooperatingContexts()) {
-        for (JitActivationIterator actIter(cx, target); !actIter.done(); ++actIter) {
+    for (JitActivationIterator actIter(cx->runtime()); !actIter.done(); ++actIter) {
             if (actIter->compartment()->zone() != zone)
                 continue;
 
@@ -2575,7 +2574,6 @@ UpdateExecutionObservabilityOfScriptsInZone(JSContext* cx, Zone* zone,
                   default:;
                 }
             }
-        }
     }
 
     // Iterate through the scripts again and finish discarding
@@ -2587,7 +2585,7 @@ UpdateExecutionObservabilityOfScriptsInZone(JSContext* cx, Zone* zone,
     }
 
     // Iterate through all wasm instances to find ones that need to be updated.
-    for (JSCompartment* c : zone->compartments()) {
+    for (JSCompartment* c : zone->compartments) {
         for (wasm::Instance* instance : c->wasm.instances()) {
             if (!instance->debugEnabled())
                 continue;

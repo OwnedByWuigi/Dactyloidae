@@ -1787,10 +1787,10 @@ ICGetElemNativeCompiler<PropertyName*>::emitCheckKey(MacroAssembler& masm, Label
         Label skipAtomize;
 
         // If string is already an atom, skip the atomize.
-        masm.branchTest32(Assembler::NonZero,
+        masm.branchTest32(Assembler::Zero,
                           Address(strExtract, JSString::offsetOfFlags()),
-                          Imm32(JSString::ATOM_BIT),
-                          &skipAtomize);
+                           Imm32(JSString::NON_ATOM_BIT),
+                           &skipAtomize);
 
         // Stow R0.
         EmitStowICValues(masm, 1);
@@ -2002,7 +2002,7 @@ ICGetElem_String::Compiler::generateStubCode(MacroAssembler& masm)
                   key, &failure);
 
     // Get char code.
-    masm.loadStringChar(str, key, scratchReg);
+    masm.loadStringChar(str, key, scratchReg, &failure);
 
     // Check if char code >= UNIT_STATIC_LIMIT.
     masm.branch32(Assembler::AboveOrEqual, scratchReg, Imm32(StaticStrings::UNIT_STATIC_LIMIT),

@@ -379,7 +379,7 @@ class JitRuntime
     }
 };
 
-class JitZone
+class JitZoneStubSpace
 {
     // Allocated space for optimized baseline stubs.
     OptimizedICStubSpace optimizedStubSpace_;
@@ -425,10 +425,10 @@ struct IcStubCodeMapGCPolicy
     }
 };
 
-class JitZone
+class JitZone : public JitZoneStubSpace
 {
     // Allocated space for optimized baseline stubs.
-    OptimizedICStubSpace optimizedStubSpace_;
+    OptimizedICStubSpace& optimizedStubSpace_ = *JitZoneStubSpace::optimizedStubSpace();
     // Allocated space for cached cfg.
     CFGSpace cfgSpace_;
 
@@ -728,7 +728,7 @@ class MOZ_STACK_CLASS AutoWritableJitCode
       : AutoWritableJitCode(TlsPerThreadData.get()->runtimeFromMainThread(), addr, size)
     {}
     explicit AutoWritableJitCode(JitCode* code)
-      : AutoWritableJitCode(code->runtimeFromMainThread(), code->raw(), code->bufferSize())
+      : AutoWritableJitCode(code->runtimeFromActiveCooperatingThread(), code->raw(), code->bufferSize())
     {}
     ~AutoWritableJitCode() {
         if (!ExecutableAllocator::makeExecutable(addr_, size_))

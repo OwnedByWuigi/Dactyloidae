@@ -68,7 +68,6 @@
 #include "vm/NumberObject-inl.h"
 #include "vm/Shape-inl.h"
 #include "vm/StringObject-inl.h"
-#include "vm/TypedArrayObject-inl.h"
 #include "vm/UnboxedObject-inl.h"
 
 using namespace js;
@@ -501,7 +500,7 @@ js::SetIntegrityLevel(JSContext* cx, HandleObject obj, IntegrityLevel level)
             if (!JSID_IS_EMPTY(child.get().propid) && level == IntegrityLevel::Frozen)
                 MarkTypePropertyNonWritable(cx, nobj, child.get().propid);
 
-            last = cx->zone()->propertyTree.getChild(cx, last, child);
+            last = cx->zone()->propertyTreeRef().getChild(cx, last, child);
             if (!last)
                 return false;
         }
@@ -1296,7 +1295,7 @@ InitializePropertiesFromCompatibleNativeObject(JSContext* cx,
 
         for (Shape* shape : shapes) {
             Rooted<StackShape> child(cx, StackShape(shape));
-            shape = cx->zone()->propertyTree.getChild(cx, shape, child);
+            shape = cx->zone()->propertyTreeRef().getChild(cx, shape, child);
             if (!shape)
                 return false;
         }

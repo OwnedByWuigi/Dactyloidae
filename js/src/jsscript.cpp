@@ -2641,7 +2641,7 @@ ScriptDataSize(uint32_t nscopes, uint32_t nconsts, uint32_t nobjects,
 void
 JSScript::initCompartment(ExclusiveContext* cx)
 {
-    compartment_ = cx->compartment_;
+    compartment_ = cx->compartment();
 }
 
 /* static */ JSScript*
@@ -4164,8 +4164,7 @@ JSScript::argumentsOptimizationFailed(JSContext* cx, HandleScript script)
      *  - type inference data for the script assuming script->needsArgsObj
      */
     JSRuntime::AutoProhibitActiveContextChange apacc(cx->runtime());
-    for (const CooperatingContext& target : cx->runtime()->cooperatingContexts()) {
-        for (AllScriptFramesIter i(cx, target); !i.done(); ++i) {
+    for (AllScriptFramesIter i(cx); !i.done(); ++i) {
             /*
              * We cannot reliably create an arguments object for Ion activations of
              * this script.  To maintain the invariant that "script->needsArgsObj
@@ -4184,7 +4183,6 @@ JSScript::argumentsOptimizationFailed(JSContext* cx, HandleScript script)
                     oomUnsafe.crash("JSScript::argumentsOptimizationFailed");
                 SetFrameArgumentsObject(cx, frame, script, argsobj);
             }
-        }
     }
 
     return true;

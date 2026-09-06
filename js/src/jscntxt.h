@@ -16,6 +16,7 @@
 #include "js/Utility.h"
 #include "js/Vector.h"
 #include "threading/ProtectedData.h"
+#include "vm/Caches.h"
 #include "vm/MallocProvider.h"
 #include "vm/Runtime.h"
 
@@ -118,8 +119,10 @@ enum class ContextKind
 class ExclusiveContext : public ContextFriendFields,
                          public MallocProvider<JSContext>
 {
+    friend class AutoLockForExclusiveAccess;
   protected:
     JSRuntime* const runtime_;
+    HelperThread* helperThread_;
     ContextKind contextKind_;
     JS::ContextOptions options_;
 
@@ -155,7 +158,49 @@ class ExclusiveContext : public ContextFriendFields,
         return runtime_ == rt;
     }
 
+    bool isNurseryAllocAllowed() const { return runtime_->gc.isNurseryAllocAllowed(); }
+    bool isNurseryAllocSuppressed() const { return !isNurseryAllocAllowed(); }
+
+    JSCompartment* compartment() const { return compartment_; }
+    JS::Zone* zone() const { return zone_; }
+    inline Handle<GlobalObject*> global() const;
+    inline LifoAlloc& typeLifoAlloc();
+    FreeOp* defaultFreeOp() const { return runtime_->defaultFreeOp(); }
+    void recoverFromOutOfMemory();
+    bool addPendingCompileError(frontend::CompileError** error);
+    JSRuntime* runtimeFromMainThread() const {
+        MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime_));
+        return runtime_;
+    }
+    JSRuntime* runtime() const { return runtime_; }
+    JS::HeapState heapState() const { return runtime_->heapState(); }
+    HelperThread* helperThread() const { return helperThread_; }
+    void addPendingOutOfMemory() {}
+    void addPendingOverRecursed() {}
+    void* stackLimitAddress(StackKind kind) {
+        return &nativeStackLimit[kind];
+    }
+    uintptr_t stackLimit(StackKind kind) const {
+        return nativeStackLimit[kind];
+    }
+    void* stackLimitAddressForJitCode(StackKind kind);
+    uintptr_t stackLimitForJitCode(StackKind kind);
+    inline void enterCompartment(JSCompartment* comp,
+                                const AutoLockForExclusiveAccess* maybeLock = nullptr);
+    inline void leaveCompartment(JSCompartment* oldCompartment,
+                                const AutoLockForExclusiveAccess* maybeLock = nullptr);
+    inline void setCompartment(JSCompartment* comp,
+                              const AutoLockForExclusiveAccess* maybeLock = nullptr);
+    bool hasEnteredCompartment() const { return enterCompartmentDepth_ != 0; }
+
+  protected:
+    size_t enterCompartmentDepth_ = 0;
+
+  public:
+
     PerThreadData* perThreadData;
+    DtoaState* dtoaState_;
+    DtoaState* dtoaState() const { return dtoaState_; }
 
   public:
     gc::ArenaLists* arenas_;
@@ -165,6 +210,8 @@ class ExclusiveContext : public ContextFriendFields,
     static JS::OOM reportedOOM;
 
     inline JS::Result<> boolToResult(bool ok);
+    template <typename V, typename E>
+    bool resultToBool(const JS::Result<V, E>& result) { return result.isOk(); }
 
     mozilla::GenericErrorResult<JS::OOM&> alreadyReportedOOM();
     mozilla::GenericErrorResult<JS::Error&> alreadyReportedError();
@@ -179,6 +226,12 @@ class ExclusiveContext : public ContextFriendFields,
     PropertyName* emptyString() { return runtime_->emptyString; }
     bool jitSupportsFloatingPoint() const { return runtime_->jitSupportsFloatingPoint; }
     bool jitSupportsSimd() const { return runtime_->jitSupportsSimd; }
+    SharedImmutableStringsCache& sharedImmutableStrings() {
+        return runtime_->sharedImmutableStrings();
+    }
+    ScriptDataTable& scriptDataTable(AutoLockScriptData& lock) {
+        return runtime_->scriptDataTable(lock);
+    }
     JSCompartment* atomsCompartment(AutoLockForExclusiveAccess& lock) { return runtime_->atomsCompartment(lock); }
 };
 
@@ -187,12 +240,20 @@ class ExclusiveContext : public ContextFriendFields,
 struct JSContext : public js::ExclusiveContext,
                    public JSRuntime
 {
+    using js::ExclusiveContext::staticStrings;
+    using js::ExclusiveContext::wellKnownSymbols;
+    using js::ExclusiveContext::defaultFreeOp;
     explicit JSContext(JSRuntime* parentRuntime);
     ~JSContext();
 
     bool init(uint32_t maxBytes, uint32_t maxNurseryBytes);
 
     JSRuntime* runtime() { return this; }
+    inline void enterAtomsCompartment(JSCompartment* comp,
+                                     const js::AutoLockForExclusiveAccess& lock);
+    template <typename T> inline void enterCompartmentOf(const T& target);
+    inline void enterNullCompartment();
+    void enterNonAtomsCompartment(JSCompartment* comp) { enterCompartment(comp); }
     js::PerThreadData& mainThread() { return this->JSRuntime::mainThread; }
 
     static size_t offsetOfActivation() {
@@ -225,11 +286,16 @@ struct JSContext : public js::ExclusiveContext,
     // debug mode.
     bool                propagatingForcedReturn_;
 
+    uint32_t            nurserySuppressions_;
+
     // A stack of live iterators that need to be updated in case of debug mode
     // OSR.
     js::jit::DebugModeOSRVolatileJitFrameIterator* liveVolatileJitFrameIterators_;
 
   public:
+    js::jit::DebugModeOSRVolatileJitFrameIterator*&
+    liveVolatileJitFrameIterators() { return liveVolatileJitFrameIterators_; }
+
     js::ContextCaches caches;
 
     int32_t             reportGranularity;  /* see vm/Probes.h */
@@ -246,6 +312,14 @@ struct JSContext : public js::ExclusiveContext,
     void* data;
 
     void resetJitStackLimit();
+
+    void suppressNurseryAllocations() {
+        nurserySuppressions_++;
+    }
+
+    void allowNurseryAllocations() {
+        nurserySuppressions_--;
+    }
 
   public:
 
@@ -330,6 +404,8 @@ struct JSContext : public js::ExclusiveContext,
     inline js::Nursery& nursery() {
         return gc.nursery;
     }
+    bool isNurseryAllocAllowed() const { return gc.isNurseryAllocAllowed(); }
+    bool isNurseryAllocSuppressed() const { return !isNurseryAllocAllowed(); }
 
     void minorGC(JS::gcreason::Reason reason) {
         gc.minorGC(reason);
@@ -655,7 +731,7 @@ class MOZ_RAII AutoLockForExclusiveAccess
 
     void init(JSRuntime* rt) {
         runtime = rt;
-        if (runtime->numExclusiveThreads) {
+        if (runtime->hasHelperThreadZones()) {
             runtime->exclusiveAccessLock.lock();
         } else {
             MOZ_ASSERT(!runtime->mainThreadHasExclusiveAccess);
@@ -679,7 +755,7 @@ class MOZ_RAII AutoLockForExclusiveAccess
         init(cx->runtime());
     }
     ~AutoLockForExclusiveAccess() {
-        if (runtime->numExclusiveThreads) {
+        if (runtime->hasHelperThreadZones()) {
             runtime->exclusiveAccessLock.unlock();
         } else {
             MOZ_ASSERT(runtime->mainThreadHasExclusiveAccess);
@@ -723,14 +799,23 @@ class MOZ_RAII AutoLockScriptData
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
 
-class MOZ_RAII AutoKeepAtoms
+class MOZ_RAII AutoKeepContextAtoms : public AutoKeepAtoms
 {
     JSContext* cx;
     MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
+
+  public:
+    explicit AutoKeepContextAtoms(JSContext* cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : AutoKeepAtoms(cx->perThreadData), cx(cx)
+    {
+        MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+    }
 };
 
 extern JS::TwoByteCharsZ
 LossyUTF8CharsToNewTwoByteCharsZ(ExclusiveContext* cx, const JS::ConstUTF8CharsZ& utf8, size_t* outlen);
+TwoByteCharsZ
+LossyUTF8CharsToNewTwoByteCharsZ(ExclusiveContext* cx, const JS::UTF8Chars utf8, size_t* outlen);
 
 extern JS::Latin1CharsZ
 LossyUTF8CharsToNewLatin1CharsZ(ExclusiveContext* cx, const JS::UTF8Chars utf8, size_t* outlen);

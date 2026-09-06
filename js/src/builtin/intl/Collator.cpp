@@ -460,7 +460,7 @@ js::intl_isUpperCaseFirst(JSContext* cx, unsigned argc, Value* vp)
     MOZ_ASSERT(args.length() == 1);
     MOZ_ASSERT(args[0].isString());
 
-    SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
+    SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData;
 
     RootedString locale(cx, args[0].toString());
     bool isUpperFirst;

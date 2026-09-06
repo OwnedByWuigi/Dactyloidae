@@ -95,7 +95,9 @@ class MarkStack
 
       public:
         TaggedPtr(Tag tag, Cell* ptr);
+        explicit TaggedPtr(uintptr_t raw) : bits(raw) {}
         Tag tag() const;
+        uintptr_t raw() const { return bits; }
         template <typename T> T* as() const;
 
         JSObject* asValueArrayObject() const;
@@ -148,6 +150,14 @@ class MarkStack
     [[nodiscard]] bool push(JSObject* obj, HeapSlot* start, HeapSlot* end);
     [[nodiscard]] bool push(const ValueArray& array);
     [[nodiscard]] bool push(const SavedValueArray& array);
+    [[nodiscard]] bool push(uintptr_t raw) {
+        if (!ensureSpace(1))
+            return false;
+        *tos_.ref()++ = TaggedPtr(raw);
+        return true;
+    }
+
+    uintptr_t pop() { return popPtr().raw(); }
 
     // GCMarker::eagerlyMarkChildren uses unused marking stack as temporary
     // storage to hold rope pointers.
@@ -190,7 +200,15 @@ class MarkStack
 #endif
 
     friend class MarkStackIter;
+    friend class GCMarker;
 };
+
+template <typename T>
+inline bool
+MarkStack::push(T* ptr)
+{
+    return pushTaggedPtr(ObjectTag, reinterpret_cast<Cell*>(ptr));
+}
 
 class MarkStackIter
 {
@@ -221,6 +239,14 @@ class MarkStackIter
 class GCMarker : public JSTracer
 {
   public:
+    using StackTag = gc::MarkStack::Tag;
+    static constexpr uintptr_t StackTagMask = gc::MarkStack::TagMask;
+    static constexpr StackTag ValueArrayTag = gc::MarkStack::ValueArrayTag;
+    static constexpr StackTag ObjectTag = gc::MarkStack::ObjectTag;
+    static constexpr StackTag GroupTag = gc::MarkStack::GroupTag;
+    static constexpr StackTag SavedValueArrayTag = gc::MarkStack::SavedValueArrayTag;
+    static constexpr StackTag JitCodeTag = gc::MarkStack::JitCodeTag;
+    static constexpr StackTag ScriptTag = gc::MarkStack::ScriptTag;
     explicit GCMarker(JSRuntime* rt);
     [[nodiscard]] bool init(JSGCMode gcMode);
 
@@ -314,6 +340,7 @@ class GCMarker : public JSTracer
 
     template <typename T> void markAndTraceChildren(T* thing);
     template <typename T> void markAndPush(T* thing);
+    template <typename T> void markAndPush(StackTag tag, T* thing);
     template <typename T> void markAndScan(T* thing);
     template <typename T> void markImplicitEdgesHelper(T oldThing);
     template <typename T> void markImplicitEdges(T* oldThing);
@@ -336,6 +363,8 @@ class GCMarker : public JSTracer
 
     template <typename T>
     inline void pushTaggedPtr(T* ptr);
+    template <typename T>
+    inline void pushTaggedPtr(StackTag tag, T* ptr);
 
     inline void pushValueArray(JSObject* obj, HeapSlot* start, HeapSlot* end);
 
@@ -345,6 +374,7 @@ class GCMarker : public JSTracer
 
     [[nodiscard]] bool restoreValueArray(const gc::MarkStack::SavedValueArray& array,
                                         HeapSlot** vpp, HeapSlot** endp);
+    [[nodiscard]] bool restoreValueArray(JSObject* obj, void** vpp, void** endp);
     void saveValueRanges();
     inline void processMarkStackTop(SliceBudget& budget);
 

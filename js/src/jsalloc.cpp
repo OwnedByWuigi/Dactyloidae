@@ -6,17 +6,35 @@
 #include "jsalloc.h"
 
 #include "jscntxt.h"
+#include "gc/Zone.h"
 
 using namespace js;
 
 void*
 TempAllocPolicy::onOutOfMemory(AllocFunction allocFunc, size_t nbytes, void* reallocPtr)
 {
-    return static_cast<ExclusiveContext*>(cx_)->onOutOfMemory(allocFunc, nbytes, reallocPtr);
+    return static_cast<ExclusiveContext*>(cx_)->runtimeFromMainThread()->onOutOfMemory(
+        allocFunc, nbytes, reallocPtr);
 }
 
 void
 TempAllocPolicy::reportAllocOverflow() const
 {
     ReportAllocationOverflow(static_cast<ExclusiveContext*>(cx_));
+}
+
+void
+ZoneAllocPolicy::reportAllocOverflow() const
+{
+    zone->reportAllocationOverflow();
+}
+
+bool
+ZoneAllocPolicy::checkSimulatedOOM() const
+{
+    if (js::oom::ShouldFailWithOOM()) {
+        ReportOutOfMemory(nullptr);
+        return false;
+    }
+    return true;
 }

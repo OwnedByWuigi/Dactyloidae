@@ -1178,7 +1178,7 @@ DebugModeOSRVolatileJitFrameIterator::forwardLiveIterators(JSContext* cx,
                                                            uint8_t* oldAddr, uint8_t* newAddr)
 {
     DebugModeOSRVolatileJitFrameIterator* iter;
-    for (iter = cx->liveVolatileJitFrameIterators_; iter; iter = iter->prev) {
+    for (iter = cx->liveVolatileJitFrameIterators(); iter; iter = iter->prev) {
         if (iter->returnAddressToFp_ == oldAddr)
             iter->returnAddressToFp_ = newAddr;
     }

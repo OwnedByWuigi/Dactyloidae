@@ -298,19 +298,8 @@ AtomizeAndCopyChars(ExclusiveContext* cx, const CharT* tbchars, size_t length, P
     // atoms lock, the markAtom call, and the multiple HashSet lookups below.
     // We don't use the per-Zone cache if we want a pinned atom: handling that
     // is more complicated and pinning atoms is relatively uncommon.
-    Zone* zone = cx->zone();
-    Maybe<AtomSet::AddPtr> zonePtr;
-    if (MOZ_LIKELY(zone && pin == DoNotPinAtom)) {
-        zonePtr.emplace(zone->atomCache().lookupForAdd(lookup));
-        if (zonePtr.ref()) {
-            // The cache is purged on GC so if we're in the middle of an
-            // incremental GC we should have barriered the atom when we put
-            // it in the cache.
-            JSAtom* atom = zonePtr.ref()->asPtrUnbarriered();
-            MOZ_ASSERT(AtomIsMarked(zone, atom));
-            return atom;
-        }
-    }
+    // This tree does not provide the per-zone atom cache.  Use the runtime
+    // atoms table below, which is the canonical fallback for atomization.
 
     // Note: when this function is called while the permanent atoms table is
     // being initialized (in initializeAtoms()), |permanentAtoms| is not yet
@@ -328,14 +317,14 @@ AtomizeAndCopyChars(ExclusiveContext* cx, const CharT* tbchars, size_t length, P
     if (MOZ_UNLIKELY(!JSString::validateLength(cx, length)))
         return nullptr;
 
-    JSAtom* atom = AtomizeAndCopyCharsInner(cx, tbchars, length, pin, lookup);
+    JSContext* jsCx = cx->maybeJSContext();
+    if (!jsCx)
+        return nullptr;
+    JSAtom* atom = AtomizeAndCopyCharsInner(jsCx, tbchars, length, pin, lookup);
     if (!atom)
         return nullptr;
 
-    cx->atomMarking().inlinedMarkAtom(cx, atom);
-
-    if (zonePtr)
-        mozilla::Unused << zone->atomCache().add(*zonePtr, AtomStateEntry(atom, false));
+    cx->runtime()->gc.atomMarking.inlinedMarkAtom(jsCx, atom);
 
     return atom;
 }
@@ -361,8 +350,6 @@ AtomizeAndCopyCharsInner(JSContext* cx, const CharT* tbchars, size_t length, Pin
 
     JSAtom* atom;
     {
-        AutoAtomsCompartment ac(cx, lock);
-
     JSFlatString* flat = NewStringCopyN<NoGC>(cx, tbchars, length);
     if (!flat) {
         // Grudgingly forgo last-ditch GC. The alternative would be to release
@@ -381,7 +368,9 @@ AtomizeAndCopyCharsInner(JSContext* cx, const CharT* tbchars, size_t length, Pin
         // We have held the lock since looking up p, and the operations we've done
         // since then can't GC; therefore the atoms table has not been modified and
         // p is still valid.
-        AtomSet* addSet = atomsAddedWhileSweeping ? atomsAddedWhileSweeping : &atoms;
+        AtomSet* addSet = cx->runtime()->atomsAddedWhileSweeping();
+        if (!addSet)
+            addSet = &atoms;
         if (!addSet->add(p, AtomStateEntry(atom, bool(pin)))) {
             ReportOutOfMemory(cx); /* SystemAllocPolicy does not report OOM. */
             return nullptr;

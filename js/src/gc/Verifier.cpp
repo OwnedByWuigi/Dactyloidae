@@ -25,6 +25,8 @@
 using namespace js;
 using namespace js::gc;
 
+#define stats() stats
+
 #ifdef JSGC_HASH_TABLE_CHECKS
 
 /*
@@ -727,7 +729,7 @@ js::CheckGrayMarkingState(JSContext* cx)
     if (!rt->gc.areGrayBitsValid())
         return true;
 
-    gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PHASE_TRACE_HEAP);
+    gcstats::AutoPhase ap(rt->gc.stats, gcstats::PHASE_TRACE_HEAP);
     AutoTraceSession session(rt, JS::HeapState::Tracing);
     CheckGrayMarkingTracer tracer(rt);
     if (!tracer.init())

@@ -22,6 +22,7 @@
 #include "js/UbiNode.h"
 #include "js/Utility.h"
 #include "js/Vector.h"
+#include "threading/ProtectedData.h"
 #include "vm/TaggedProto.h"
 
 namespace js {

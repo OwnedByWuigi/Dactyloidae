@@ -1288,11 +1288,14 @@ RegExpShared::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf)
 /* RegExpCompartment */
 
 RegExpCompartment::RegExpCompartment(Zone* zone)
-    : perCompartment_(zone),
+    : set_(zone, ZoneAllocPolicy(zone)),
+    perCompartment_(zone),
     optimizableRegExpPrototypeShape_(nullptr),
     optimizableRegExpInstanceShape_(nullptr)
 {
   {
+    for (auto& object : matchResultTemplateObjects_)
+        object = nullptr;
     MOZ_ALWAYS_TRUE(perCompartment_.init(4));
   }
 }

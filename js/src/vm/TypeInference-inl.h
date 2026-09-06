@@ -415,6 +415,7 @@ HasTypePropertyId(JSObject* obj, jsid id, TypeSet::Type type)
         if (obj->isSingleton() && !types->nonConstantProperty())
             return false;
         return true;
+    }
 
     if (obj->group()->unknownProperties())
         return true;

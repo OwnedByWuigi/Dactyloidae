@@ -951,6 +951,7 @@ class DebugEnvironments
 
   public:
     void mark(JSTracer* trc);
+    void trace(JSTracer* trc) { mark(trc); }
     void sweep(JSRuntime* rt);
     void finish();
 #ifdef JSGC_HASH_TABLE_CHECKS

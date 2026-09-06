@@ -996,12 +996,13 @@ js::GetErrorMessage(void* userRef, const unsigned errorNumber)
 
 ExclusiveContext::ExclusiveContext(JSRuntime* rt, PerThreadData* pt, ContextKind kind,
                                    const JS::ContextOptions& options)
-  : ContextFriendFields(kind == Context_JS),
+  : ContextFriendFields(kind == ContextKind::Context_JS),
     runtime_(rt),
     helperThread_(nullptr),
     contextKind_(kind),
     options_(options),
     perThreadData(pt),
+    dtoaState_(pt ? pt->dtoaState : nullptr),
     arenas_(nullptr),
     enterCompartmentDepth_(0)
 {
@@ -1051,7 +1052,7 @@ ExclusiveContext::alreadyReportedError()
 }
 
 JSContext::JSContext(JSRuntime* parentRuntime)
-  : ExclusiveContext(this, &this->JSRuntime::mainThread, Context_JS, JS::ContextOptions()),
+  : ExclusiveContext(this, &this->JSRuntime::mainThread, ContextKind::Context_JS, JS::ContextOptions()),
     JSRuntime(parentRuntime),
     throwing(false),
     unwrappedException_(this),

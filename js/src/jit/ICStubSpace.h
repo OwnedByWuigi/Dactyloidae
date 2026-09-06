@@ -59,6 +59,12 @@ struct OptimizedICStubSpace : public ICStubSpace
     {}
 };
 
+// Cached control-flow graphs have zone lifetime, like optimized stub storage.
+struct CFGSpace : public ICStubSpace
+{
+    CFGSpace() : ICStubSpace(4096) {}
+};
+
 // Space for fallback stubs. Every BaselineScript has a
 // FallbackICStubSpace.
 struct FallbackICStubSpace : public ICStubSpace

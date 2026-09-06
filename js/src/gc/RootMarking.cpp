@@ -256,16 +256,15 @@ PropertyDescriptor::trace(JSTracer* trc)
 void
 js::gc::GCRuntime::traceRuntimeForMajorGC(JSTracer* trc, AutoTraceSession& session)
 {
-    MOZ_ASSERT_IF(atomsZone->isCollecting(), session.maybeLock.isSome());
+    MOZ_ASSERT(session.maybeLock.isSome());
 
     // FinishRoots will have asserted that every root that we do not expect
     // is gone, so we can simply skip traceRuntime here.
     if (rt->isBeingDestroyed())
         return;
 
-    gcstats::AutoPhase ap(stats(), gcstats::PHASE_MARK_ROOTS);
-    if (atomsZone->isCollecting())
-        traceRuntimeAtoms(trc, session.lock());
+    gcstats::AutoPhase ap(stats, gcstats::PHASE_MARK_ROOTS);
+    traceRuntimeAtoms(trc, session.lock());
     JSCompartment::traceIncomingCrossCompartmentEdgesForZoneGC(trc);
     traceRuntimeCommon(trc, MarkRuntime, session);
 }
@@ -294,9 +293,9 @@ js::TraceRuntime(JSTracer* trc)
     MOZ_ASSERT(!trc->isMarkingTracer());
 
     JSRuntime* rt = trc->runtime();
-    EvictAllNurseries(rt);
+    rt->gc.evictNursery();
     AutoPrepareForTracing prep(TlsContext.get(), WithAtoms);
-    gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PHASE_TRACE_HEAP);
+    gcstats::AutoPhase ap(rt->gc.stats, gcstats::PHASE_TRACE_HEAP);
     rt->gc.traceRuntime(trc, prep.session());
 }
 
@@ -305,7 +304,7 @@ js::gc::GCRuntime::traceRuntime(JSTracer* trc, AutoTraceSession& session)
 {
     MOZ_ASSERT(!rt->isBeingDestroyed());
 
-    gcstats::AutoPhase ap(stats(), gcstats::PHASE_MARK_ROOTS);
+    gcstats::AutoPhase ap(stats, gcstats::PHASE_MARK_ROOTS);
     traceRuntimeAtoms(trc, session.lock());
     traceRuntimeCommon(trc, TraceRuntime, session);
 }
@@ -427,7 +426,7 @@ js::gc::GCRuntime::finishRoots()
 
     AssertNoRootsTracer trc(rt, TraceWeakMapKeysValues);
     AutoPrepareForTracing prep(TlsContext.get(), WithAtoms);
-    gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PHASE_TRACE_HEAP);
+    gcstats::AutoPhase ap(rt->gc.stats, gcstats::PHASE_TRACE_HEAP);
     traceRuntime(&trc, prep.session());
 
     // Restore the wrapper tracing so that we leak instead of leaving dangling
@@ -449,9 +448,7 @@ class BufferGrayRootsTracer : public JS::CallbackTracer
     void onSymbolEdge(JS::Symbol** symbolp) override { bufferRoot(*symbolp); }
     void onBigIntEdge(JS::BigInt** bip) override { bufferRoot(*bip); }
 
-    void onChild(const JS::GCCellPtr& thing) override {
-        MOZ_CRASH("Unexpected gray root kind");
-    }
+    void onChild(const JS::GCCellPtr& thing) override;
 
     template <typename T> inline void bufferRoot(T* thing);
 
@@ -485,7 +482,7 @@ js::gc::GCRuntime::bufferGrayRoots()
     //               and the zone's buffers have been cleared.
     MOZ_ASSERT(grayBufferState == GrayBufferState::Unused);
     for (GCZonesIter zone(rt); !zone.done(); zone.next())
-        MOZ_ASSERT(zone->gcGrayRoots.empty());
+        MOZ_ASSERT(zone->gcGrayRoots().empty());
 
     BufferGrayRootsTracer grayBufferer(rt);
     if (JSTraceDataOp op = grayRootTracer.op)
@@ -527,7 +524,7 @@ BufferGrayRootsTracer::onChild(const JS::GCCellPtr& thing)
         // incremental GCs (when we do gray root buffering).
         DispatchTyped(SetMaybeAliveFunctor(), thing);
 
-        if (!zone->gcGrayRoots.append(tenured))
+        if (!zone->gcGrayRoots().append(tenured))
             bufferingGrayRootsFailed = true;
     }
 }
@@ -538,7 +535,7 @@ GCRuntime::markBufferedGrayRoots(JS::Zone* zone)
     MOZ_ASSERT(grayBufferState == GrayBufferState::Okay);
     MOZ_ASSERT(zone->isGCMarkingGray() || zone->isGCCompacting());
 
-    for (auto cell : zone->gcGrayRoots)
+    for (auto cell : zone->gcGrayRoots())
         TraceManuallyBarrieredGenericPointerEdge(&marker, &cell, "buffered gray root");
 }
 
@@ -548,5 +545,5 @@ GCRuntime::resetBufferedGrayRoots() const
     MOZ_ASSERT(grayBufferState != GrayBufferState::Okay,
                "Do not clear the gray buffers unless we are Failed or becoming Unused");
     for (GCZonesIter zone(rt); !zone.done(); zone.next())
-        zone->gcGrayRoots.clearAndFree();
+        zone->gcGrayRoots().clearAndFree();
 }

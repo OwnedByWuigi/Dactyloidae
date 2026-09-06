@@ -31,6 +31,7 @@ class CooperatingContext
     JSContext* operator->() const { return cx_; }
     explicit operator bool() const { return !!cx_; }
     JSContext* get() const { return cx_; }
+    void* addressOfContext() { return &cx_; }
 };
 
 // Zone groups encapsulate data about a group of zones that are logically
@@ -59,7 +60,7 @@ class ZoneGroup
 
   public:
     CooperatingContext& ownerContext() { return ownerContext_.ref(); }
-    void* addressOfOwnerContext() { return &ownerContext_.ref().cx; }
+    void* addressOfOwnerContext() { return ownerContext_.ref().addressOfContext(); }
 
     void enter(JSContext* cx);
     void leave();

@@ -22,7 +22,14 @@
 #include "gc/StoreBuffer.h"
 #include "js/GCAnnotations.h"
 
+namespace JS {
+namespace detail { class WeakCacheBase; }
+}
+
 namespace js {
+
+class ZoneGroup;
+typedef Vector<ZoneGroup*, 4, SystemAllocPolicy> ZoneGroupVector;
 
 class AutoLockGC;
 class AutoLockGCBgAlloc;
@@ -42,16 +49,21 @@ class AutoTraceSession;
 struct MovingTracer;
 enum class ShouldCheckThresholds;
 
-template <typename... Args>
-struct SweepAction;
-class SweepGroupsIter;
-class WeakCacheSweepIterator;
-
 enum IncrementalProgress
 {
     NotFinished = 0,
     Finished
 };
+
+template <typename... Args>
+struct SweepAction
+{
+    virtual ~SweepAction() = default;
+    virtual IncrementalProgress run(Args... args) = 0;
+    virtual void assertFinished() const = 0;
+};
+class SweepGroupsIter;
+class WeakCacheSweepIterator;
 
 class ChunkPool
 {
@@ -111,7 +123,7 @@ class BackgroundDecommitTask : public GCParallelTaskHelper<BackgroundDecommitTas
   public:
     using ChunkVector = mozilla::Vector<Chunk*>;
 
-    explicit BackgroundDecommitTask(JSRuntime *rt) : runtime(rt) {}
+    explicit BackgroundDecommitTask(JSRuntime *rt) : GCParallelTaskHelper(rt), runtime(rt) {}
     void setChunksToScan(ChunkVector &chunks);
 
     void run();
@@ -248,6 +260,7 @@ class GCSchedulingTunables
     size_t gcMaxNurseryBytes() const { return gcMaxNurseryBytes_; }
     size_t gcZoneAllocThresholdBase() const { return gcZoneAllocThresholdBase_; }
     float allocThresholdFactor() const { return allocThresholdFactor_; }
+    float zoneAllocThresholdFactor() const { return allocThresholdFactor_; }
     float allocThresholdFactorAvoidInterrupt() const { return allocThresholdFactorAvoidInterrupt_; }
     size_t zoneAllocDelayBytes() const { return zoneAllocDelayBytes_; }
     bool isDynamicHeapGrowthEnabled() const { return dynamicHeapGrowthEnabled_; }
@@ -757,6 +770,17 @@ class GCRuntime
     void maybeAllocTriggerZoneGC(Zone* zone, const AutoLockGC& lock, size_t nbytes = 0);
     // The return value indicates if we were able to do the GC.
     bool triggerZoneGC(Zone* zone, JS::gcreason::Reason reason);
+    bool triggerZoneGC(Zone* zone, JS::gcreason::Reason reason,
+                       size_t amount, size_t threshold) {
+        if (!triggerZoneGC(zone, reason))
+            return false;
+        stats.recordTrigger(amount, threshold);
+        return true;
+    }
+    inline bool hasZealMode(ZealMode mode);
+    inline void clearZealMode(ZealMode mode);
+    inline bool upcomingZealousGC();
+    inline bool needZealousGC();
     void maybeGC(Zone* zone);
     void minorGC(JS::gcreason::Reason reason,
                  gcstats::Phase phase = gcstats::PHASE_MINOR_GC) JS_HAZ_GC_CALL;
@@ -859,6 +883,13 @@ class GCRuntime
     }
 #endif // DEBUG
 
+#ifndef DEBUG
+    // Nursery-allocation suppression is only tracked in debug builds.
+    bool isNurseryAllocAllowed() const { return true; }
+    void disallowNurseryAlloc() {}
+    void allowNurseryAlloc() {}
+#endif
+
     bool isInsideUnsafeRegion() { return inUnsafeRegion != 0; }
     void enterUnsafeRegion() { ++inUnsafeRegion; }
     void leaveUnsafeRegion() {
@@ -902,13 +933,14 @@ class GCRuntime
         // Even though this method may be called off the main thread it is safe
         // to access mallocCounter here since triggerGC() will return false in
         // that case.
-        stats().recordTrigger(mallocCounter.bytes(), mallocCounter.maxBytes());
+        stats.recordTrigger(mallocCounter.bytes(), mallocCounter.maxBytes());
         return true;
 	}
 
     int32_t getMallocBytes() const { return mallocCounter.bytes(); }
     size_t maxMallocBytesAllocated() const { return mallocCounter.maxBytes(); }
     void setMaxMallocBytes(size_t value, const AutoLockGC& lock);
+    void setMaxMallocBytes(size_t value) { (void)value; }
 
     bool updateMallocCounter(size_t nbytes) {
         mallocCounter.update(nbytes);
@@ -922,7 +954,7 @@ class GCRuntime
         // Even though this method may be called off the main thread it is safe
         // to access mallocCounter here since triggerGC() will return false in
         // that case.
-        stats().recordTrigger(mallocCounter.bytes(), mallocCounter.maxBytes());
+        stats.recordTrigger(mallocCounter.bytes(), mallocCounter.maxBytes());
 
         mallocCounter.recordTrigger(trigger);
         return true;
@@ -990,9 +1022,9 @@ class GCRuntime
     inline void updateOnFreeArenaAlloc(const ChunkInfo& info);
     inline void updateOnArenaFree(const ChunkInfo& info);
 
-    ChunkPool& fullChunks(const AutoLockGC& lock) { return fullChunks_; }
-    ChunkPool& availableChunks(const AutoLockGC& lock) { return availableChunks_; }
-    ChunkPool& emptyChunks(const AutoLockGC& lock) { return emptyChunks_; }
+    ChunkPool& fullChunks(const AutoLockGC& lock) { return fullChunks_.ref(); }
+    ChunkPool& availableChunks(const AutoLockGC& lock) { return availableChunks_.ref(); }
+    ChunkPool& emptyChunks(const AutoLockGC& lock) { return emptyChunks_.ref(); }
     const ChunkPool& fullChunks(const AutoLockGC& lock) const { return fullChunks_; }
     const ChunkPool& availableChunks(const AutoLockGC& lock) const { return availableChunks_; }
     const ChunkPool& emptyChunks(const AutoLockGC& lock) const { return emptyChunks_; }
@@ -1031,7 +1063,7 @@ class GCRuntime
     static JSObject* tryNewTenuredObject(ExclusiveContext* cx, AllocKind kind, size_t thingSize,
                                          size_t nDynamicSlots);
     template <typename T, AllowGC allowGC>
-    static T* tryNewTenuredThing(JSContext* cx, AllocKind kind, size_t thingSize);
+    static T* tryNewTenuredThing(ExclusiveContext* cx, AllocKind kind, size_t thingSize);
     template <AllowGC allowGC>
     JSString* tryNewNurseryString(JSContext* cx, size_t thingSize, AllocKind kind);
     static TenuredCell* refillFreeListInGC(Zone* zone, AllocKind thingKind);
@@ -1149,7 +1181,9 @@ class GCRuntime
     void sweepDebuggerOnMainThread(FreeOp* fop);
     void sweepJitDataOnMainThread(FreeOp* fop);
     IncrementalProgress endSweepingSweepGroup(FreeOp* fop, SliceBudget& budget);
+    void endSweepingZoneGroup();
     IncrementalProgress performSweepActions(SliceBudget& sliceBudget);
+    bool initSweepActions();
     IncrementalProgress sweepTypeInformation(FreeOp* fop, SliceBudget& budget, Zone* zone);
     IncrementalProgress mergeSweptObjectArenas(FreeOp* fop, SliceBudget& budget, Zone* zone);
     void startSweepingAtomsTable();
@@ -1161,6 +1195,9 @@ class GCRuntime
     void endSweepPhase(bool lastGC);
     bool allCCVisibleZonesWereCollected() const;
     void sweepZones(FreeOp* fop, ZoneGroup* group, bool lastGC);
+    void sweepZones(FreeOp* fop, bool destroyingRuntime);
+    ZoneList& backgroundSweepZonesRef() { return backgroundSweepZones.ref(); }
+    LifoAlloc& blocksToFreeAfterSweepingRef() { return blocksToFreeAfterSweeping; }
     void sweepZoneGroups(FreeOp* fop, bool destroyingRuntime);
     void decommitAllWithoutUnlocking(const AutoLockGC& lock);
     void startDecommit();
@@ -1204,6 +1241,7 @@ class GCRuntime
 
     /* Embedders can use this zone however they wish. */
     JS::Zone* systemZone;
+    JS::Zone* atomsZone = nullptr;
 
     // List of all zone groups (protected by the GC lock).
   private:
@@ -1211,12 +1249,15 @@ class GCRuntime
   public:
     ZoneGroupVector& groups() { return groups_.ref(); }
 
+    ZoneVector zones;
+
     Nursery nursery;
     StoreBuffer storeBuffer;
 
     gcstats::Statistics stats;
 
     GCMarker marker;
+    AtomMarkingRuntime atomMarking;
 
     /* Track heap usage for this runtime. */
     HeapUsage usage;
@@ -1393,15 +1434,16 @@ class GCRuntime
     size_t sweepPhaseIndex;
     JS::Zone* sweepZone;
     size_t sweepActionIndex;
-    bool abortSweepAfterCurrentGroup;
 
     ActiveThreadData<JS::Zone*> sweepGroups;
     ActiveThreadOrGCTaskData<JS::Zone*> currentSweepGroup;
     ActiveThreadData<UniquePtr<SweepAction<GCRuntime*, FreeOp*, SliceBudget&>>> sweepActions;
-    ActiveThreadOrGCTaskData<JS::Zone*> sweepZone;
+    ActiveThreadOrGCTaskData<JS::Zone*> weakCacheSweepZone;
     ActiveThreadData<mozilla::Maybe<AtomSet::Enum>> maybeAtomsToSweep;
     ActiveThreadOrGCTaskData<JS::detail::WeakCacheBase*> sweepCache;
     ActiveThreadData<bool> abortSweepAfterCurrentGroup;
+    // Keep the legacy sweep state tied to the protected abort flag.
+    bool& legacyAbortSweepAfterCurrentGroup;
 
     friend class SweepGroupsIter;
     friend class WeakCacheSweepIterator;
@@ -1534,11 +1576,12 @@ class GCRuntime
     ActiveThreadData<SortedArenaList> incrementalSweepList;
 
   private:
-    ActiveThreadData<Nursery> nursery_;
-    ActiveThreadData<gc::StoreBuffer> storeBuffer_;
+    // Checked access to the same nursery and store buffer used by legacy callers.
+    ActiveThreadData<Nursery&> nursery_;
+    ActiveThreadData<gc::StoreBuffer&> storeBuffer_;
   public:
-    Nursery& nursery() { return nursery_.ref(); }
-    gc::StoreBuffer& storeBuffer() { return storeBuffer_.ref(); }
+    Nursery& getNursery() { return nursery_.ref(); }
+    gc::StoreBuffer& getStoreBuffer() { return storeBuffer_.ref(); }
 
     // Free LIFO blocks are transferred to this allocator before being freed
     // after minor GC.
@@ -1555,12 +1598,16 @@ class GCRuntime
         return nursery_.refNoCheck().addressOfCurrentStringEnd();
     }
 
-    void minorGC(JS::gcreason::Reason reason,
-                 gcstats::Phase phase = gcstats::PHASE_MINOR_GC) JS_HAZ_GC_CALL;
-    void evictNursery(JS::gcreason::Reason reason = JS::gcreason::EVICT_NURSERY) {
-        minorGC(reason, gcstats::PHASE_EVICT_NURSERY);
+    void minorGCFromActiveThread(JS::gcreason::Reason reason,
+                                gcstats::Phase phase = gcstats::PHASE_MINOR_GC) JS_HAZ_GC_CALL {
+        minorGC(reason, phase);
     }
-    void freeAllLifoBlocksAfterMinorGC(LifoAlloc* lifo);
+    void evictNurseryFromActiveThread(JS::gcreason::Reason reason = JS::gcreason::EVICT_NURSERY) {
+        evictNursery(reason);
+    }
+    void freeAllLifoBlocksAfterMinorGCFromActiveThread(LifoAlloc* lifo) {
+        freeAllLifoBlocksAfterMinorGC(lifo);
+    }
 
     friend class js::GCHelperState;
     friend class MarkingValidator;

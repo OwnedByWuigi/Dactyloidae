@@ -21,6 +21,9 @@ namespace js {
 
 class EnvironmentIter;
 
+extern JSFunction*
+MakeDefaultConstructor(JSContext* cx, HandleScript script, jsbytecode* pc, HandleObject proto);
+
 /*
  * Convert null/undefined |thisv| into the current global object for the
  * compartment, and replace other primitives with boxed versions.

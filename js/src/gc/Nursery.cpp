@@ -38,12 +38,29 @@ using mozilla::ArrayLength;
 using mozilla::DebugOnly;
 using mozilla::PodCopy;
 using mozilla::PodZero;
+using mozilla::TimeDuration;
+using mozilla::TimeStamp;
+
+/* The embedding used by this tree does not provide the optional JSON
+ * profiling printer. Keep the profiling hook source-compatible when it is
+ * unavailable. */
+class js::JSONPrinter
+{
+  public:
+    enum Format { MICROSECONDS };
+    void beginObject() {}
+    void endObject() {}
+    void beginObjectProperty(const char*) {}
+    template <typename T> void property(const char*, const T&) {}
+    template <typename T> void property(const char*, const T&, Format) {}
+};
 
 static const uintptr_t CanaryMagicValue = 0xDEADB15D;
 
 struct js::Nursery::FreeMallocedBuffersTask : public GCParallelTaskHelper<FreeMallocedBuffersTask>
 {
-    explicit FreeMallocedBuffersTask(FreeOp* fop) : fop_(fop) {}
+    explicit FreeMallocedBuffersTask(JSRuntime* rt, FreeOp* fop)
+      : GCParallelTaskHelper(rt), fop_(fop) {}
     bool init() { return buffers_.init(); }
     void transferBuffersToFree(MallocedBuffersSet& buffersToFree,
                                const AutoLockHelperThreadState& lock);
@@ -148,7 +165,7 @@ js::Nursery::init(uint32_t maxNurseryBytes, AutoLockGCBgAlloc& lock)
     if (!mallocedBuffers.init())
         return false;
 
-    freeMallocedBuffersTask = js_new<FreeMallocedBuffersTask>(runtime()->defaultFreeOp());
+    freeMallocedBuffersTask = js_new<FreeMallocedBuffersTask>(runtime(), runtime()->defaultFreeOp());
     if (!freeMallocedBuffersTask || !freeMallocedBuffersTask->init())
         return false;
 
@@ -177,7 +194,7 @@ js::Nursery::init(uint32_t maxNurseryBytes, AutoLockGCBgAlloc& lock)
             exit(0);
         }
         enableProfiling_ = true;
-        profileThreshold_ = TimeDuration::FromMicroseconds(atoi(env));
+        profileThreshold_ = TimeDuration::FromMicroseconds(atoi(env)).ToMicroseconds();
     }
 
     env = getenv("JS_GC_REPORT_TENURING");
@@ -227,7 +244,7 @@ js::Nursery::enable()
     setCurrentChunk(0);
     setStartPosition();
 
-    MOZ_ALWAYS_TRUE(runtime()->gc.storeBuffer().enable());
+    MOZ_ALWAYS_TRUE(runtime()->gc.getStoreBuffer().enable());
 }
 
 void
@@ -243,7 +260,7 @@ js::Nursery::disable()
     currentEnd_ = 0;
 
     currentStringEnd_ = 0;
-    runtime()->gc.storeBuffer().disable();
+    runtime()->gc.getStoreBuffer().disable();
 }
 
 void
@@ -706,7 +723,7 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
     const float promotionRate = calcPromotionRate(&validPromotionRate);
     uint32_t pretenureCount = 0;
     bool shouldPretenure = (validPromotionRate && promotionRate > 0.6) ||
-        IsFullStoreBufferReason(reason);
+        reason == JS::gcreason::FULL_STORE_BUFFER;
 
   if (shouldPretenure) {
      for (auto& entry : tenureCounts.entries) {
@@ -752,8 +769,7 @@ js::Nursery::collect(JSRuntime* rt, JS::gcreason::Reason reason)
     JSContext* cx = TlsContext.get();
        for (ObjectGroup* group : groupsToPretenure) {
         // Re-check; canPreTenure may touch TI/sweep.
-           if (group->canPreTenure() && group->zone()->group()->canEnterWithoutYielding(cx)) {
-            AutoCompartment ac(cx, group);
+           if (group->canPreTenure()) {
             group->setShouldPreTenure(cx);
             pretenureCount++;
            }
@@ -827,7 +843,7 @@ js::Nursery::doCollection(JS::gcreason::Reason reason, TenureCountCache& tenureC
     // of such graphs.
     startProfile(ProfileKey::CancelIonCompilations);
     if (sb.cancelIonCompilations())
-        js::CancelOffThreadIonCompilesUsingNurseryPointers(rt);
+        js::CancelOffThreadIonCompile(rt);
     endProfile(ProfileKey::CancelIonCompilations);
 
     startProfile(ProfileKey::TraceValues);
@@ -899,7 +915,7 @@ js::Nursery::doCollection(JS::gcreason::Reason reason, TenureCountCache& tenureC
     endProfile(ProfileKey::ClearNursery);
 
     startProfile(ProfileKey::ClearStoreBuffer);
-    runtime()->gc.storeBuffer().clear();
+    runtime()->gc.getStoreBuffer().clear();
     endProfile(ProfileKey::ClearStoreBuffer);
 
     // Make sure hashtables have been updated after the collection.
@@ -958,7 +974,7 @@ js::Nursery::freeMallocedBuffers()
     }
 
     if (!started)
-        freeMallocedBuffersTask->runFromMainThread(runtime());
+        freeMallocedBuffersTask->runFromActiveCooperatingThread(runtime());
 
     MOZ_ASSERT(mallocedBuffers.empty());
 }
@@ -979,7 +995,8 @@ js::Nursery::sweep(JSTracer* trc)
 {
     // Sweep unique IDs first before we sweep any tables that may be keyed based
     // on them.
-    for (Cell* cell : cellsWithUid_) {
+    for (auto cells = cellsWithUid_.all(); !cells.empty(); cells.popFront()) {
+        Cell* cell = cells.front();
         JSObject* obj = static_cast<JSObject*>(cell);
         if (!IsForwarded(obj)) {
             obj->zone()->removeUniqueId(obj);
@@ -1242,7 +1259,7 @@ JS::EnableNurseryStrings(JSContext* cx)
 {
     AutoEmptyNursery empty(cx);
     ReleaseAllJITCode(cx->runtime()->defaultFreeOp());
-    cx->runtime()->gc.nursery().enableStrings();
+    cx->runtime()->gc.getNursery().enableStrings();
 }
 
 JS_PUBLIC_API(void)
@@ -1250,5 +1267,5 @@ JS::DisableNurseryStrings(JSContext* cx)
 {
     AutoEmptyNursery empty(cx);
     ReleaseAllJITCode(cx->runtime()->defaultFreeOp());
-    cx->runtime()->gc.nursery().disableStrings();
+    cx->runtime()->gc.getNursery().disableStrings();
 }

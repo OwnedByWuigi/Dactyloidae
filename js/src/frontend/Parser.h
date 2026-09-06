@@ -131,7 +131,7 @@ class ParseContext : public Nestable<ParseContext>
         template <typename ParseHandler>
         explicit Scope(Parser<ParseHandler>* parser)
           : Nestable<Scope>(&parser->pc->innermostScope_),
-            declared_(parser->context->frontendCollectionPool()),
+                        declared_(parser->context->perThreadData->frontendCollectionPool),
             id_(parser->usedNames.nextScopeId())
         { }
 
@@ -358,9 +358,9 @@ class ParseContext : public Nestable<ParseContext>
         innermostStatement_(nullptr),
         innermostScope_(nullptr),
         varScope_(nullptr),
-        innerFunctionBoxesForAnnexB_(prs->context->frontendCollectionPool()),
-        positionalFormalParameterNames_(prs->context->frontendCollectionPool()),
-        closedOverBindingsForLazy_(prs->context->frontendCollectionPool()),
+        innerFunctionBoxesForAnnexB_(prs->context->perThreadData->frontendCollectionPool),
+        positionalFormalParameterNames_(prs->context->perThreadData->frontendCollectionPool),
+        closedOverBindingsForLazy_(prs->context->perThreadData->frontendCollectionPool),
         scriptId_(prs->usedNames.nextScriptId()),
         isStandaloneFunctionBody_(false),
         superScopeNeedsHomeObject_(false),

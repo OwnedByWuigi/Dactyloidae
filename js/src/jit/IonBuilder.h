@@ -23,6 +23,12 @@
 namespace js {
 namespace jit {
 
+struct Ok {
+    Ok(bool = true) {}
+    operator bool() const { return true; }
+};
+template <typename T> using AbortReasonOr = Ok;
+
 class CodeGenerator;
 class CallInfo;
 class BaselineFrameInspector;
@@ -233,7 +239,7 @@ class IonBuilder
     void spew(const char* message);
 
     JSFunction* getSingleCallTarget(TemporaryTypeSet* calleeTypes);
-    AbortReasonOr<Ok> getPolyCallTargets(TemporaryTypeSet* calleeTypes, bool constructing,
+    AbortReasonOr<js::jit::Ok> getPolyCallTargets(TemporaryTypeSet* calleeTypes, bool constructing,
                                          InliningTargets& targets, uint32_t maxTargets);
 
     void popCfgStack();
@@ -813,6 +819,7 @@ class IonBuilder
         InliningStatus_WarmUpCountTooLow,
         InliningStatus_Inlined
     };
+    using InliningResult = InliningStatus;
 
     enum InliningDecision
     {
@@ -830,7 +837,7 @@ class IonBuilder
     // Oracles.
     InliningDecision canInlineTarget(JSFunction* target, CallInfo& callInfo);
     InliningDecision makeInliningDecision(JSObject* target, CallInfo& callInfo);
-    AbortReasonOr<Ok> selectInliningTargets(const InliningTargets& targets, CallInfo& callInfo,
+    AbortReasonOr<js::jit::Ok> selectInliningTargets(const InliningTargets& targets, CallInfo& callInfo,
                                             BoolVector& choiceSet, uint32_t* numInlineable);
 
     // Native inlining helpers.
@@ -962,7 +969,7 @@ class IonBuilder
 
     // Call functions
     InliningResult inlineCallsite(const InliningTargets& targets, CallInfo& callInfo);
-    AbortReasonOr<Ok> inlineCalls(CallInfo& callInfo, const InliningTargets& targets,
+    AbortReasonOr<js::jit::Ok> inlineCalls(CallInfo& callInfo, const InliningTargets& targets,
                                   BoolVector& choiceSet, MGetPropertyCache* maybeCache);
 
     // Inlining helpers.

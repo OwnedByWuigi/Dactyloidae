@@ -25,6 +25,7 @@ namespace js {
 namespace gc {
 
 void FinishGC(JSContext* cx);
+bool InitializeStaticData();
 
 /*
  * This class should be used by any code that needs to exclusive access to the
@@ -156,10 +157,10 @@ class MOZ_RAII AutoSuppressNurseryCellAlloc
   public:
 
     explicit AutoSuppressNurseryCellAlloc(JSContext* cx) : cx_(cx) {
-        cx_->nurserySuppressions_++;
+      cx_->suppressNurseryAllocations();
     }
     ~AutoSuppressNurseryCellAlloc() {
-        cx_->nurserySuppressions_--;
+      cx_->allowNurseryAllocations();
     }
 };
 

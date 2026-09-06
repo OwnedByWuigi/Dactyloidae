@@ -22,38 +22,37 @@ using namespace js::gc;
 
 Zone * const Zone::NotOnList = reinterpret_cast<Zone*>(1);
 
-JS::Zone::Zone(JSRuntime* rt)
+JS::Zone::Zone(JSRuntime* rt, ZoneGroup* group)
   : JS::shadow::Zone(rt, &rt->gc.marker),
     debuggers(nullptr),
     suppressAllocationMetadataBuilder(false),
-    arenas(rt),
+    arenas(rt, group),
     types(this),
-    gcWeakMapList_(group),
-    compartments_(),
+    gcWeakMapList(),
+    compartments(),
     gcGrayRoots_(group),
-    gcWeakRefs_(group),
+    gcWeakRefs(),
     weakCaches_(group),
-    gcWeakKeys_(group, SystemAllocPolicy(), rt->randomHashCodeScrambler()),
-    typeDescrObjects_(group, this),
+    gcWeakKeys(SystemAllocPolicy(), rt->randomHashCodeScrambler()),
+    typeDescrObjects_(group, JS::WeakCache<TypeDescrObjectSet>(this, TypeDescrObjectSet())),
     regExps(this),
+    gcMallocBytes(0),
+    gcMaxMallocBytes(0),
+    gcMallocGCTriggered(false),
     markedAtoms_(group),
-    atomCache_(group),
-    externalStringCache_(group),
-    functionToStringCache_(group),
     usage(&rt->gc.usage),
     gcDelayBytes(0),
     tenuredStrings(group, 0),
     allocNurseryStrings(group, true),
-    propertyTree_(group, this),
-    baseShapes_(group, this),
-    initialShapes_(group, this),
-    nurseryShapes_(group),
-    data(group, nullptr),
-    isSystem(group, false),
+    propertyTree(this),
+    baseShapes(this, BaseShapeSet()),
+    initialShapes(this, InitialShapeSet()),
+    data(nullptr),
+    isSystem(false),
 #ifdef DEBUG
     gcLastSweepGroupIndex(group, 0),
 #endif
-    jitZone_(group, nullptr),
+    jitZone_(nullptr),
     gcScheduled_(false),
     gcScheduledSaved_(false),
     gcPreserveCode_(group, false),
@@ -67,7 +66,7 @@ JS::Zone::Zone(JSRuntime* rt)
     AutoLockGC lock(rt);
     threshold.updateAfterGC(8192, GC_NORMAL, rt->gc.tunables, rt->gc.schedulingState, lock);
     setGCMaxMallocBytes(rt->gc.tunables.maxMallocBytes(), lock);
-    jitCodeCounter.setMax(jit::MaxCodeBytesPerProcess * 0.8, lock);
+    jitCodeCounter.setMax(size_t(1024) * 1024 * 1024 * 8 / 10, lock);
 }
 
 Zone::~Zone()
@@ -92,12 +91,11 @@ Zone::~Zone()
 bool Zone::init(bool isSystemArg)
 {
     isSystem = isSystemArg;
-    return uniqueIds().init() &&
+    return uniqueIds_.init() &&
            gcSweepGroupEdges().init() &&
-           gcWeakKeys().init() &&
+           gcWeakKeys.init() &&
            typeDescrObjects().init() &&
            markedAtoms().init() &&
-           atomCache().init() &&
            regExps.init();
 }
 
@@ -140,9 +138,6 @@ Zone::beginSweepTypes(FreeOp* fop, bool releaseTypes)
 {
     // Periodically release observed types for all scripts. This is safe to
     // do when there are no frames for the zone on the stack.
-    if (active)
-        releaseTypes = false;
-
     AutoClearTypeInferenceStateOnOOM oom(this);
     types.beginSweep(fop, releaseTypes, oom);
 }
@@ -244,17 +239,14 @@ Zone::discardJitCode(FreeOp* fop, bool discardBaselineCode)
          * Make it impossible to use the control flow graphs cached on the
          * BaselineScript. They get deleted.
          */
-        if (script->hasBaselineScript())
-            script->baselineScript()->setControlFlowGraph(nullptr);
-    }
+        script->resetWarmUpCounter();
+        }
 
             /*
              * Warm-up counter for scripts are reset on GC. After discarding code we
              * need to let it warm back up to get information such as which
              * opcodes are setting array holes or accessing getter properties.
              */
-            script->resetWarmUpCounter();
-        }
 
         /*
          * When scripts contains pointers to nursery things, the store buffer
@@ -318,7 +310,7 @@ Zone::canCollect()
 
     // Zones that will be or are currently used by other threads cannot be
     // collected.
-    return !group()->createdForHelperThread();
+    return !usedByHelperThread();
 }
 
 void
@@ -401,10 +393,10 @@ Zone::deleteEmptyCompartment(JSCompartment* comp)
 {
     MOZ_ASSERT(comp->zone() == this);
     MOZ_ASSERT(arenas.checkEmptyArenaLists());
-    for (auto& i : compartments()) {
+    for (auto& i : compartments) {
         if (i == comp) {
-            compartments().erase(&i);
-            comp->destroy(runtimeFromActiveCooperatingThread()->defaultFreeOp());
+            compartments.erase(&i);
+            js_delete(comp);
             return;
         }
     }
@@ -507,6 +499,12 @@ ZoneList::clear()
 
 JS_PUBLIC_API(void)
 JS::shadow::RegisterWeakCache(JS::Zone* zone, WeakCache<void*>* cachep)
+{
+    zone->registerWeakCache(cachep);
+}
+
+JS_PUBLIC_API(void)
+JS::shadow::RegisterWeakCache(JS::Zone* zone, JS::detail::WeakCacheBase* cachep)
 {
     zone->registerWeakCache(cachep);
 }

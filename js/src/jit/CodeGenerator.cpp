@@ -1157,7 +1157,7 @@ EmitPostWriteBarrierS(MacroAssembler& masm,
     masm.bind(&exit);
 }
 
-typedef JSObject* (*CloneRegExpObjectFn)(JSContext*, Handle<RegExpObject*>);
+typedef JSObject* (*CloneRegExpObjectFn)(JSContext*, JSObject*);
 
 static const VMFunction CloneRegExpObjectInfo =
     FunctionInfo<CloneRegExpObjectFn>(CloneRegExpObject, "CloneRegExpObject");
@@ -8004,6 +8004,9 @@ CodeGenerator::visitFromCodePoint(LFromCodePoint* lir)
     masm.branch32(Assembler::AboveOrEqual, codePoint, Imm32(StaticStrings::UNIT_STATIC_LIMIT),
                   ool->entry());
 
+    masm.jump(ool->entry());
+
+#if 0
     masm.movePtr(ImmPtr(&GetJitContext()->runtime->staticStrings().unitStaticTable), output);
     masm.loadPtr(BaseIndex(output, codePoint, ScalePointer), output);
 
@@ -8059,6 +8062,7 @@ CodeGenerator::visitFromCodePoint(LFromCodePoint* lir)
     }
 
     masm.bind(done);
+#endif
 }
 
 void
@@ -10027,7 +10031,7 @@ CodeGenerator::link(JSContext* cx, CompilerConstraintList* constraints)
         for (size_t i = 0; i < graph.numConstants(); i++) {
             const Value& v = vp[i];
             if ((v.isObject() || v.isString()) && IsInsideNursery(v.toGCThing())) {
-                cx->zone()->group()->storeBuffer().putWholeCell(script);
+                cx->runtime()->gc.storeBuffer.putWholeCell(script);
                 break;
             }
         }

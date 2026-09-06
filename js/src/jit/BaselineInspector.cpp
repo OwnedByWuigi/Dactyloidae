@@ -658,36 +658,8 @@ BaselineInspector::templateCallObject()
 static Shape*
 GlobalShapeForGetPropFunction(ICStub* stub)
 {
-    if (stub->isGetProp_CallNative()) {
-        ICGetProp_CallNative* nstub = stub->toGetProp_CallNative();
-        if (nstub->isOwnGetter())
-            return nullptr;
-
-    *receiver = ReceiverGuard();
-
-    if (reader.matchOp(CacheOp::GuardShape, objId)) {
-        // The first case.
-        receiver->shape = stubInfo->getStubField<Shape*>(stub, reader.stubOffset());
-        return true;
-    }
-
-    if (!reader.matchOp(CacheOp::GuardGroup, objId))
-        return false;
-    receiver->group = stubInfo->getStubField<ObjectGroup*>(stub, reader.stubOffset());
-
-    if (!reader.matchOp(CacheOp::GuardAndLoadUnboxedExpando, objId)) {
-        // Second case, just a group guard.
-        reader.matchOp(CacheOp::GuardNoUnboxedExpando, objId);
-        return true;
-    }
-
-    // Third case.
-    ObjOperandId expandoId = reader.objOperandId();
-    if (!reader.matchOp(CacheOp::GuardShape, expandoId))
-        return false;
-
-    receiver->shape = stubInfo->getStubField<Shape*>(stub, reader.stubOffset());
-    return true;
+    (void)stub;
+    return nullptr;
 }
 
 static bool

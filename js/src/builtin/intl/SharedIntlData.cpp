@@ -220,7 +220,7 @@ js::intl::SharedIntlData::ensureTimeZones(JSContext* cx)
 
 bool
 js::intl::SharedIntlData::validateTimeZoneName(JSContext* cx, HandleString timeZone,
-                                               MutableHandleString result)
+                                               MutableHandleAtom result)
 {
     if (!ensureTimeZones(cx))
         return false;
@@ -238,7 +238,7 @@ js::intl::SharedIntlData::validateTimeZoneName(JSContext* cx, HandleString timeZ
 
 bool
 js::intl::SharedIntlData::tryCanonicalizeTimeZoneConsistentWithIANA(JSContext* cx, HandleString timeZone,
-                                                                    MutableHandleString result)
+                                                                    MutableHandleAtom result)
 {
     if (!ensureTimeZones(cx))
         return false;

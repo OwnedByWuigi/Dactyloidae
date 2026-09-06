@@ -8575,7 +8575,7 @@ main(int argc, char** argv, char** envp)
     JS::SetAsyncTaskCallbacks(cx, ShellStartAsyncTaskCallback, ShellFinishAsyncTaskCallback);
 
     if (op.getBoolOption("no-nursery-strings"))
-        cx->runtime()->gc.nursery().disableStrings();
+        cx->runtime()->gc.getNursery().disableStrings();
 
     EnvironmentPreparer environmentPreparer(cx);
 

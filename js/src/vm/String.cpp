@@ -716,7 +716,7 @@ JSDependentString::undependInternal(JSContext* cx)
         return nullptr;
 
     if (!isTenured()) {
-        if (!cx->runtime()->gc.nursery().registerMallocedBuffer(s)) {
+        if (!cx->runtime()->gc.getNursery().registerMallocedBuffer(s)) {
             js_free(s);
             ReportOutOfMemory(cx);
             return nullptr;
@@ -1130,7 +1130,7 @@ JSExternalString::ensureFlat(JSContext* cx)
         return nullptr;
 
     if (!isTenured()) {
-        if (!cx->runtime()->gc.nursery().registerMallocedBuffer(s)) {
+        if (!cx->runtime()->gc.getNursery().registerMallocedBuffer(s)) {
             js_free(s);
             ReportOutOfMemory(cx);
             return nullptr;

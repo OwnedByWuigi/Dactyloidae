@@ -64,6 +64,9 @@ struct Cell
     MOZ_ALWAYS_INLINE bool isMarkedGray() const;
 
     inline JSRuntime* runtimeFromActiveCooperatingThread() const;
+    inline JSRuntime* runtimeFromMainThread() const {
+        return runtimeFromActiveCooperatingThread();
+    }
 
     // Note: Unrestricted access to the runtime of a GC thing from an arbitrary
     // thread can easily lead to races. Use this method very carefully.
@@ -125,6 +128,7 @@ class TenuredCell : public Cell
     // The return value indicates if the cell went from unmarked to marked.
     MOZ_ALWAYS_INLINE bool markIfUnmarked(MarkColor color = MarkColor::Black) const;
     MOZ_ALWAYS_INLINE void markBlack() const;
+    MOZ_ALWAYS_INLINE void unmark(uint32_t colorBit) const;
     MOZ_ALWAYS_INLINE void copyMarkBitsFrom(const TenuredCell* src);
 
     // Access to the arena.
@@ -303,6 +307,15 @@ void
 TenuredCell::markBlack() const
 {
     chunk()->bitmap.markBlack(this);
+}
+
+void
+TenuredCell::unmark(uint32_t colorBit) const
+{
+    uintptr_t* word;
+    uintptr_t mask;
+    chunk()->bitmap.getMarkWordAndMask(this, ColorBit(colorBit), &word, &mask);
+    *word &= ~mask;
 }
 
 void

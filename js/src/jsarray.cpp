@@ -2354,6 +2354,7 @@ js::array_unshift(JSContext* cx, unsigned argc, Value* vp)
 
     const unsigned argCount = args.length();
     double newlen = length;
+#if 0
     if (args.length() > 0) {
         // Only include a fast path for native objects. Unboxed arrays can't
         // be optimized here because unshifting temporarily places holes at
@@ -2362,6 +2363,7 @@ js::array_unshift(JSContext* cx, unsigned argc, Value* vp)
         // array_splice_impl(), unshift() is a special version of splice():
         // arr.unshift(...values) ~= arr.splice(0, 0, ...values).
         bool optimized = false;
+#if 0
         do {
             if (!obj->isNative())
                 break;
@@ -2386,8 +2388,8 @@ js::array_unshift(JSContext* cx, unsigned argc, Value* vp)
                 for (uint32_t i = 0; i < argCount; i++)
                     aobj->setDenseElement(i, MagicValue(JS_ELEMENTS_HOLE));
                 optimized = true;
-            } while (false);
-
+        } while (false);
+#endif
             if (!optimized) {
                 double last = length;
                 double upperIndex = last + argCount;
@@ -2414,6 +2416,12 @@ js::array_unshift(JSContext* cx, unsigned argc, Value* vp)
         if (!InitArrayElements(cx, obj, 0, argCount, args.array()))
             return false;
 
+        newlen += argCount;
+    }
+#endif
+    if (args.length() > 0) {
+        if (!InitArrayElements(cx, obj, 0, argCount, args.array()))
+            return false;
         newlen += argCount;
     }
     if (!SetLengthProperty(cx, obj, newlen))

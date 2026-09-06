@@ -44,6 +44,7 @@ namespace wasm {
   class FuncIR;
   class FunctionCompileResults;
   class IonCompileTask;
+  class CompileTask;
   typedef Vector<IonCompileTask*, 0, SystemAllocPolicy> IonCompileTaskPtrVector;
 } // namespace wasm
 
@@ -404,6 +405,9 @@ EnsureHelperThreadsInitialized();
 
 // This allows the JS shell to override GetCPUCount() when passed the
 // --thread-count=N option.
+unsigned
+GetCPUCount();
+
 void
 SetFakeCPUCount(size_t count);
 
@@ -568,6 +572,7 @@ class MOZ_RAII AutoUnlockHelperThreadState : public UnlockGuard<Mutex>
 
 struct ParseTask
 {
+    ExclusiveContext* cx;
     ParseTaskKind kind;
     JS::OwningCompileOptions options;
     // Anonymous union, the only correct interpretation is provided by the

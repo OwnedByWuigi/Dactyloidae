@@ -126,7 +126,7 @@ JSRope::new_(js::ExclusiveContext* cx,
 {
     if (!validateLength(cx, length))
         return nullptr;
-    JSRope* str = js::Allocate<JSRope, allowGC>(cx, heap);
+    JSRope* str = js::Allocate<JSRope, allowGC>(cx->asJSContext(), heap);
     if (!str)
         return nullptr;
     str->init(cx, left, right, length);
@@ -187,7 +187,7 @@ JSDependentString::new_(js::ExclusiveContext* cx, JSLinearString* baseArg, size_
     if (baseArg->isExternal() && !baseArg->ensureFlat(cx->asJSContext()))
         return nullptr;
 
-    JSDependentString* str = js::Allocate<JSDependentString, js::NoGC>(cx, js::gc::DefaultHeap);
+    JSDependentString* str = js::Allocate<JSDependentString, js::NoGC>(cx->asJSContext(), js::gc::DefaultHeap);
     if (str) {
         str->init(cx, baseArg, start, length);
         return str;
@@ -195,7 +195,7 @@ JSDependentString::new_(js::ExclusiveContext* cx, JSLinearString* baseArg, size_
 
     js::RootedLinearString base(cx, baseArg);
 
-    str = js::Allocate<JSDependentString>(cx, js::gc::DefaultHeap);
+    str = js::Allocate<JSDependentString>(cx->asJSContext(), js::gc::DefaultHeap);
     if (!str)
         return nullptr;
     str->init(cx, base, start, length);
@@ -241,7 +241,7 @@ JSFlatString::new_(js::ExclusiveContext* cx, const CharT* chars, size_t length)
         // fails, the string is partially initialized and must be made valid,
         // or its finalizer may attempt to free uninitialized memory.
         void* ptr = const_cast<void*>(static_cast<const void*>(chars));
-        if (!cx->runtime()->gc.nursery().registerMallocedBuffer(ptr)) {
+        if (!cx->runtime()->gc.getNursery().registerMallocedBuffer(ptr)) {
             str->init((JS::Latin1Char*)nullptr, 0);
             if (allowGC)
                 ReportOutOfMemory(cx);
@@ -275,7 +275,7 @@ JSThinInlineString::new_(js::ExclusiveContext* cx)
     if (cx->compartment()->isAtomsCompartment())
         return (JSThinInlineString*)(js::Allocate<js::NormalAtom, allowGC>(cx));
 
-    return js::Allocate<JSThinInlineString, allowGC>(cx, js::gc::DefaultHeap);
+    return js::Allocate<JSThinInlineString, allowGC>(cx->asJSContext(), js::gc::DefaultHeap);
 }
 
 template <js::AllowGC allowGC>
@@ -285,7 +285,7 @@ JSFatInlineString::new_(js::ExclusiveContext* cx)
     if (cx->compartment()->isAtomsCompartment())
         return (JSFatInlineString*)(js::Allocate<js::FatInlineAtom, allowGC>(cx));
 
-    return js::Allocate<JSFatInlineString, allowGC>(cx, js::gc::DefaultHeap);
+    return js::Allocate<JSFatInlineString, allowGC>(cx->asJSContext(), js::gc::DefaultHeap);
 }
 
 template<>

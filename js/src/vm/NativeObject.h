@@ -247,6 +247,17 @@ class ObjectElements
       : flags(0), initializedLength(0), capacity(capacity), length(length)
     {}
 
+    static const uint32_t ShiftedElementsShift = 20;
+    static const uint32_t MaxShiftedElements = (1 << (32 - ShiftedElementsShift)) - 1;
+    uint32_t numShiftedElements() const { return flags >> ShiftedElementsShift; }
+    void addShiftedElements(uint32_t count) {
+        MOZ_ASSERT(numShiftedElements() + count <= MaxShiftedElements);
+        MOZ_ASSERT(count <= initializedLength && count <= capacity);
+        flags += count << ShiftedElementsShift;
+        initializedLength -= count;
+        capacity -= count;
+    }
+
     enum class SharedMemory {
         IsShared
     };
@@ -1013,6 +1024,13 @@ class NativeObject : public ShapedObject
     }
 
     static bool CopyElementsForWrite(ExclusiveContext* cx, NativeObject* obj);
+    inline void updateDictionaryListPointerAfterMinorGC(NativeObject* old);
+    inline bool tryShiftDenseElements(uint32_t count);
+    inline void shiftDenseElementsUnchecked(uint32_t count);
+    inline void moveShiftedElements();
+    uint32_t unshiftedIndex(uint32_t index) const {
+        return index + getElementsHeader()->numShiftedElements();
+    }
 
     bool maybeCopyElementsForWrite(ExclusiveContext* cx) {
         if (denseElementsAreCopyOnWrite())
@@ -1026,17 +1044,7 @@ class NativeObject : public ShapedObject
 
     // Run a post write barrier that encompasses multiple contiguous elements in a
     // single step.
-    inline void elementsRangeWriteBarrierPost(uint32_t start, uint32_t count) {
-        for (size_t i = 0; i < count; i++) {
-            const Value& v = elements_[start + i];
-            if (v.isObject() && IsInsideNursery(&v.toObject())) {
-                JS::shadow::Runtime* shadowRuntime = JS::shadow::Runtime::asShadowRuntime(zone()->runtimeFromMainThread());
-                shadowRuntime->gcStoreBufferPtr()->putSlot(this, HeapSlot::Element,
-                                                           start + i, count - i);
-                return;
-            }
-        }
-    }
+    inline void elementsRangeWriteBarrierPost(uint32_t start, uint32_t count);
 
     // See the comment over setDenseElementUnchecked, this applies in the same way.
     void setDenseInitializedLengthUnchecked(uint32_t length) {
@@ -1099,75 +1107,13 @@ class NativeObject : public ShapedObject
     getDenseOrTypedArrayElement(ExclusiveContext* cx, uint32_t idx,
                                 typename MaybeRooted<Value, allowGC>::MutableHandleType val);
 
-    void copyDenseElements(uint32_t dstStart, const Value* src, uint32_t count) {
-        MOZ_ASSERT(dstStart + count <= getDenseCapacity());
-        MOZ_ASSERT(!denseElementsAreCopyOnWrite());
-        MOZ_ASSERT(!denseElementsAreFrozen());
-        if (JS::shadow::Zone::asShadowZone(zone())->needsIncrementalBarrier()) {
-            for (uint32_t i = 0; i < count; ++i)
-                elements_[dstStart + i].set(this, HeapSlot::Element, dstStart + i, src[i]);
-        } else {
-            memcpy(reinterpret_cast<Value*>(&elements_[dstStart]), src,
-                   count * sizeof(Value));
-            elementsRangeWriteBarrierPost(dstStart, count);
-        }
-    }
+    void copyDenseElements(uint32_t dstStart, const Value* src, uint32_t count);
 
-    void initDenseElements(uint32_t dstStart, const Value* src, uint32_t count) {
-        MOZ_ASSERT(dstStart + count <= getDenseCapacity());
-        MOZ_ASSERT(!denseElementsAreCopyOnWrite());
-        MOZ_ASSERT(!denseElementsAreFrozen());
-        memcpy(reinterpret_cast<Value*>(&elements_[dstStart]), src, count * sizeof(Value));
-        elementsRangeWriteBarrierPost(dstStart, count);
-    }
+    void initDenseElements(uint32_t dstStart, const Value* src, uint32_t count);
 
-    void moveDenseElements(uint32_t dstStart, uint32_t srcStart, uint32_t count) {
-        MOZ_ASSERT(dstStart + count <= getDenseCapacity());
-        MOZ_ASSERT(srcStart + count <= getDenseInitializedLength());
-        MOZ_ASSERT(!denseElementsAreCopyOnWrite());
-        MOZ_ASSERT(!denseElementsAreFrozen());
+    void moveDenseElements(uint32_t dstStart, uint32_t srcStart, uint32_t count);
 
-        /*
-         * Using memmove here would skip write barriers. Also, we need to consider
-         * an array containing [A, B, C], in the following situation:
-         *
-         * 1. Incremental GC marks slot 0 of array (i.e., A), then returns to JS code.
-         * 2. JS code moves slots 1..2 into slots 0..1, so it contains [B, C, C].
-         * 3. Incremental GC finishes by marking slots 1 and 2 (i.e., C).
-         *
-         * Since normal marking never happens on B, it is very important that the
-         * write barrier is invoked here on B, despite the fact that it exists in
-         * the array before and after the move.
-        */
-        if (JS::shadow::Zone::asShadowZone(zone())->needsIncrementalBarrier()) {
-            if (dstStart < srcStart) {
-                HeapSlot* dst = elements_ + dstStart;
-                HeapSlot* src = elements_ + srcStart;
-                for (uint32_t i = 0; i < count; i++, dst++, src++)
-                    dst->set(this, HeapSlot::Element, dst - elements_, *src);
-            } else {
-                HeapSlot* dst = elements_ + dstStart + count - 1;
-                HeapSlot* src = elements_ + srcStart + count - 1;
-                for (uint32_t i = 0; i < count; i++, dst--, src--)
-                    dst->set(this, HeapSlot::Element, dst - elements_, *src);
-            }
-        } else {
-            memmove(elements_ + dstStart, elements_ + srcStart, count * sizeof(HeapSlot));
-            elementsRangeWriteBarrierPost(dstStart, count);
-        }
-    }
-
-    void moveDenseElementsNoPreBarrier(uint32_t dstStart, uint32_t srcStart, uint32_t count) {
-        MOZ_ASSERT(!shadowZone()->needsIncrementalBarrier());
-
-        MOZ_ASSERT(dstStart + count <= getDenseCapacity());
-        MOZ_ASSERT(srcStart + count <= getDenseCapacity());
-        MOZ_ASSERT(!denseElementsAreCopyOnWrite());
-        MOZ_ASSERT(!denseElementsAreFrozen());
-
-        memmove(elements_ + dstStart, elements_ + srcStart, count * sizeof(HeapSlot));
-        elementsRangeWriteBarrierPost(dstStart, count);
-    }
+    void moveDenseElementsNoPreBarrier(uint32_t dstStart, uint32_t srcStart, uint32_t count);
 
     bool shouldConvertDoubleElements() {
         return getElementsHeader()->shouldConvertDoubleElements();

@@ -103,8 +103,10 @@ class CompartmentChecker
 
     void check(JSString* str) {
         MOZ_ASSERT(!js::gc::detail::CellIsMarkedGray(str));
-        if (!str->isAtom())
+        if (!str->isAtom()) {
             checkZone(str->zone());
+        } else {
+            checkAtom(&str->asAtom());
         }
     }
 
@@ -184,7 +186,7 @@ class CompartmentChecker
  * depends on other objects not having been swept yet.
  */
 #define START_ASSERT_SAME_COMPARTMENT()                                 \
-    if (cx->heapState != JS::HeapState::Idle)                           \
+    if (cx->runtime()->heapState() != JS::HeapState::Idle)               \
         return;                                                         \
     CompartmentChecker c(cx)
 

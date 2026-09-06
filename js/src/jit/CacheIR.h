@@ -97,6 +97,11 @@ class ObjOperandId : public OperandId
     _(LoadInt32ArrayLengthResult)         \
     _(LoadUnboxedArrayLengthResult)       \
     _(LoadArgumentsObjectLengthResult)    \
+    _(LoadEnclosingEnvironment)          \
+    _(CallNativeGetterResult)            \
+    _(AddAndStoreDynamicSlot)            \
+    _(AddAndStoreFixedSlot)              \
+    _(AllocateAndStoreDynamicSlot)       \
     _(LoadUndefinedResult)
 
 enum class CacheOp {
@@ -130,6 +135,7 @@ enum class GuardClassKind
     UnboxedArray,
     MappedArguments,
     UnmappedArguments,
+    WindowProxy,
 };
 
 // Class to record CacheIR + some additional metadata for code generation.

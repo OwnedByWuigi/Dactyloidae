@@ -1873,10 +1873,11 @@ struct SlotArrayLayout
 void
 GCMarker::saveValueRanges()
 {
-    for (uintptr_t* p = stack.tos_; p > stack.stack_; ) {
-        uintptr_t tag = *--p & StackTagMask;
+    for (gc::MarkStack::TaggedPtr* p = stack.tos_; p > stack.stack_; ) {
+        uintptr_t raw = (--p)->raw();
+        uintptr_t tag = raw & StackTagMask;
         if (tag == ValueArrayTag) {
-            *p &= ~StackTagMask;
+            *p = gc::MarkStack::TaggedPtr(raw & ~StackTagMask);
             p -= 2;
             SlotArrayLayout* arr = reinterpret_cast<SlotArrayLayout*>(p);
             NativeObject* obj = arr->obj;
@@ -1902,7 +1903,7 @@ GCMarker::saveValueRanges()
                 }
                 arr->kind = HeapSlot::Slot;
             }
-            p[2] |= SavedValueArrayTag;
+            p[2] = gc::MarkStack::TaggedPtr(p[2].raw() | SavedValueArrayTag);
         } else if (tag == SavedValueArrayTag) {
             p -= 2;
         }
@@ -2084,13 +2085,56 @@ MarkStack::~MarkStack()
     js_free(stack_);
 }
 
+void
+MarkStack::setStack(TaggedPtr* stack, size_t tosIndex, size_t capacity)
+{
+    stack_ = stack;
+    tos_ = stack + tosIndex;
+    end_ = stack + capacity;
+}
+
+bool
+MarkStack::ensureSpace(size_t count)
+{
+    if (size_t(end_ - tos_) >= count)
+        return true;
+    return enlarge(unsigned(count));
+}
+
+bool
+MarkStack::pushTaggedPtr(Tag tag, Cell* ptr)
+{
+    if (!ensureSpace(1))
+        return false;
+    *tos_.ref()++ = TaggedPtr(tag, ptr);
+    return true;
+}
+
+bool
+MarkStack::push(JSObject* obj, HeapSlot* start, HeapSlot* end)
+{
+    if (!ensureSpace(3))
+        return false;
+    *tos_.ref()++ = TaggedPtr(ValueArrayTag, reinterpret_cast<Cell*>(obj));
+    *tos_.ref()++ = TaggedPtr(reinterpret_cast<uintptr_t>(start));
+    *tos_.ref()++ = TaggedPtr(reinterpret_cast<uintptr_t>(end));
+    return true;
+}
+
+MarkStack::TaggedPtr
+MarkStack::popPtr()
+{
+    MOZ_ASSERT(!isEmpty());
+    return *--tos_.ref();
+}
+
 bool
 MarkStack::init(JSGCMode gcMode)
 {
     setBaseCapacity(gcMode);
 
     MOZ_ASSERT(!stack_);
-    uintptr_t* newStack = js_pod_malloc<uintptr_t>(baseCapacity_);
+    MarkStack::TaggedPtr* newStack = js_pod_malloc<MarkStack::TaggedPtr>(baseCapacity_);
     if (!newStack)
         return false;
 
@@ -2139,7 +2183,7 @@ MarkStack::reset()
     }
 
     MOZ_ASSERT(baseCapacity_ != 0);
-    uintptr_t* newStack = (uintptr_t*)js_realloc(stack_, sizeof(uintptr_t) * baseCapacity_);
+    MarkStack::TaggedPtr* newStack = (MarkStack::TaggedPtr*)js_realloc(stack_, sizeof(MarkStack::TaggedPtr) * baseCapacity_);
     if (!newStack) {
         // If the realloc fails, just keep using the existing stack; it's
         // not ideal but better than failing.
@@ -2150,16 +2194,16 @@ MarkStack::reset()
 }
 
 bool
-MarkStack::enlarge(unsigned count)
+MarkStack::enlarge(size_t count)
 {
-    size_t newCapacity = Min(maxCapacity_, capacity() * 2);
+    size_t newCapacity = Min(size_t(maxCapacity_), capacity() * 2);
     if (newCapacity < capacity() + count)
         return false;
 
     size_t tosIndex = position();
 
     MOZ_ASSERT(newCapacity != 0);
-    uintptr_t* newStack = (uintptr_t*)js_realloc(stack_, sizeof(uintptr_t) * newCapacity);
+    MarkStack::TaggedPtr* newStack = (MarkStack::TaggedPtr*)js_realloc(stack_, sizeof(MarkStack::TaggedPtr) * newCapacity);
     if (!newStack)
         return false;
 
@@ -2279,6 +2323,18 @@ GCMarker::pushTaggedPtr(T* ptr)
         delayMarkingChildren(ptr);
 }
 
+template <typename T>
+void
+GCMarker::pushTaggedPtr(StackTag tag, T* ptr)
+{
+    checkZone(ptr);
+    if (!stack.pushTaggedPtr(static_cast<gc::MarkStack::Tag>(tag),
+                             reinterpret_cast<gc::Cell*>(ptr)))
+    {
+        delayMarkingChildren(ptr);
+    }
+}
+
 void
 GCMarker::pushValueArray(JSObject* obj, HeapSlot* start, HeapSlot* end)
 {
@@ -2311,8 +2367,8 @@ GCMarker::enterWeakMarkingMode()
     if (weakMapAction() == ExpandWeakMaps) {
         tag_ = TracerKindTag::WeakMarking;
 
-        for (GCSweepGroupIter zone(runtime()); !zone.done(); zone.next()) {
-            for (WeakMapBase* m : zone->gcWeakMapList()) {
+        for (GCSweepGroupIter zone(this->runtime()); !zone.done(); zone.next()) {
+            for (WeakMapBase* m : zone->gcWeakMapList) {
                 if (m->marked)
                     (void) m->traceEntries(this);
             }
@@ -2431,7 +2487,7 @@ GCMarker::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf,
 {
     size_t size = stack.sizeOfExcludingThis(mallocSizeOf);
     for (ZonesIter zone(runtime(), WithAtoms); !zone.done(); zone.next())
-        size += zone->gcGrayRoots.sizeOfExcludingThis(mallocSizeOf);
+        size += zone->gcGrayRoots().sizeOfExcludingThis(mallocSizeOf);
     return size;
 }
 
@@ -2820,8 +2876,6 @@ js::TenuringTracer::moveToTenuredSlow(JSObject* src)
     } else if (src->is<ProxyObject>()) {
         // Objects in the nursery are never swapped so the proxy must have an
         // inline ProxyValueArray.
-        MOZ_ASSERT(src->as<ProxyObject>().usingInlineValueArray());
-        dst->as<ProxyObject>().setInlineValueArray();
         if (JSObjectMovedOp op = dst->getClass()->extObjectMovedOp())
             op(dst, src);
     } else if (JSObjectMovedOp op = dst->getClass()->extObjectMovedOp()) {
@@ -2850,7 +2904,7 @@ js::TenuringTracer::movePlainObjectToTenured(PlainObject* src)
     MOZ_ASSERT(IsInsideNursery(src));
     MOZ_ASSERT(!src->zone()->usedByHelperThread());
 
-    AllocKind dstKind = src->allocKindForTenure();
+    AllocKind dstKind = src->allocKindForTenure(nursery());
     auto dst = allocTenured<PlainObject>(src->zone(), dstKind);
 
     size_t srcSize = Arena::thingSize(dstKind);
@@ -3056,12 +3110,13 @@ IsMarkedInternalCommon(T* thingp)
     Zone* zone = (*thingp)->asTenured().zoneFromAnyThread();
     if (!zone->isCollectingFromAnyThread() || zone->isGCFinished())
         return true;
-    if (zone->isGCCompacting() && IsForwarded(*thingp))
+    if (zone->isGCCompacting() && IsForwarded(*thingp)) {
         *thingp = Forwarded(*thingp);
         return true;
     }
 
-    return thing.isMarkedAny() || thing.arena()->allocatedDuringIncremental;
+    return (*thingp)->isMarkedAny() ||
+           (*thingp)->asTenured().arena()->allocatedDuringIncremental;
 }
 
 template <typename T>
@@ -3130,7 +3185,7 @@ IsAboutToBeFinalizedInternal(T** thingp)
 
     Nursery& nursery = rt->gc.nursery;
     if (IsInsideNursery(thing)) {
-        return JS::CurrentThreadIsHeapMinorCollecting() &&
+        return rt->isHeapMinorCollecting() &&
                !Nursery::getForwardedPointer(reinterpret_cast<Cell**>(thingp));
     }
 
@@ -3294,42 +3349,6 @@ struct UnmarkGrayTracer : public JS::CallbackTracer
  *   containers.
  */
 
-#ifdef DEBUG
-struct AssertNonGrayTracer : public JS::CallbackTracer {
-    explicit AssertNonGrayTracer(JSRuntime* rt) : JS::CallbackTracer(rt) {}
-    void onChild(const JS::GCCellPtr& thing) override {
-        MOZ_ASSERT(!thing.asCell()->isMarkedGray());
-    }
-};
-#endif
-
-class UnmarkGrayTracer : public JS::CallbackTracer
-{
-  public:
-    // We set weakMapAction to DoNotTraceWeakMaps because the cycle collector
-    // will fix up any color mismatches involving weakmaps when it runs.
-    explicit UnmarkGrayTracer(JSRuntime *rt)
-      : JS::CallbackTracer(rt, DoNotTraceWeakMaps)
-      , unmarkedAny(false)
-      , oom(false)
-      , stack(rt->gc.unmarkGrayStack)
-    {}
-
-    void unmark(JS::GCCellPtr cell);
-
-    // Whether we unmarked anything.
-    bool unmarkedAny;
-
-    // Whether we ran out of memory.
-    bool oom;
-
-  private:
-    // Stack of cells to traverse.
-    Vector<JS::GCCellPtr, 0, SystemAllocPolicy>& stack;
-
-    void onChild(const JS::GCCellPtr& thing) override;
-};
-
 void
 UnmarkGrayTracer::onChild(const JS::GCCellPtr& thing)
 {
@@ -3404,9 +3423,9 @@ TypedUnmarkGrayCellRecursively(T* t)
     MOZ_ASSERT(!JS::CurrentThreadIsHeapCycleCollecting());
 
     UnmarkGrayTracer unmarker(rt);
-    gcstats::AutoPhase outerPhase(rt->gc.stats(), gcstats::PHASE_BARRIER);
-    gcstats::AutoPhase innerPhase(rt->gc.stats(), gcstats::PHASE_UNMARK_GRAY);
-    unmarker.unmark(JS::GCCellPtr(t, MapTypeToTraceKind<T>::kind));
+    gcstats::AutoPhase outerPhase(rt->gc.stats, gcstats::PHASE_BARRIER);
+    gcstats::AutoPhase innerPhase(rt->gc.stats, gcstats::PHASE_UNMARK_GRAY);
+    TraceChildren(&unmarker, t, MapTypeToTraceKind<T>::kind);
     return unmarker.unmarkedAny;
 }
 
@@ -3457,7 +3476,7 @@ GetMarkWordAddress(Cell* cell)
 
     uintptr_t* wordp;
     uintptr_t mask;
-    js::gc::detail::GetGCThingMarkWordAndMask(uintptr_t(cell), ColorBit::BlackBit, &wordp, &mask);
+    js::gc::detail::GetGCThingMarkWordAndMask(uintptr_t(cell), uint32_t(ColorBit::BlackBit), &wordp, &mask);
     return wordp;
 }
 
@@ -3472,7 +3491,7 @@ GetMarkMask(Cell* cell, uint32_t colorBit)
     ColorBit bit = colorBit == 0 ? ColorBit::BlackBit : ColorBit::GrayOrBlackBit;
     uintptr_t* wordp;
     uintptr_t mask;
-    js::gc::detail::GetGCThingMarkWordAndMask(uintptr_t(cell), bit, &wordp, &mask);
+    js::gc::detail::GetGCThingMarkWordAndMask(uintptr_t(cell), uint32_t(bit), &wordp, &mask);
     return mask;
 }
 

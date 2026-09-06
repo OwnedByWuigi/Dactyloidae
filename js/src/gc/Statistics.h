@@ -25,6 +25,7 @@
 using mozilla::Maybe;
 
 namespace js {
+class GCParallelTask;
 namespace gcstats {
 
 enum Phase : uint8_t {
@@ -194,6 +195,14 @@ struct Statistics
 
     explicit Statistics(JSRuntime* rt);
     ~Statistics();
+
+    void recordTrigger(size_t amount, size_t threshold) {
+        triggerAmount = amount;
+        triggerThreshold = threshold;
+    }
+
+    size_t triggerAmount = 0;
+    size_t triggerThreshold = 0;
 
     void beginPhase(Phase phase);
     void endPhase(Phase phase);

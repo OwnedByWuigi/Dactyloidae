@@ -1174,8 +1174,8 @@ Statistics::endParallelPhase(Phase phase, const GCParallelTask* task)
     phaseNestingDepth--;
 
     if (!slices.empty())
-        slices.back().phaseTimes[PHASE_DAG_NONE][phase] += task->duration();
-    phaseTimes[PHASE_DAG_NONE][phase] += task->duration();
+        slices.back().phaseTimes[PHASE_DAG_NONE][phase] += task->duration().ToMicroseconds();
+    phaseTimes[PHASE_DAG_NONE][phase] += task->duration().ToMicroseconds();
     phaseStartTimes[phase] = 0;
 }
 
@@ -1287,4 +1287,3 @@ Statistics::printTotalProfileTimes()
         printProfileTimes(totalTimes_);
     }
 }
-

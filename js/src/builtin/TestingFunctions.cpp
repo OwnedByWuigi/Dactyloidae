@@ -3235,7 +3235,7 @@ IsSimdAvailable(JSContext* cx, unsigned argc, Value* vp)
 #if defined(JS_CODEGEN_NONE)
     bool available = false;
 #else
-    bool available = cx->jitSupportsSimd();
+    bool available = cx->runtime()->jitSupportsSimd;
 #endif
     args.rval().set(BooleanValue(available));
     return true;

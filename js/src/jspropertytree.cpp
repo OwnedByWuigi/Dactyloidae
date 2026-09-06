@@ -163,17 +163,17 @@ PropertyTree::getChild(ExclusiveContext* cx, Shape* parentArg, Handle<StackShape
             Shape* tmp = existingShape;
             TraceManuallyBarrieredEdge(zone->barrierTracer(), &tmp, "read barrier");
             MOZ_ASSERT(tmp == existingShape);
-        } else if (zone->isGCSweeping() && !existingShape->isMarked() &&
+        } else if (zone->isGCSweeping() && !existingShape->isMarkedAny() &&
                    !existingShape->arena()->allocatedDuringIncremental)
         {
             /*
              * The shape we've found is unreachable and due to be finalized, so
              * remove our weak reference to it and don't use it.
              */
-            MOZ_ASSERT(parent->isMarked());
+            MOZ_ASSERT(parent->isMarkedAny());
             parent->removeChild(existingShape);
             existingShape = nullptr;
-        } else if (existingShape->isMarked(gc::GRAY)) {
+        } else if (existingShape->isMarkedGray()) {
             UnmarkGrayShapeRecursively(existingShape);
         }
     }
@@ -203,7 +203,7 @@ Shape::sweep()
      * reallocated, since allocating a cell in a zone that is being marked will
      * set the mark bit for that cell.
      */
-    if (parent && parent->isMarked()) {
+    if (parent && parent->isMarkedAny()) {
         if (inDictionary()) {
             if (parent->listp == &parent)
                 parent->listp = nullptr;

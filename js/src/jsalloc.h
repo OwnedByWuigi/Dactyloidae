@@ -18,6 +18,8 @@
 
 extern JS_PUBLIC_API(void) JS_ReportOutOfMemory(JSContext* cx);
 
+namespace JS { struct Zone; }
+
 namespace js {
 
 enum class AllocFunction {
@@ -137,6 +139,26 @@ class TempAllocPolicy
 
         return true;
     }
+};
+
+// Allocation policy for containers owned by a zone. Definitions requiring a
+// complete Zone live in gc/Zone.h.
+class ZoneAllocPolicy : public SystemAllocPolicy
+{
+    JS::Zone* zone;
+
+  public:
+    MOZ_IMPLICIT ZoneAllocPolicy(JS::Zone* zone) : zone(zone) {}
+
+    template <typename T> T* maybe_pod_malloc(size_t numElems);
+    template <typename T> T* maybe_pod_calloc(size_t numElems);
+    template <typename T> T* maybe_pod_realloc(T* p, size_t oldSize, size_t newSize);
+    template <typename T> T* pod_malloc(size_t numElems);
+    template <typename T> T* pod_calloc(size_t numElems);
+    template <typename T> T* pod_realloc(T* p, size_t oldSize, size_t newSize);
+
+    void reportAllocOverflow() const;
+    bool checkSimulatedOOM() const;
 };
 
 } /* namespace js */

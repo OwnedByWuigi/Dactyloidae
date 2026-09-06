@@ -18,6 +18,7 @@
 #include "vm/EnvironmentObject.h"
 #include "vm/SharedArrayObject.h"
 #include "vm/Symbol.h"
+#include "vm/TaggedProto.h"
 #include "wasm/WasmJS.h"
 
 namespace js {
@@ -171,6 +172,30 @@ MovableCellHasher<T>::match(const Key& k, const Lookup& l)
 
     // Since both already have a uid (from hash), the get is infallible.
     return zone->getUniqueIdInfallible(k) == zone->getUniqueIdInfallible(l);
+}
+
+/* static */ bool
+MovableCellHasher<TaggedProto>::hasHash(const Lookup& l)
+{
+    return l.hasUniqueId();
+}
+
+/* static */ bool
+MovableCellHasher<TaggedProto>::ensureHash(const Lookup& l)
+{
+    return l.ensureUniqueId();
+}
+
+/* static */ HashNumber
+MovableCellHasher<TaggedProto>::hash(const Lookup& l)
+{
+    return l.hashCode();
+}
+
+/* static */ bool
+MovableCellHasher<TaggedProto>::match(const Key& k, const Lookup& l)
+{
+    return k.uniqueId() == l.uniqueId();
 }
 
 #ifdef JS_BROKEN_GCC_ATTRIBUTE_WARNING

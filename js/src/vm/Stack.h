@@ -46,6 +46,7 @@ class JS_PUBLIC_API(AutoEntryMonitor);
 namespace js {
 
 class InterpreterRegs;
+class CooperatingContext;
 class CallObject;
 class FrameIter;
 class EnvironmentObject;

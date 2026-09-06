@@ -333,7 +333,7 @@
     _(RoundF)                       \
     _(NearbyInt)                    \
     _(NearbyIntF)                   \
-    _(InCache)                      \
+    _(In)                           \
     _(InArray)                      \
     _(InstanceOfO)                  \
     _(InstanceOfV)                  \

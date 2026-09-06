@@ -600,7 +600,7 @@ PostWriteBarrier(JSRuntime* rt, js::gc::Cell* cell)
 {
     JS::AutoCheckCannotGC nogc;
     MOZ_ASSERT(!IsInsideNursery(cell));
-    rt->gc.storeBuffer().putWholeCell(cell);
+    rt->gc.getStoreBuffer().putWholeCell(cell);
 }
 
 static const size_t MAX_WHOLE_CELL_BUFFER_SIZE = 4096;

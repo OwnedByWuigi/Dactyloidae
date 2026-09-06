@@ -19,7 +19,7 @@ using mozilla::Some;
 
 EmitterScope::EmitterScope(BytecodeEmitter* bce)
   : Nestable<EmitterScope>(&bce->innermostEmitterScope_),
-    nameCache_(bce->cx->frontendCollectionPool()),
+        nameCache_(bce->cx->perThreadData->frontendCollectionPool),
     hasEnvironment_(false),
     environmentChainLength_(0),
     nextFrameSlot_(0),

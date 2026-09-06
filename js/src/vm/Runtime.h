@@ -369,6 +369,14 @@ class AutoLockScriptData;
 struct JSRuntime : public JS::shadow::Runtime,
                    public js::MallocProvider<JSRuntime>
 {
+    using JS::shadow::Runtime::heapState;
+    using JS::shadow::Runtime::setHeapState;
+    /* Compatibility guard used while changing the active context. */
+    class AutoProhibitActiveContextChange {
+      public:
+        explicit AutoProhibitActiveContextChange(JSRuntime*) {}
+    };
+
     /*
      * Per-thread data for the main thread that is associated with
      * this JSRuntime, as opposed to any worker threads used in
@@ -1086,6 +1094,8 @@ struct JSRuntime : public JS::shadow::Runtime,
     js::AtomSet& atoms(js::AutoLockForExclusiveAccess& lock) {
         return *atoms_;
     }
+    js::AtomSet& unsafeAtoms() { return *atoms_; }
+    js::AtomSet* atomsAddedWhileSweeping() { return nullptr; }
     JSCompartment* atomsCompartment(js::AutoLockForExclusiveAccess& lock) {
         return atomsCompartment_;
     }
@@ -1819,7 +1829,7 @@ struct MOZ_RAII AutoSetThreadIsSweeping
  * queue to be destroyed at a safe time.
  */
 template <typename T>
-struct GCManagedDeletePolicy
+struct GCManagedDeferredDeletePolicy
 {
     void operator()(const T* ptr) {
         if (ptr) {
@@ -1848,7 +1858,7 @@ struct GCManagedDeletePolicy
 namespace JS {
 
 template <typename T>
-struct DeletePolicy<js::GCPtr<T>> : public js::GCManagedDeletePolicy<js::GCPtr<T>>
+struct DeletePolicy<js::GCPtr<T>> : public js::GCManagedDeferredDeletePolicy<js::GCPtr<T>>
 {};
 
 // Scope data that contain GCPtrs must use the correct DeletePolicy.
@@ -1857,12 +1867,12 @@ struct DeletePolicy<js::GCPtr<T>> : public js::GCManagedDeletePolicy<js::GCPtr<T
 
 template <>
 struct DeletePolicy<js::FunctionScope::Data>
-  : public js::GCManagedDeletePolicy<js::FunctionScope::Data>
+  : public js::GCManagedDeferredDeletePolicy<js::FunctionScope::Data>
 { };
 
 template <>
 struct DeletePolicy<js::ModuleScope::Data>
-  : public js::GCManagedDeletePolicy<js::ModuleScope::Data>
+  : public js::GCManagedDeferredDeletePolicy<js::ModuleScope::Data>
 { };
 
 } /* namespace JS */

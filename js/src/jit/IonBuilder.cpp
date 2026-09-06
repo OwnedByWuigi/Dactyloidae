@@ -316,7 +316,7 @@ IonBuilder::getSingleCallTarget(TemporaryTypeSet* calleeTypes)
     return &obj->as<JSFunction>();
 }
 
-bool
+AbortReasonOr<js::jit::Ok>
 IonBuilder::getPolyCallTargets(TemporaryTypeSet* calleeTypes, bool constructing,
                                InliningTargets& targets, uint32_t maxTargets)
 {
@@ -1542,22 +1542,11 @@ IonBuilder::traverseBytecode()
         }
     }
 
-#ifdef DEBUG
-    MOZ_ASSERT(graph().numBlocks() >= blockWorklist.length());
-    for (i = 0; i < cfg->numBlocks(); i++) {
-        MOZ_ASSERT(blockWorklist[i]);
-        MOZ_ASSERT(!blockWorklist[i]->isDead());
-        MOZ_ASSERT_IF(i != 0, blockWorklist[i]->id() != 0);
-    }
-#endif
-
-    cfg = nullptr;
-
-    blockWorklist.clear();
-    return Ok();
+    return true;
 }
 
-AbortReasonOr<Ok>
+#if 0
+AbortReasonOr<js::jit::Ok>
 IonBuilder::visitBlock(const CFGBlock* cfgblock, MBasicBlock* mblock)
 {
     mblock->setLoopDepth(loopDepth_);
@@ -1580,7 +1569,7 @@ IonBuilder::visitBlock(const CFGBlock* cfgblock, MBasicBlock* mblock)
 
     while (pc < cfgblock->stopPc()) {
         if (!alloc().ensureBallast())
-            return abort(AbortReason::Alloc);
+            return false;
 
 #ifdef DEBUG
         // In debug builds, after compiling this op, check that all values
@@ -1661,6 +1650,7 @@ IonBuilder::visitBlock(const CFGBlock* cfgblock, MBasicBlock* mblock)
 
     return true;
 }
+#endif
 
 IonBuilder::ControlStatus
 IonBuilder::snoopControlFlow(JSOp op)
@@ -4565,6 +4555,7 @@ IonBuilder::jsop_loophead(jsbytecode* pc)
 bool
 IonBuilder::jsop_ifeq(JSOp op)
 {
+#if 0
     // IFEQ always has a forward offset.
     jsbytecode* trueStart = pc + CodeSpec[op].length;
     jsbytecode* falseStart = pc + GetJumpOffset(pc);
@@ -4669,7 +4660,9 @@ IonBuilder::jsop_ifeq(JSOp op)
 
     current = nullptr;
 
-    return Ok();
+    return js::jit::Ok();
+    return false;
+#endif
 }
 
 bool
@@ -4830,10 +4823,11 @@ IonBuilder::processThrow()
     MThrow* ins = MThrow::New(alloc(), def);
     current->end(ins);
 
-    return Ok();
+    return ControlStatus_None;
 }
 
-AbortReasonOr<Ok>
+#if 0
+AbortReasonOr<js::jit::Ok>
 IonBuilder::visitTableSwitch(CFGTableSwitch* cfgIns)
 {
     // Pop input.
@@ -4861,14 +4855,14 @@ IonBuilder::visitTableSwitch(CFGTableSwitch* cfgIns)
         size_t index;
         if (i == 0) {
             if (!tableswitch->addDefault(caseBlock, &index))
-                return abort(AbortReason::Alloc);
+                return abort(AbortReason_Alloc);
 
         } else {
             if (!tableswitch->addSuccessor(caseBlock, &index))
-                return abort(AbortReason::Alloc);
+                return abort(AbortReason_Alloc);
 
             if (!tableswitch->addCase(index))
-                return abort(AbortReason::Alloc);
+                return abort(AbortReason_Alloc);
 
             // If this is an actual case statement, optimize by replacing the
             // input to the switch case with the actual number of the case.
@@ -4889,7 +4883,7 @@ IonBuilder::visitTableSwitch(CFGTableSwitch* cfgIns)
             MBasicBlock* merge;
             MOZ_TRY_VAR(merge, newBlock(caseBlock, cfgblock->startPc()));
             if (!merge)
-                return abort(AbortReason::Alloc);
+                return abort(AbortReason_Alloc);
 
             caseBlock->end(MGoto::New(alloc(), merge));
             blockWorklist[cfgblock->id()] = merge;
@@ -4900,9 +4894,11 @@ IonBuilder::visitTableSwitch(CFGTableSwitch* cfgIns)
 
     // Save the MIR instruction as last instruction of this block.
     current->end(tableswitch);
-    return Ok();
+    return js::jit::Ok();
 
 }
+
+#endif
 
 void
 IonBuilder::pushConstant(const Value& v)
@@ -5959,7 +5955,7 @@ IonBuilder::makeInliningDecision(JSObject* targetArg, CallInfo& callInfo)
     return InliningDecision_Inline;
 }
 
-AbortReasonOr<Ok>
+AbortReasonOr<js::jit::Ok>
 IonBuilder::selectInliningTargets(const InliningTargets& targets, CallInfo& callInfo,
                                   BoolVector& choiceSet, uint32_t* numInlineable)
 {
@@ -6369,7 +6365,7 @@ IonBuilder::inlineObjectGroupFallback(CallInfo& callInfo, MBasicBlock* dispatchB
     return true;
 }
 
-AbortReasonOr<Ok>
+AbortReasonOr<js::jit::Ok>
 IonBuilder::inlineCalls(CallInfo& callInfo, const InliningTargets& targets, BoolVector& choiceSet,
                         MGetPropertyCache* maybeCache)
 {
@@ -6511,7 +6507,7 @@ IonBuilder::inlineCalls(CallInfo& callInfo, const InliningTargets& targets, Bool
 
         // Connect the inline path to the returnBlock.
         if (!dispatch->addCase(target, targets[i].group, inlineBlock))
-            return abort(AbortReason::Alloc);
+            return false;
 
         MDefinition* retVal = inlineReturnBlock->peek(-1);
         retPhi->addInput(retVal);
@@ -11170,7 +11166,7 @@ IonBuilder::jsop_arguments()
     MConstant* lazyArg = MConstant::New(alloc(), MagicValue(JS_OPTIMIZED_ARGUMENTS));
     current->add(lazyArg);
     current->push(lazyArg);
-    return Ok();
+    return js::jit::Ok();
 }
 
 bool

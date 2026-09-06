@@ -225,6 +225,7 @@ class ScriptSourceObject;
 class Shape;
 class UnownedBaseShape;
 class ObjectGroup;
+class TaggedProto;
 
 namespace jit {
 class JitCode;
@@ -819,6 +820,18 @@ struct MovableCellHasher<ReadBarriered<T>>
         return MovableCellHasher<T>::match(k.unbarrieredGet(), l);
     }
     static void rekey(Key& k, const Key& newKey) { k.unsafeSet(newKey); }
+};
+
+template <>
+struct MovableCellHasher<TaggedProto>
+{
+    using Key = TaggedProto;
+    using Lookup = TaggedProto;
+
+    static bool hasHash(const Lookup& l);
+    static bool ensureHash(const Lookup& l);
+    static HashNumber hash(const Lookup& l);
+    static bool match(const Key& k, const Lookup& l);
 };
 
 /* Useful for hashtables with a GCPtr as key. */

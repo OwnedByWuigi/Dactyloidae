@@ -51,6 +51,7 @@ class ObjectElements;
 class PlainObject;
 class NativeObject;
 class Nursery;
+class JSONPrinter;
 struct NurseryChunk;
 class HeapSlot;
 
@@ -315,6 +316,7 @@ class Nursery
 
     /* Print total profile times on shutdown. */
     void printTotalProfileTimes();
+    void renderProfileJSON(JSONPrinter& json) const;
 
     void* addressOfCurrentEnd() const { return (void*)&currentEnd_; }
     void* addressOfPosition() const { return (void*)&position_; }
@@ -416,6 +418,8 @@ class Nursery
     ProfileTimes startTimes_;
     ProfileTimes profileTimes_;
     ProfileTimes totalTimes_;
+    ProfileDurations profileDurations_;
+    ProfileDurations totalDurations_;
     uint64_t minorGcCount_;
 
     /*
@@ -562,6 +566,9 @@ class Nursery
     void startProfile(ProfileKey key);
     void endProfile(ProfileKey key);
     static void printProfileDurations(const ProfileDurations& times);
+    static void printProfileHeader();
+    static void printProfileTimes(const ProfileTimes& times);
+    void maybeClearProfileDurations();
 
     friend class TenuringTracer;
     friend class gc::MinorCollectionTracer;

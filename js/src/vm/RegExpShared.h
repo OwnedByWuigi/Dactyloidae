@@ -108,6 +108,7 @@ class RegExpShared : public gc::TenuredCell
   private:
     friend class RegExpStatics;
     friend class RegExpZone;
+    friend class RegExpCompartment;
 
     struct RegExpCompilation
     {
@@ -130,6 +131,7 @@ class RegExpShared : public gc::TenuredCell
 
     struct NamedCaptureData;        // forward-declare at namespace scope
     uint32_t            numNamedCaptures_;
+    GCPtr<PlainObject*> groupsTemplate_;
     NamedCaptureData* namedCaptureData_;   // nullptr if none
 	public:
   NamedCaptureData* namedCaptureData() const { return namedCaptureData_; }
@@ -194,8 +196,12 @@ bool namedCaptureDataInited_;
     size_t pairCount() const            { return getParenCount() + 1; }
 
     // not public due to circular inclusion problems
-    static bool initializeNamedCaptures(JSContext* cx, MutableHandleRegExpShared re, irregexp::CharacterVectorVector* names, irregexp::IntegerVector* indices);
+    static bool initializeNamedCaptures(JSContext* cx, HandleRegExpShared re, irregexp::CharacterVectorVector* names, irregexp::IntegerVector* indices);
     PlainObject* getOrCreateGroupsTemplate(JSContext* cx);
+    PlainObject* getGroupsTemplate() { return groupsTemplate_; }
+    static size_t offsetOfGroupsTemplate() {
+        return offsetof(RegExpShared, groupsTemplate_);
+    }
     uint32_t numNamedCaptures() const { return numNamedCaptures_; }
     JSAtom* getSource() const           { return source; }
     RegExpFlag getFlags() const         { return flags; }
@@ -313,6 +319,35 @@ class RegExpZone
 
 class RegExpCompartment
 {
+    struct Key {
+        JSAtom* atom;
+        uint16_t flag;
+
+        Key() {}
+        Key(JSAtom* atom, RegExpFlag flag)
+          : atom(atom), flag(flag)
+        { }
+        MOZ_IMPLICIT Key(const ReadBarriered<RegExpShared*>& shared)
+          : atom(shared.unbarrieredGet()->getSource()),
+            flag(shared.unbarrieredGet()->getFlags())
+        { }
+
+        typedef Key Lookup;
+        static HashNumber hash(const Lookup& l) {
+            return DefaultHasher<JSAtom*>::hash(l.atom) ^ (l.flag << 1);
+        }
+        static bool match(Key l, Key r) {
+            return l.atom == r.atom && l.flag == r.flag;
+        }
+    };
+
+    /*
+     * The set of all RegExpShareds in the compartment. On every GC, every
+     * RegExpShared that was not marked is deleted and removed from the set.
+     */
+    using Set = GCHashSet<ReadBarriered<RegExpShared*>, Key, ZoneAllocPolicy>;
+    JS::WeakCache<Set> set_;
+
 public:
   enum ResultTemplateKind { Normal, WithIndices, Indices, NumKinds };
 
@@ -337,7 +372,8 @@ struct PerCompartmentData {
                   DefaultHasher<JSCompartment*>,
                   ZoneAllocPolicy>;
 
-    PerCompartmentMap perCompartment_;   // <-- add this
+    ReadBarriered<ArrayObject*> matchResultTemplateObjects_[NumKinds];
+    PerCompartmentMap perCompartment_;
 	
 	ArrayObject* createMatchResultTemplateObject(JSContext* cx,
                                                  ResultTemplateKind kind,
@@ -366,6 +402,12 @@ struct PerCompartmentData {
 
   public:
     explicit RegExpCompartment(Zone* zone);
+    ~RegExpCompartment();
+    bool init(JSContext* cx);
+    bool empty() { return set_.empty(); }
+    bool get(JSContext* cx, HandleAtom source, RegExpFlag flags, MutableHandleRegExpShared shared);
+    bool get(JSContext* cx, HandleAtom source, JSString* maybeOpt, MutableHandleRegExpShared shared);
+    size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
     void sweep(JSRuntime* rt);
 

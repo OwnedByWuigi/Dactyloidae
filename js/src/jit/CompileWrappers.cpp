@@ -246,21 +246,21 @@ bool
 CompileZone::canNurseryAllocateStrings()
 {
     return nurseryExists() &&
-        zone()->group()->nursery().canAllocateStrings() &&
+        zone()->runtimeFromAnyThread()->gc.nursery.canAllocateStrings() &&
         zone()->allocNurseryStrings;
 }
 
 bool
 CompileZone::nurseryExists()
 {
-    return zone()->group()->nursery().exists();
+    return zone()->runtimeFromAnyThread()->gc.nursery.exists();
 }
 
 void
 CompileZone::setMinorGCShouldCancelIonCompilations()
 {
     MOZ_ASSERT(CurrentThreadCanAccessZone(zone()));
-    zone()->group()->storeBuffer().setShouldCancelIonCompilations();
+    zone()->runtimeFromAnyThread()->gc.storeBuffer.setShouldCancelIonCompilations();
 }
 
 JSCompartment*

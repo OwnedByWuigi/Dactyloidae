@@ -67,7 +67,7 @@ SetUnboxedValueNoTypeChange(JSObject* unboxedObject,
       case JSVAL_TYPE_STRING: {
         JSString** np = reinterpret_cast<JSString**>(p);
         if (IsInsideNursery(v.toString()) && !IsInsideNursery(unboxedObject))
-                unboxedObject->zone()->group()->storeBuffer().putWholeCell(unboxedObject);
+            v.toString()->storeBuffer()->putWholeCell(unboxedObject);
         if (preBarrier)
             JSString::writeBarrierPre(*np);
         *np = v.toString();

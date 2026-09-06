@@ -235,8 +235,8 @@ IsObjectEscaped(MInstruction* ins, JSObject* objDefault)
             break;
           }
 
-          case MDefinition::Opcode::Lambda:
-          case MDefinition::Opcode::LambdaArrow: {
+          case MDefinition::Op_Lambda:
+          case MDefinition::Op_LambdaArrow: {
                 if (IsLambdaEscaped(def->toInstruction(), obj)) {
                 JitSpewDef(JitSpew_Escape, "is indirectly escaped by\n", def);
                 return true;

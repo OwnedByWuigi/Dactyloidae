@@ -9,6 +9,7 @@
 #include "mozilla/SizePrintfMacros.h"
 
 #include "jsfun.h"
+#include "jsfuninlines.h"
 
 #include "jit/BaselineIC.h"
 #include "jit/BaselineJIT.h"
@@ -698,7 +699,7 @@ BaselineCompiler::emitInterruptCheck()
     frame.syncStack(0);
 
     Label done;
-    void* interrupt = cx->runtimeAddressOfInterruptUint32();
+    void* interrupt = cx->runtime()->addressOfInterruptUint32();
     masm.branch32(Assembler::Equal, AbsoluteAddress(interrupt), Imm32(0), &done);
 
     prepareVMCall();
@@ -4738,23 +4739,21 @@ BaselineCompiler::emit_JSOP_JUMPTARGET()
     return true;
 }
 
-typedef bool (*CheckClassHeritageOperationFn)(JSContext*, HandleValue);
-static const VMFunction CheckClassHeritageOperationInfo =
-    FunctionInfo<CheckClassHeritageOperationFn>(js::CheckClassHeritageOperation,
-                                                "CheckClassHeritageOperation");
-
-bool
-BaselineCompiler::emit_JSOP_CHECKCLASSHERITAGE()
+namespace js {
+JSObject*
+ObjectWithProtoOperation(JSContext* cx, HandleValue protoValue)
 {
-    frame.syncStack(0);
-
-    // Leave the heritage value on the stack.
-    masm.loadValue(frame.addressOfStackValue(frame.peek(-1)), R0);
-
-    prepareVMCall();
-    pushArg(R0);
-    return callVM(CheckClassHeritageOperationInfo);
+    RootedObject proto(cx, protoValue.toObjectOrNull());
+    return NewObjectWithGivenProto<PlainObject>(cx, proto);
 }
+
+JSObject*
+FunWithProtoOperation(JSContext* cx, HandleFunction fun, HandleObject parent,
+                      HandleObject proto)
+{
+    return CloneFunctionObjectIfNotSingleton(cx, fun, parent, proto, GenericObject);
+}
+} // namespace js
 
 bool
 BaselineCompiler::emit_JSOP_INITHOMEOBJECT()
@@ -4771,7 +4770,8 @@ BaselineCompiler::emit_JSOP_INITHOMEOBJECT()
     masm.unboxObject(frame.addressOfStackValue(frame.peek(-1)), func);
 
     // Set HOMEOBJECT_SLOT
-    Address addr(func, FunctionExtended::offsetOfMethodHomeObjectSlot());
+    Address addr(func, FunctionExtended::offsetOfExtendedSlot(
+                              FunctionExtended::METHOD_HOMEOBJECT_SLOT));
 #ifdef DEBUG
     Label isUndefined;
     masm.branchTestUndefined(Assembler::Equal, addr, &isUndefined);
@@ -4787,19 +4787,6 @@ BaselineCompiler::emit_JSOP_INITHOMEOBJECT()
     masm.call(&postBarrierSlot_);
     masm.bind(&skipBarrier);
 
-    return true;
-}
-
-bool
-BaselineCompiler::emit_JSOP_BUILTINPROTO()
-{
-    // The builtin prototype is a constant for a given global.
-    RootedObject builtin(cx);
-    JSProtoKey key = static_cast<JSProtoKey>(GET_UINT8(pc));
-    MOZ_ASSERT(key < JSProto_LIMIT);
-    if (!GetBuiltinPrototype(cx, key, &builtin))
-        return false;
-    frame.push(ObjectValue(*builtin));
     return true;
 }
 

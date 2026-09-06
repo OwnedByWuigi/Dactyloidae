@@ -308,7 +308,7 @@ JS_PUBLIC_API(JSString*)
 JS_GetEmptyString(JSContext* cx)
 {
     MOZ_ASSERT(cx->emptyString());
-    return cx->emptyString();
+    return cx->ExclusiveContext::emptyString();
 }
 
 namespace js {
@@ -773,13 +773,13 @@ JS::AddonIdOfObject(JSObject* obj)
 JS_PUBLIC_API(void)
 JS_SetZoneUserData(JS::Zone* zone, void* data)
 {
-    zone->data = data;
+    zone->setData(data);
 }
 
 JS_PUBLIC_API(void*)
 JS_GetZoneUserData(JS::Zone* zone)
 {
-    return zone->data;
+    return zone->getData();
 }
 
 JS_PUBLIC_API(bool)
@@ -1366,7 +1366,7 @@ JS_RemoveFinalizeCallback(JSContext* cx, JSFinalizeCallback cb)
 JS_PUBLIC_API(bool)
 JS_AddWeakPointerZonesCallback(JSContext* cx, JSWeakPointerZonesCallback cb, void* data)
 {
-    AssertHeapIsIdle();
+    AssertHeapIsIdle(cx);
     return cx->runtime()->gc.addWeakPointerZonesCallback(cb, data);
 }
 

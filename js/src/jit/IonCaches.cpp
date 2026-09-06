@@ -1403,7 +1403,7 @@ EmitIdGuard(MacroAssembler& masm, jsid id, TypedOrValueRegister idReg, Register 
         // The pointers are not equal, so if the input string is also an atom it
         // must be a different string.
         masm.branchTest32(Assembler::NonZero, Address(payloadReg, JSString::offsetOfFlags()),
-                          Imm32(JSString::ATOM_BIT), failures);
+                          Imm32(JSString::NON_ATOM_BIT), failures);
 
         // Check the length.
         masm.branch32(Assembler::NotEqual, Address(payloadReg, JSString::offsetOfLength()),

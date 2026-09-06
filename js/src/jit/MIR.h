@@ -1232,6 +1232,7 @@ class MNullaryInstruction
 class MUnaryInstruction : public MAryInstruction<1>
 {
   protected:
+    MUnaryInstruction(Opcode, MDefinition* ins) : MUnaryInstruction(ins) {}
     explicit MUnaryInstruction(MDefinition* ins)
     {
         initOperand(0, ins);
@@ -1244,6 +1245,8 @@ class MUnaryInstruction : public MAryInstruction<1>
 class MBinaryInstruction : public MAryInstruction<2>
 {
   protected:
+    MBinaryInstruction(Opcode, MDefinition* left, MDefinition* right)
+      : MBinaryInstruction(left, right) {}
     MBinaryInstruction(MDefinition* left, MDefinition* right)
     {
         initOperand(0, left);
@@ -1313,6 +1316,8 @@ class MBinaryInstruction : public MAryInstruction<2>
 class MTernaryInstruction : public MAryInstruction<3>
 {
   protected:
+    MTernaryInstruction(Opcode, MDefinition* first, MDefinition* second, MDefinition* third)
+      : MTernaryInstruction(first, second, third) {}
     MTernaryInstruction(MDefinition* first, MDefinition* second, MDefinition* third)
     {
         initOperand(0, first);
@@ -1334,6 +1339,10 @@ class MTernaryInstruction : public MAryInstruction<3>
 class MQuaternaryInstruction : public MAryInstruction<4>
 {
   protected:
+    MQuaternaryInstruction() = default;
+    MQuaternaryInstruction(Opcode, MDefinition* first, MDefinition* second,
+                          MDefinition* third, MDefinition* fourth)
+      : MQuaternaryInstruction(first, second, third, fourth) {}
     MQuaternaryInstruction(MDefinition* first, MDefinition* second,
                            MDefinition* third, MDefinition* fourth)
     {
@@ -11360,6 +11369,45 @@ class MIn
     bool possiblyCalls() const override {
         return true;
     }
+};
+
+class MInCache
+    : public MBinaryInstruction,
+        public MixPolicy<BoxPolicy<0>, ObjectPolicy<1> >::Data
+{
+        MInCache(MDefinition* key, MDefinition* obj)
+            : MBinaryInstruction(key, obj)
+        {
+                setResultType(MIRType::Boolean);
+        }
+
+    public:
+        INSTRUCTION_HEADER(InCache)
+        TRIVIAL_NEW_WRAPPERS
+
+        bool possiblyCalls() const override {
+                return true;
+        }
+};
+
+class MHasOwnCache
+    : public MBinaryInstruction,
+        public MixPolicy<BoxPolicy<0>, CacheIdPolicy<1>>::Data
+{
+        MHasOwnCache(MDefinition* value, MDefinition* id)
+            : MBinaryInstruction(value, id)
+        {
+                setResultType(MIRType::Boolean);
+        }
+
+    public:
+        INSTRUCTION_HEADER(HasOwnCache)
+        TRIVIAL_NEW_WRAPPERS
+        NAMED_OPERANDS((0, value), (1, idval))
+
+        bool possiblyCalls() const override {
+                return true;
+        }
 };
 
 

@@ -11,6 +11,7 @@
 
 #include "gc/FindSCCs.h"
 #include "gc/GCRuntime.h"
+#include "gc/ZoneGroup.h"
 #include "js/GCHashTable.h"
 #include "vm/MallocProvider.h"
 #include "vm/RegExpShared.h"
@@ -58,6 +59,9 @@ class ZoneHeapThreshold
     return gcTriggerBytes_ * tunables.allocThresholdFactor();
     }
     double eagerAllocTrigger(bool highFrequencyGC) const;
+    double allocTrigger(bool highFrequencyGC) const {
+        return gcTriggerBytes_ * (highFrequencyGC ? 0.85 : 0.9);
+    }
 
     void updateAfterGC(size_t lastBytes, JSGCInvocationKind gckind,
                        const GCSchedulingTunables& tunables, const GCSchedulingState& state,
@@ -151,8 +155,9 @@ struct Zone : public JS::shadow::Zone,
               public js::gc::GraphNodeBase<JS::Zone>,
               public js::MallocProvider<JS::Zone>
 {
-    explicit Zone(JSRuntime* rt);
+    explicit Zone(JSRuntime* rt, js::ZoneGroup* group = nullptr);
     ~Zone();
+    bool active = false;
     MOZ_MUST_USE bool init(bool isSystem);
 
     void findOutgoingEdges(js::gc::ZoneComponentFinder& finder);
@@ -167,7 +172,7 @@ struct Zone : public JS::shadow::Zone,
 
     void resetGCMallocBytes();
     void setGCMaxMallocBytes(size_t value);
-    void updateMallocCounter(size_t nbytes) {
+    void updateLegacyMallocCounter(size_t nbytes) {
         // Note: this code may be run from worker threads. We tolerate any
         // thread races when updating gcMallocBytes.
         gcMallocBytes -= ptrdiff_t(nbytes);
@@ -244,6 +249,7 @@ struct Zone : public JS::shadow::Zone,
     bool wasGCStarted() const { return gcState_ != NoGC; }
     bool isGCMarkingBlack() { return gcState_ == Mark; }
     bool isGCMarkingGray() { return gcState_ == MarkGray; }
+    bool isGCMarking() { return gcState_ == Mark || gcState_ == MarkGray; }
     bool isGCSweeping() { return gcState_ == Sweep; }
     bool isGCFinished() { return gcState_ == Finished; }
     bool isGCCompacting() { return gcState_ == Compact; }
@@ -291,6 +297,8 @@ struct Zone : public JS::shadow::Zone,
     js::gc::UniqueIdMap uniqueIds_;
 
   public:
+    void sweepWeakMapsForGC() { sweepWeakMaps(); }
+    void sweepUniqueIdsForGC(js::FreeOp* fop) { sweepUniqueIds(fop); }
     bool hasDebuggers() const { return debuggers && debuggers->length(); }
     DebuggerVector* getDebuggers() const { return debuggers; }
     DebuggerVector* getOrCreateDebuggers(JSContext* cx);
@@ -330,6 +338,7 @@ struct Zone : public JS::shadow::Zone,
     // preserved for re-scanning during sweeping.
     using WeakEdges = js::Vector<js::gc::TenuredCell**, 0, js::SystemAllocPolicy>;
     WeakEdges gcWeakRefs;
+    WeakEdges& gcWeakRefsRef() { return gcWeakRefs; }
 
   private:
     // List of non-ephemeron weak containers to sweep during beginSweepingSweepGroup.
@@ -345,6 +354,7 @@ struct Zone : public JS::shadow::Zone,
      * maps to in any live weak map.
      */
     js::gc::WeakKeyTable gcWeakKeys;
+    js::gc::WeakKeyTable& gcWeakKeysRef() { return gcWeakKeys; }
 
     // A set of edges from this zone to other zones.
     //
@@ -411,8 +421,12 @@ struct Zone : public JS::shadow::Zone,
 
     void setGCMaxMallocBytes(size_t value, const js::AutoLockGC& lock) {
         gcMallocCounter.setMax(value, lock);
+        setGCMaxMallocBytes(value);
     }
     void updateMallocCounter(size_t nbytes) {
+        // Keep the legacy remaining-budget diagnostics in sync. The memory
+        // counter below owns triggering for this allocation path.
+        gcMallocBytes -= ptrdiff_t(nbytes);
         updateMemoryCounter(gcMallocCounter, nbytes);
     }
     void adoptMallocBytes(Zone* other) {
@@ -439,6 +453,10 @@ struct Zone : public JS::shadow::Zone,
         return std::max(gcMallocCounter.shouldTriggerGC(gc.tunables),
                         jitCodeCounter.shouldTriggerGC(gc.tunables));
     }
+
+    // Legacy remaining-budget counters used by resetGCMallocBytes and diagnostics.
+    mozilla::Atomic<ptrdiff_t, mozilla::ReleaseAcquire> gcMallocBytes;
+    size_t gcMaxMallocBytes;
 
     // Whether a GC has been triggered as a result of gcMallocBytes falling
     // below zero.
@@ -485,8 +503,16 @@ struct Zone : public JS::shadow::Zone,
 
     bool isSystem;
 
+  public:
+    void setData(void* value) { data = value; }
+    void* getData() const { return data; }
+    bool isSystemZone() const { return isSystem; }
+    js::PropertyTree& propertyTreeRef() { return propertyTree; }
+
+    bool usedByExclusiveThread = false;
+
     bool usedByHelperThread() {
-        return !isAtomsZone() && group()->usedByHelperThread();
+        return usedByExclusiveThread;
     }
 
 #ifdef DEBUG
@@ -561,7 +587,7 @@ struct Zone : public JS::shadow::Zone,
         MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(runtimeFromActiveCooperatingThread()));
         MOZ_ASSERT(js::CurrentThreadCanAccessZone(this));
         MOZ_ASSERT(!uniqueIds().has(tgt));
-        uniqueIds().rekeyIfMoved(src, tgt);
+        uniqueIds_.rekeyIfMoved(src, tgt);
     }
 
     // Remove any unique id associated with this Cell.
@@ -737,15 +763,29 @@ class ZonesIter
 
 // Iterate over all zones in the runtime, except those which may be in use by
 // parse threads.
-class ZonesIter
+class ZonesInGroupIter
+{
+    ZoneVector::Range zones_;
+
+  public:
+    explicit ZonesInGroupIter(ZoneGroup* group) : zones_(group->zones().all()) {}
+    bool done() const { return zones_.empty(); }
+    void next() { MOZ_ASSERT(!done()); zones_.popFront(); }
+    JS::Zone* get() const { MOZ_ASSERT(!done()); return zones_.front(); }
+    operator JS::Zone*() const { return get(); }
+    JS::Zone* operator->() const { return get(); }
+};
+
+class ZoneGroupsZonesIter
 {
     ZoneGroupsIter group;
     Maybe<ZonesInGroupIter> zone;
     JS::Zone* atomsZone;
 
   public:
-    ZonesIter(JSRuntime* rt, ZoneSelector selector)
-      : group(rt), atomsZone(selector == WithAtoms ? rt->gc.atomsZone.ref() : nullptr)
+    ZoneGroupsZonesIter(JSRuntime* rt, ZoneSelector selector)
+      : group(rt), atomsZone(selector == WithAtoms && !rt->gc.zones.empty()
+                            ? rt->gc.zones[0] : nullptr)
     {
         if (!atomsZone && !done())
             next();

@@ -1527,7 +1527,7 @@ void UnboxStringHelper(const T& src, Register dest) {
 
     void loadJitActivation(Register dest) {
         loadJSContext(dest);
-        loadPtr(Address(dest, offsetof(JSContext, activation_)), dest);
+        loadPtr(Address(dest, JSContext::offsetOfActivation()), dest);
     }
     void loadWasmActivationFromTls(Register dest) {
         loadPtr(Address(WasmTlsReg, offsetof(wasm::TlsData, cx)), dest);

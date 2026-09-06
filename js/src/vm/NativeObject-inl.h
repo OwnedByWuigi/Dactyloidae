@@ -130,7 +130,7 @@ NativeObject::elementsRangeWriteBarrierPost(uint32_t start, uint32_t count)
     for (size_t i = 0; i < count; i++) {
         const Value& v = elements_[start + i];
         if ((v.isObject() || v.isString()) && IsInsideNursery(v.toGCThing())) {
-            zone()->group()->storeBuffer().putSlot(this, HeapSlot::Element,
+            v.toGCThing()->storeBuffer()->putSlot(this, HeapSlot::Element,
                                                    unshiftedIndex(start + i),
                                                    count - i);
             return;
@@ -179,7 +179,8 @@ inline bool
 NativeObject::tryShiftDenseElements(uint32_t count)
 {
     ObjectElements* header = getElementsHeader();
-    if (header->isCopyOnWrite() ||
+    if (count == 0 || count > ObjectElements::MaxShiftedElements ||
+        count >= header->initializedLength || header->isCopyOnWrite() ||
         header->isFrozen() ||
         header->hasNonwritableArrayLength() ||
         header->initializedLength == count)
@@ -210,6 +211,26 @@ NativeObject::shiftDenseElementsUnchecked(uint32_t count)
     elements_ += count;
     ObjectElements* newHeader = getElementsHeader();
     memmove(newHeader, header, sizeof(ObjectElements));
+
+    // The runtime's allocation and tracing paths use base-relative elements.
+    // Restore that layout before exposing the shifted array to those paths.
+    moveShiftedElements();
+}
+
+inline void
+NativeObject::moveShiftedElements()
+{
+    ObjectElements header = *getElementsHeader();
+    uint32_t shifted = header.numShiftedElements();
+    if (!shifted)
+        return;
+    HeapSlot* base = elements_ - shifted;
+    memmove(base, elements_, header.initializedLength * sizeof(HeapSlot));
+    elements_ = base;
+    header.capacity += shifted;
+    header.flags &= (1u << ObjectElements::ShiftedElementsShift) - 1;
+    *getElementsHeader() = header;
+    elementsRangeWriteBarrierPost(0, header.initializedLength);
 }
 
 inline void
@@ -266,7 +287,7 @@ NativeObject::moveDenseElementsNoPreBarrier(uint32_t dstStart, uint32_t srcStart
 }
 
 inline void
-NativeObject::ensureDenseInitializedLengthNoPackedCheck(JSContext* cx, uint32_t index,
+NativeObject::ensureDenseInitializedLengthNoPackedCheck(ExclusiveContext* cx, uint32_t index,
                                                         uint32_t extra)
 {
     MOZ_ASSERT(!denseElementsAreCopyOnWrite());

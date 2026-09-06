@@ -109,7 +109,7 @@ JitContext::JitContext(JSContext* cx, TempAllocator* temp)
 JitContext::JitContext(ExclusiveContext* cx, TempAllocator* temp)
   : cx(nullptr),
     temp(temp),
-    runtime(CompileRuntime::get(cx->runtime_)),
+    runtime(CompileRuntime::get(cx->runtimeFromMainThread())),
     compartment(nullptr),
     prev_(CurrentJitContext()),
     assemblerCount_(0)
@@ -225,7 +225,7 @@ JitRuntime::~JitRuntime()
 bool
 JitRuntime::initialize(JSContext* cx, AutoLockForExclusiveAccess& lock)
 {
-    AutoCompartment ac(cx, cx->atomsCompartment(lock), &lock);
+    AutoCompartment ac(cx, cx->ExclusiveContext::atomsCompartment(lock), &lock);
 
     JitContext jctx(cx, nullptr);
 
@@ -3149,12 +3149,10 @@ jit::InvalidateAll(FreeOp* fop, Zone* zone)
     if (zone->isAtomsZone())
         return;
     JSContext* cx = TlsContext.get();
-    for (const CooperatingContext& target : cx->runtime()->cooperatingContexts()) {
-        for (JitActivationIterator iter(cx, target); !iter.done(); ++iter) {
-            if (iter->compartment()->zone() == zone) {
-                JitSpew(JitSpew_IonInvalidate, "Invalidating all frames for GC");
-                InvalidateActivation(fop, iter, true);
-            }
+    for (JitActivationIterator iter(cx->runtime()); !iter.done(); ++iter) {
+        if (iter->compartment()->zone() == zone) {
+            JitSpew(JitSpew_IonInvalidate, "Invalidating all frames for GC");
+            InvalidateActivation(fop, iter, true);
         }
     }
 }
@@ -3205,10 +3203,8 @@ jit::Invalidate(TypeZone& types, FreeOp* fop,
     JSRuntime::AutoProhibitActiveContextChange apacc(fop->runtime());
 
     JSContext* cx = TlsContext.get();
-    for (const CooperatingContext& target : cx->runtime()->cooperatingContexts()) {
-        for (JitActivationIterator iter(cx, target); !iter.done(); ++iter)
-            InvalidateActivation(fop, iter, false);
-    }
+    for (JitActivationIterator iter(cx->runtime()); !iter.done(); ++iter)
+        InvalidateActivation(fop, iter, false);
 
     // Drop the references added above. If a script was never active, its
     // IonScript will be immediately destroyed. Otherwise, it will be held live

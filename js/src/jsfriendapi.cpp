@@ -14,6 +14,7 @@
 #include "jscntxt.h"
 #include "jscompartment.h"
 #include "jsgc.h"
+#include "gc/GCInternals.h"
 #include "jsobj.h"
 #include "jsprf.h"
 #include "jsweakmap.h"
@@ -334,7 +335,7 @@ js::IsSystemCompartment(JSCompartment* comp)
 JS_FRIEND_API(bool)
 js::IsSystemZone(Zone* zone)
 {
-    return zone->isSystem;
+    return zone->isSystemZone();
 }
 
 JS_FRIEND_API(bool)
@@ -1154,7 +1155,7 @@ js::DumpHeap(JSContext* cx, FILE* fp, js::DumpHeapNurseryBehaviour nurseryBehavi
     {
         JSRuntime* rt = cx->runtime();
         js::gc::AutoPrepareForTracing prep(cx, WithAtoms);
-        gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PHASE_TRACE_HEAP);
+        gcstats::AutoPhase ap(rt->gc.stats, gcstats::PHASE_TRACE_HEAP);
         rt->gc.traceRuntime(&dtrc, prep.session());
     }
 

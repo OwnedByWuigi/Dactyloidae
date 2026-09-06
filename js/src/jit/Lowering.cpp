@@ -3677,6 +3677,7 @@ LIRGenerator::visitCallGetIntrinsicValue(MCallGetIntrinsicValue* ins)
     assignSafepoint(lir, ins);
 }
 
+#if 0
 void
 LIRGenerator::visitGetPropSuperCache(MGetPropSuperCache* ins)
 {
@@ -3694,6 +3695,7 @@ LIRGenerator::visitGetPropSuperCache(MGetPropSuperCache* ins)
     defineBox(lir, ins);
     assignSafepoint(lir, ins);
 }
+#endif
 
 void
 LIRGenerator::visitGetPropertyCache(MGetPropertyCache* ins)
@@ -4156,7 +4158,21 @@ LIRGenerator::visitIn(MIn* ins)
     MOZ_ASSERT(lhs->type() == MIRType::Value);
     MOZ_ASSERT(rhs->type() == MIRType::Object);
 
-    LInCache* lir = new(alloc()) LInCache(useBoxOrTyped(lhs), useRegister(rhs), temp());
+    LIn* lir = new(alloc()) LIn(useBoxAtStart(lhs), useRegister(rhs));
+    define(lir, ins);
+    assignSafepoint(lir, ins);
+}
+
+void
+LIRGenerator::visitInCache(MInCache* ins)
+{
+    MDefinition* lhs = ins->lhs();
+    MDefinition* rhs = ins->rhs();
+
+    MOZ_ASSERT(lhs->type() == MIRType::Value);
+    MOZ_ASSERT(rhs->type() == MIRType::Object);
+
+    LIn* lir = new(alloc()) LIn(useBoxAtStart(lhs), useRegister(rhs));
     define(lir, ins);
     assignSafepoint(lir, ins);
 }
@@ -4177,7 +4193,7 @@ LIRGenerator::visitHasOwnCache(MHasOwnCache* ins)
     // attach a scripted getter stub that calls this script recursively.
     gen->setNeedsOverrecursedCheck();
 
-    LHasOwnCache* lir = new(alloc()) LHasOwnCache(useBoxOrTyped(value), useBoxOrTyped(id));
+    LIn* lir = new(alloc()) LIn(useBoxAtStart(value), useRegister(id));
 
     define(lir, ins);
     assignSafepoint(lir, ins);

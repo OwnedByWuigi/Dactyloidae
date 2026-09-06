@@ -358,7 +358,7 @@ js::intl_IsValidTimeZoneName(JSContext* cx, unsigned argc, Value* vp)
     MOZ_ASSERT(args.length() == 1);
     MOZ_ASSERT(args[0].isString());
 
-    SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
+    SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData;
 
     RootedString timeZone(cx, args[0].toString());
     RootedAtom validatedTimeZone(cx);
@@ -366,7 +366,6 @@ js::intl_IsValidTimeZoneName(JSContext* cx, unsigned argc, Value* vp)
         return false;
 
     if (validatedTimeZone) {
-        cx->markAtom(validatedTimeZone);
         args.rval().setString(validatedTimeZone);
     } else {
         args.rval().setNull();
@@ -382,7 +381,7 @@ js::intl_canonicalizeTimeZone(JSContext* cx, unsigned argc, Value* vp)
     MOZ_ASSERT(args.length() == 1);
     MOZ_ASSERT(args[0].isString());
 
-    SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData.ref();
+    SharedIntlData& sharedIntlData = cx->runtime()->sharedIntlData;
 
     // Some time zone names are canonicalized differently by ICU -- handle
     // those first:
@@ -392,7 +391,6 @@ js::intl_canonicalizeTimeZone(JSContext* cx, unsigned argc, Value* vp)
         return false;
 
     if (ianaTimeZone) {
-        cx->markAtom(ianaTimeZone);
         args.rval().setString(ianaTimeZone);
         return true;
     }

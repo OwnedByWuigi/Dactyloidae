@@ -214,7 +214,7 @@ BytecodeCompiler::canLazilyParse()
            !cx->compartment()->behaviors().disableLazyParsing() &&
            !cx->compartment()->behaviors().discardSource() &&
            !options.sourceIsLazy &&
-           !cx->lcovEnabled();
+           !cx->runtimeFromMainThread()->lcovOutput.isEnabled();
 }
 
 bool
