@@ -81,9 +81,10 @@ function MapGroupBy(items, callbackfn) {
         var key = callContentFunction(callbackfn, undefined, value, k);
 
         // Steps 6.c-d.
-        var elements;
-        if (callFunction(std_Map_has, groups, key)) {
-            elements = callFunction(std_Map_get, groups, key);
+        // Group values are always arrays, so undefined also tells us whether
+        // this is a new key without a second hash-table lookup.
+        var elements = callFunction(std_Map_get, groups, key);
+        if (elements !== undefined) {
             callFunction(std_Array_push, elements, value);
         } else {
             elements = [value];
