@@ -2928,11 +2928,57 @@ FindMatchingElementsWithId(const nsAString& aId, nsINode* aRoot,
 // null) and which are descendants of aRoot and put them in aList.  If
 // onlyFirstMatch, then stop once the first one is found.
 template<bool onlyFirstMatch, class Collector, class T>
+static void
+FindMatchingElementsWithClass(nsINode* aRoot, nsIAtom* aClass,
+                              nsCaseTreatment aCaseTreatment, T& aList)
+{
+  Collector results;
+  for (nsIContent* cur = aRoot->GetFirstChild(); cur;
+       cur = cur->GetNextNode(aRoot)) {
+    if (!cur->IsElement()) {
+      continue;
+    }
+    const nsAttrValue* classes = cur->AsElement()->GetClasses();
+    if (classes && classes->Contains(aClass, aCaseTreatment)) {
+      if (onlyFirstMatch) {
+        aList.AppendElement(cur->AsElement());
+        return;
+      }
+      results.AppendElement(cur->AsElement());
+    }
+  }
+  const uint32_t len = results.Length();
+  if (len) {
+    aList.SetCapacity(len);
+    for (uint32_t i = 0; i < len; ++i) {
+      aList.AppendElement(results.ElementAt(i));
+    }
+  }
+}
+
+template<bool onlyFirstMatch, class Collector, class T>
 MOZ_ALWAYS_INLINE static void
 FindMatchingElements(nsINode* aRoot, nsCSSSelectorList* aSelectorList, T &aList,
                      ErrorResult& aRv)
 {
   nsIDocument* doc = aRoot->OwnerDoc();
+
+  // Parsed selectors are already cached by the document. A lone class needs
+  // only an atom lookup per element, not the general CSS matching context.
+  nsCSSSelector* selector = aSelectorList->mSelectors;
+  if (!aSelectorList->mNext && !selector->mNext &&
+      selector->mClassList && !selector->mClassList->mNext &&
+      !selector->mLowercaseTag && !selector->mIDList &&
+      !selector->mAttrList && !selector->mPseudoClassList &&
+      !selector->mNegations && selector->mNameSpace == kNameSpaceID_Unknown &&
+      selector->IsRestrictedSelector() && !selector->IsHybridPseudoElement()) {
+    nsCaseTreatment caseTreatment =
+      doc->GetCompatibilityMode() == eCompatibility_NavQuirks
+        ? eIgnoreCase : eCaseMatters;
+    FindMatchingElementsWithClass<onlyFirstMatch, Collector>(
+      aRoot, selector->mClassList->mAtom, caseTreatment, aList);
+    return;
+  }
 
   TreeMatchContext matchingContext(false, nsRuleWalker::eRelevantLinkUnvisited,
                                    doc, TreeMatchContext::eNeverMatchVisited);

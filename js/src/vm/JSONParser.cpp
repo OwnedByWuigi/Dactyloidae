@@ -43,6 +43,10 @@ JSONParserBase::~JSONParserBase()
 void
 JSONParserBase::trace(JSTracer* trc)
 {
+    for (auto& atom : propertyNameCache) {
+        if (atom)
+            TraceRoot(trc, &atom, "JSONParser cached property name");
+    }
     for (size_t i = 0; i < stack.length(); i++) {
         if (stack[i].state == FinishArrayElement) {
             ElementVector& elements = stack[i].elements();
@@ -123,6 +127,24 @@ JSONParser<CharT>::readString()
         return token(Error);
     }
 
+    // Arrays of records repeatedly use the same property names. Verify the
+    // entire name and closing quote before skipping scanning and atomization.
+    // Only the unescaped path below populates this cache.
+    if (ST == JSONParser::PropertyName && *current != '"') {
+        JSAtom* atom = propertyNameCache[size_t(*current) % PropertyNameCacheSize];
+        if (atom && size_t(end - current) > atom->length() &&
+            current[atom->length()] == '"') {
+            JS::AutoCheckCannotGC nogc;
+            bool matches = atom->hasLatin1Chars()
+                           ? EqualChars(atom->latin1Chars(nogc), current.get(), atom->length())
+                           : EqualChars(atom->twoByteChars(nogc), current.get(), atom->length());
+            if (matches) {
+                current += atom->length() + 1;
+                return stringToken(atom);
+            }
+        }
+    }
+
     /*
      * Optimization: if the source contains no escaped characters, create the
      * string directly from the source text.
@@ -137,6 +159,9 @@ JSONParser<CharT>::readString()
                                 : NewStringCopyN<CanGC>(cx, start.get(), length);
             if (!str)
                 return token(OOM);
+            if (ST == JSONParser::PropertyName && length) {
+                propertyNameCache[size_t(*start) % PropertyNameCacheSize] = &str->asAtom();
+            }
             return stringToken(str);
         }
 

@@ -33,6 +33,11 @@ class MOZ_STACK_CLASS JSONParserBase
 
     const ErrorHandling errorHandling;
 
+    // Reuse unescaped property names within this parse. The cache is bounded
+    // and traced with the parser, including during compacting GC.
+    static const size_t PropertyNameCacheSize = 8;
+    JSAtom* propertyNameCache[PropertyNameCacheSize];
+
     enum Token { String, Number, True, False, Null,
                  ArrayOpen, ArrayClose,
                  ObjectOpen, ObjectClose,
@@ -109,6 +114,7 @@ class MOZ_STACK_CLASS JSONParserBase
     JSONParserBase(JSContext* cx, ErrorHandling errorHandling)
       : cx(cx),
         errorHandling(errorHandling),
+        propertyNameCache{},
         stack(cx),
         freeElements(cx),
         freeProperties(cx)
@@ -129,8 +135,10 @@ class MOZ_STACK_CLASS JSONParserBase
 #ifdef DEBUG
       , lastToken(mozilla::Move(other.lastToken))
 #endif
-    {}
-
+    {
+        for (size_t i = 0; i < PropertyNameCacheSize; i++)
+            propertyNameCache[i] = other.propertyNameCache[i];
+    }
 
     Value numberValue() const {
         MOZ_ASSERT(lastToken == Number);
