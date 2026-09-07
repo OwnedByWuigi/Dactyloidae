@@ -38,29 +38,47 @@ class ScriptSourceObject;
 struct NativeIterator;
 
 /*
- * A single-entry cache for some base-10 double-to-string conversions. This
- * helps date-format-xparb.js.  It also avoids skewing the results for
- * v8-splay.js when measured by the SunSpider harness, where the splay tree
- * initialization (which includes many repeated double-to-string conversions)
- * is erroneously included in the measurement; see bug 562553.
+ * A small cache for number-to-string conversions, keyed by number and radix.
+ * Keep several results so interleaved conversions do not evict each other.
+ * These strings are not traced: every entry must be cleared before GC.
  */
 class DtoaCache {
-    double       d;
-    int          base;
-    JSFlatString* s;      // if s==nullptr, d and base are not valid
+    struct Entry {
+        double d;
+        int base;
+        JSFlatString* s;  // if s == nullptr, d and base are not valid
+    };
+    static const size_t NumPrevious = 3;
+    Entry recent;
+    Entry previous[NumPrevious];
+    size_t next;
 
   public:
-    DtoaCache() : s(nullptr) {}
-    void purge() { s = nullptr; }
+    DtoaCache() { purge(); }
+    void purge() {
+        recent.s = nullptr;
+        for (auto& entry : previous)
+            entry.s = nullptr;
+        next = 0;
+    }
 
     JSFlatString* lookup(int base, double d) {
-        return this->s && base == this->base && d == this->d ? this->s : nullptr;
+        // Preserve the cheap path for consecutive conversions of one value.
+        if (recent.s && base == recent.base && d == recent.d)
+            return recent.s;
+        for (const auto& entry : previous) {
+            if (entry.s && base == entry.base && d == entry.d)
+                return entry.s;
+        }
+        return nullptr;
     }
 
     void cache(int base, double d, JSFlatString* s) {
-        this->base = base;
-        this->d = d;
-        this->s = s;
+        if (recent.s) {
+            previous[next] = recent;
+            next = (next + 1) % NumPrevious;
+        }
+        recent = { d, base, s };
     }
 
 #ifdef JSGC_HASH_TABLE_CHECKS

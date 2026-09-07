@@ -214,7 +214,9 @@ JSCompartment::ensureJitCompartmentExists(JSContext* cx)
 void
 js::DtoaCache::checkCacheAfterMovingGC()
 {
-    MOZ_ASSERT(!s || !IsForwarded(s));
+    MOZ_ASSERT(!recent.s || !IsForwarded(recent.s));
+    for (const auto& entry : previous)
+        MOZ_ASSERT(!entry.s || !IsForwarded(entry.s));
 }
 
 namespace {
