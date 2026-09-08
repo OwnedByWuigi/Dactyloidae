@@ -98,10 +98,7 @@ DirectShowReader::ReadMetadata(MediaInfo* aInfo,
                         reinterpret_cast<void**>(static_cast<IGraphBuilder**>(getter_AddRefs(mGraph))));
   NS_ENSURE_TRUE(SUCCEEDED(hr) && mGraph, NS_ERROR_FAILURE);
 
-  rv = ParseMP3Headers(&mMP3FrameParser, mDecoder->GetResource());
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  #ifdef DIRECTSHOW_REGISTER_GRAPH
+#ifdef DIRECTSHOW_REGISTER_GRAPH
   hr = AddGraphToRunningObjectTable(mGraph, &mRotRegister);
   NS_ENSURE_TRUE(SUCCEEDED(hr), NS_ERROR_FAILURE);
   #endif
@@ -116,6 +113,9 @@ DirectShowReader::ReadMetadata(MediaInfo* aInfo,
   if (mIsH264) {
     return ReadH264Metadata(aInfo, aTags);
   }
+
+  rv = ParseMP3Headers(&mMP3FrameParser, mDecoder->GetResource());
+  NS_ENSURE_SUCCESS(rv, rv);
 
   // Build the graph. Create the filters we need, and connect them. We
   // build the entire graph ourselves to prevent other decoders installed

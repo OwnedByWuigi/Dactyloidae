@@ -5,6 +5,16 @@
 
 include('build/moz.configure/init.configure')
 
+# DirectShow is the legacy Windows media backend. Keep this independent of
+# the old configure scripts so the backend is actually compiled on Windows.
+@depends(target)
+def directshow_enabled(target):
+    if target.kernel == 'WINNT':
+        return True
+
+set_config('MOZ_DIRECTSHOW', directshow_enabled)
+set_define('MOZ_DIRECTSHOW', directshow_enabled)
+
 # Note:
 # - Gecko-specific options and rules should go in toolkit/moz.configure.
 # - Firefox-specific options and rules should go in browser/moz.configure.
