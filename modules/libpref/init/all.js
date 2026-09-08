@@ -392,6 +392,10 @@ pref("media.wave.play-stand-alone", false);
 pref("media.hardware-video-decoding.enabled", true);
 pref("media.hardware-video-decoding.force-enabled", false);
 
+#ifdef MOZ_DIRECTSHOW
+pref("media.directshow.enabled", true);
+#endif
+
 #ifdef MOZ_FMP4
 pref("media.mp4.enabled", true);
 // Specifies whether the PDMFactory can create a test decoder that

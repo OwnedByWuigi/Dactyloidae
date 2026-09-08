@@ -173,6 +173,7 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         'crypt32',
         'shell32',
         'ole32',
+        'strmiids',
         'version',
         'winspool',
     ]

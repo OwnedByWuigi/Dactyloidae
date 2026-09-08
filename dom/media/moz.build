@@ -42,6 +42,12 @@ DIRS += [
     'standalone',
 ]
 
+if CONFIG['MOZ_DIRECTSHOW']:
+    DIRS += ['directshow']
+    LOCAL_INCLUDES += [
+        '/media/webrtc/trunk/webrtc/modules/video_capture/windows',
+    ]
+
 if CONFIG['MOZ_FMP4']:
     DIRS += ['fmp4']
 
