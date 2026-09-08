@@ -70,8 +70,7 @@ AudioSinkInputPin::CheckMediaType(const MediaType* aMediaType)
 
   GUID majorType = *aMediaType->Type();
   if (majorType == MEDIATYPE_Video &&
-      (*aMediaType->Subtype() == MEDIASUBTYPE_YUY2 ||
-       *aMediaType->Subtype() == MEDIASUBTYPE_I420) &&
+      *aMediaType->Subtype() == MEDIASUBTYPE_YUY2 &&
       *aMediaType->FormatType() == FORMAT_VideoInfo) {
     if (aMediaType->cbFormat >= sizeof(VIDEOINFOHEADER)) {
       memcpy(&mVideoInfo, aMediaType->pbFormat, sizeof(VIDEOINFOHEADER));

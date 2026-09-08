@@ -8,7 +8,6 @@
 #include "MediaResource.h"
 #include "mozilla/RefPtr.h"
 #include "DirectShowUtils.h"
-#include "MP3FrameParser.h"
 #include "mozilla/Logging.h"
 #include <algorithm>
 

@@ -11,7 +11,6 @@
 #include "MediaDecoderReader.h"
 #include "MediaResource.h"
 #include "mozilla/RefPtr.h"
-#include "MP3FrameParser.h"
 
 // Add the graph to the Running Object Table so that we can connect
 // to this graph with GraphEdit/GraphStudio. Note: you must
@@ -84,11 +83,6 @@ private:
   // The graph will block while this is blocked, i.e. it will pause decoding.
   RefPtr<AudioSinkFilter> mAudioSinkFilter;
   bool mIsH264;
-
-  // Some MP3s are variable bitrate, so DirectShow's duration estimation
-  // can make its duration estimation based on the wrong bitrate. So we parse
-  // the MP3 frames to get a more accuate estimate of the duration.
-  MP3FrameParser mMP3FrameParser;
 
 #ifdef DIRECTSHOW_REGISTER_GRAPH
   // Used to add/remove the filter graph to the Running Object Table. You can

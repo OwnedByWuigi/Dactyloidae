@@ -309,8 +309,7 @@ CanDecodeH264UsingDirectShow()
   RefPtr<ICreateDevEnum> devEnum;
   HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, nullptr,
                                 CLSCTX_INPROC_SERVER,
-                                IID_ICreateDevEnum,
-                                reinterpret_cast<void**>(getter_AddRefs(devEnum)));
+                                IID_ICreateDevEnum, getter_AddRefs(devEnum));
   if (FAILED(hr)) {
     return false;
   }
@@ -326,9 +325,9 @@ CanDecodeH264UsingDirectShow()
   ULONG fetched = 0;
   while (filters->Next(1, getter_AddRefs(moniker), &fetched) == S_OK) {
     RefPtr<IPropertyBag> bag;
-    if (SUCCEEDED(moniker->BindToStorage(nullptr, nullptr,
+      if (SUCCEEDED(moniker->BindToStorage(nullptr, nullptr,
                                           IID_IPropertyBag,
-                                          reinterpret_cast<void**>(getter_AddRefs(bag))))) {
+                                          getter_AddRefs(bag)))) {
       VARIANT value;
       VariantInit(&value);
       if (SUCCEEDED(bag->Read(L"FriendlyName", &value, nullptr)) &&
@@ -354,7 +353,7 @@ AddH264DecoderFilter(IGraphBuilder* aGraph, IBaseFilter** aOutFilter)
   RefPtr<ICreateDevEnum> devEnum;
   HRESULT hr = CoCreateInstance(CLSID_SystemDeviceEnum, nullptr,
                                 CLSCTX_INPROC_SERVER, IID_ICreateDevEnum,
-                                reinterpret_cast<void**>(getter_AddRefs(devEnum)));
+                                getter_AddRefs(devEnum));
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
   RefPtr<IEnumMoniker> filters;
   hr = devEnum->CreateClassEnumerator(CLSID_LegacyAmFilterCategory,
@@ -368,7 +367,7 @@ AddH264DecoderFilter(IGraphBuilder* aGraph, IBaseFilter** aOutFilter)
     VariantInit(&value);
     bool h264 = false;
     if (SUCCEEDED(moniker->BindToStorage(nullptr, nullptr, IID_IPropertyBag,
-                                          reinterpret_cast<void**>(getter_AddRefs(bag)))) &&
+                                          getter_AddRefs(bag))) &&
         SUCCEEDED(bag->Read(L"FriendlyName", &value, nullptr)) &&
         value.vt == VT_BSTR && value.bstrVal) {
       h264 = wcsstr(value.bstrVal, L"H264") ||

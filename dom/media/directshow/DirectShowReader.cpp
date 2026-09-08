@@ -28,7 +28,6 @@ static LazyLogModule gDirectShowLog("DirectShowDecoder");
 
 DirectShowReader::DirectShowReader(AbstractMediaDecoder* aDecoder)
   : MediaDecoderReader(aDecoder),
-    mMP3FrameParser(aDecoder->GetResource()->GetLength()),
 #ifdef DIRECTSHOW_REGISTER_GRAPH
     mRotRegister(0),
 #endif
@@ -51,34 +50,6 @@ DirectShowReader::~DirectShowReader()
     RemoveGraphFromRunningObjectTable(mRotRegister);
   }
 #endif
-}
-
-// Try to parse the MP3 stream to make sure this is indeed an MP3, get the
-// estimated duration of the stream, and find the offset of the actual MP3
-// frames in the stream, as DirectShow doesn't like large ID3 sections.
-static nsresult
-ParseMP3Headers(MP3FrameParser *aParser, MediaResource *aResource)
-{
-  const uint32_t MAX_READ_SIZE = 4096;
-
-  uint64_t offset = 0;
-  while (aParser->NeedsData() && !aParser->ParsedHeaders()) {
-    uint32_t bytesRead;
-    char buffer[MAX_READ_SIZE];
-    nsresult rv = aResource->ReadAt(offset, buffer,
-                                    MAX_READ_SIZE, &bytesRead);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (!bytesRead) {
-      // End of stream.
-      return NS_ERROR_FAILURE;
-    }
-
-    aParser->Parse(reinterpret_cast<uint8_t*>(buffer), bytesRead, offset);
-    offset += bytesRead;
-  }
-
-  return aParser->IsMP3() ? NS_OK : NS_ERROR_FAILURE;
 }
 
 nsresult
@@ -114,9 +85,6 @@ DirectShowReader::ReadMetadata(MediaInfo* aInfo,
     return ReadH264Metadata(aInfo, aTags);
   }
 
-  rv = ParseMP3Headers(&mMP3FrameParser, mDecoder->GetResource());
-  NS_ENSURE_SUCCESS(rv, rv);
-
   // Build the graph. Create the filters we need, and connect them. We
   // build the entire graph ourselves to prevent other decoders installed
   // on the system being created and used.
@@ -125,7 +93,7 @@ DirectShowReader::ReadMetadata(MediaInfo* aInfo,
   mSourceFilter = new SourceFilter(MEDIATYPE_Stream, MEDIASUBTYPE_MPEG1Audio);
   NS_ENSURE_TRUE(mSourceFilter, NS_ERROR_FAILURE);
 
-  rv = mSourceFilter->Init(mDecoder->GetResource(), mMP3FrameParser.GetMP3Offset());
+  rv = mSourceFilter->Init(mDecoder->GetResource(), 0);
   NS_ENSURE_SUCCESS(rv, rv);
 
   hr = mGraph->AddFilter(mSourceFilter, L"MozillaDirectShowSource");
@@ -189,16 +157,11 @@ DirectShowReader::ReadMetadata(MediaInfo* aInfo,
   hr = mMediaSeeking->GetCapabilities(&seekCaps);
   mInfo.mMediaSeekable = SUCCEEDED(hr) && (AM_SEEKING_CanSeekAbsolute & seekCaps);
 
-  int64_t duration = mMP3FrameParser.GetDuration();
-  if (SUCCEEDED(hr)) {
-    mInfo.mMetadataDuration.emplace(TimeUnit::FromMicroseconds(duration));
-  }
-
   LOG("Successfully initialized DirectShow MP3 decoder.");
   LOG("Channels=%u Hz=%u duration=%lld bytesPerSample=%d",
       mInfo.mAudio.mChannels,
       mInfo.mAudio.mRate,
-      RefTimeToUsecs(duration),
+      0LL,
       mBytesPerSample);
 
   *aInfo = mInfo;
@@ -378,10 +341,9 @@ DirectShowReader::DecodeVideoFrame(bool &aKeyframeSkip,
   nsTArray<uint8_t> y;
   nsTArray<uint8_t> u;
   nsTArray<uint8_t> v;
-  NS_ENSURE_TRUE(y.SetLength(width * height) &&
-                 u.SetLength((width / 2) * (height / 2)) &&
-                 v.SetLength((width / 2) * (height / 2)),
-                 Finish(E_OUTOFMEMORY));
+  y.SetLength(width * height);
+  u.SetLength((width / 2) * (height / 2));
+  v.SetLength((width / 2) * (height / 2));
   for (int32_t row = 0; row < height; ++row) {
     const uint8_t* src = data + row * stride;
     for (int32_t x = 0; x < width; x += 2) {
