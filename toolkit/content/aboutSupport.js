@@ -337,6 +337,16 @@ var snapshotFormatters = {
     addRowFromKey("features", "webgl2Extensions");
     addRowFromKey("features", "supportsHardwareH264", "hardwareH264");
     addRowFromKey("features", "currentAudioBackend", "audioBackend");
+    if ("directShowEnabled" in data) {
+      addRow("features", "directShowEnabled",
+             strings.GetStringFromName(data.directShowEnabled ? "yes" : "no"));
+      delete data.directShowEnabled;
+    }
+    if ("directShowH264Active" in data) {
+      addRow("features", "directShowH264Active",
+             strings.GetStringFromName(data.directShowH264Active ? "yes" : "no"));
+      delete data.directShowH264Active;
+    }
     addRowFromKey("features", "direct2DEnabled", "#Direct2D");
 
     if ("directWriteEnabled" in data) {

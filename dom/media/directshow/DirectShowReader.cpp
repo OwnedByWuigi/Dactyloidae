@@ -12,6 +12,7 @@
 #include "SourceFilter.h"
 #include "SampleSink.h"
 #include "VideoUtils.h"
+#include "mozilla/Preferences.h"
 
 using namespace mozilla::media;
 
@@ -35,16 +36,22 @@ DirectShowReader::DirectShowReader(AbstractMediaDecoder* aDecoder)
     mAudioRate(0),
     mBytesPerSample(0),
     mIsH264(aDecoder->GetResource()->GetContentType().EqualsLiteral("video/h264") ||
-            aDecoder->GetResource()->GetContentType().EqualsLiteral("video/avc"))
+             aDecoder->GetResource()->GetContentType().EqualsLiteral("video/avc"))
 {
   MOZ_ASSERT(NS_IsMainThread(), "Must be on main thread.");
   MOZ_COUNT_CTOR(DirectShowReader);
+  if (mIsH264) {
+    Preferences::SetBool("media.directshow.h264.active", true);
+  }
 }
 
 DirectShowReader::~DirectShowReader()
 {
   MOZ_ASSERT(NS_IsMainThread(), "Must be on main thread.");
   MOZ_COUNT_DTOR(DirectShowReader);
+  if (mIsH264) {
+    Preferences::SetBool("media.directshow.h264.active", false);
+  }
 #ifdef DIRECTSHOW_REGISTER_GRAPH
   if (mRotRegister) {
     RemoveGraphFromRunningObjectTable(mRotRegister);

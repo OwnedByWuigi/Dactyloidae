@@ -394,6 +394,7 @@ pref("media.hardware-video-decoding.force-enabled", false);
 
 #ifdef MOZ_DIRECTSHOW
 pref("media.directshow.enabled", true);
+pref("media.directshow.h264.active", false);
 #endif
 
 #ifdef MOZ_FMP4

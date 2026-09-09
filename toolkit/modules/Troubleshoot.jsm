@@ -358,6 +358,8 @@ var dataProviders = {
     } catch (e) {}
 
     data.currentAudioBackend = winUtils.currentAudioBackend;
+    data.directShowEnabled = Services.prefs.getBoolPref("media.directshow.enabled", false);
+    data.directShowH264Active = Services.prefs.getBoolPref("media.directshow.h264.active", false);
 
     if (!data.numAcceleratedWindows && gfxInfo) {
 #ifdef XP_WIN
@@ -551,4 +553,3 @@ var dataProviders = {
     });
   }
 };
-
