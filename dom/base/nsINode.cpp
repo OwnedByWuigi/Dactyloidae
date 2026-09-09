@@ -2927,12 +2927,11 @@ FindMatchingElementsWithId(const nsAString& aId, nsINode* aRoot,
 // Actually find elements matching aSelectorList (which must not be
 // null) and which are descendants of aRoot and put them in aList.  If
 // onlyFirstMatch, then stop once the first one is found.
-template<bool onlyFirstMatch, class Collector, class T>
+template<bool onlyFirstMatch, class T>
 static void
 FindMatchingElementsWithClass(nsINode* aRoot, nsIAtom* aClass,
                               nsCaseTreatment aCaseTreatment, T& aList)
 {
-  Collector results;
   for (nsIContent* cur = aRoot->GetFirstChild(); cur;
        cur = cur->GetNextNode(aRoot)) {
     if (!cur->IsElement()) {
@@ -2944,14 +2943,7 @@ FindMatchingElementsWithClass(nsINode* aRoot, nsIAtom* aClass,
         aList.AppendElement(cur->AsElement());
         return;
       }
-      results.AppendElement(cur->AsElement());
-    }
-  }
-  const uint32_t len = results.Length();
-  if (len) {
-    aList.SetCapacity(len);
-    for (uint32_t i = 0; i < len; ++i) {
-      aList.AppendElement(results.ElementAt(i));
+      aList.AppendElement(cur->AsElement());
     }
   }
 }
@@ -2975,7 +2967,7 @@ FindMatchingElements(nsINode* aRoot, nsCSSSelectorList* aSelectorList, T &aList,
     nsCaseTreatment caseTreatment =
       doc->GetCompatibilityMode() == eCompatibility_NavQuirks
         ? eIgnoreCase : eCaseMatters;
-    FindMatchingElementsWithClass<onlyFirstMatch, Collector>(
+    FindMatchingElementsWithClass<onlyFirstMatch>(
       aRoot, selector->mClassList->mAtom, caseTreatment, aList);
     return;
   }
