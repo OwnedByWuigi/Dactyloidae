@@ -162,6 +162,13 @@ SOURCES += [
     'xiph.c'
 ]
 
+# dummy_funcs.c intentionally provides tentative definitions for FFmpeg
+# objects that are disabled by the generated configuration. Clang's default
+# -fno-common turns those placeholders into duplicate definitions when an
+# enabled codec supplies the real object.
+if CONFIG['CLANG_CL']:
+    SOURCES['dummy_funcs.c'].flags += ['-fcommon']
+
 SYMBOLS_FILE = 'avcodec.symbols'
 NO_VISIBILITY_FLAGS = True
 

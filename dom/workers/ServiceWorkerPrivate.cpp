@@ -1355,7 +1355,7 @@ public:
     rv = httpChannel->GetReferrerPolicy(&referrerPolicy);
     NS_ENSURE_SUCCESS(rv, rv);
     switch (referrerPolicy) {
-      case nsIHttpChannel::REFERRER_POLICY_UNSET:
+    case static_cast<uint32_t>(nsIHttpChannel::REFERRER_POLICY_UNSET):
       mReferrerPolicy = ReferrerPolicy::_empty;
       break;
     case nsIHttpChannel::REFERRER_POLICY_NO_REFERRER:

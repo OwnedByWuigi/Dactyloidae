@@ -7,6 +7,8 @@
  *
  */
 
+/* Include Winsock 2 before primpl.h brings in windows.h and Winsock 1. */
+#include <winsock2.h>
 #include "primpl.h"
 
 #if defined(_WIN64)
@@ -117,7 +119,7 @@ _MD_CloseSocket(PROsfd osfd)
 PRInt32
 _MD_SocketAvailable(PRFileDesc *fd)
 {
-    PRInt32 result;
+    u_long result;
 
     if (ioctlsocket(fd->secret->md.osfd, FIONREAD, &result) < 0) {
         PR_SetError(PR_BAD_DESCRIPTOR_ERROR, WSAGetLastError());
@@ -363,7 +365,7 @@ static PRStatus PR_CALLBACK _pr_set_connectex(void)
 {
     _pr_win_connectex = NULL;
     SOCKET sock;
-    PRInt32 dwBytes;
+    DWORD dwBytes;
     int rc;
 
     /* Dummy socket needed for WSAIoctl */
@@ -445,7 +447,7 @@ _PR_MD_TCPSENDTO(PRFileDesc *fd, const void *buf, PRInt32 amount, PRIntn flags,
     memset(&fd->secret->ol, 0, sizeof(fd->secret->ol));
     /* ConnectEx return TRUE on a success and FALSE on an error. */
     if (_pr_win_connectex( (SOCKET)osfd, (struct sockaddr *) addr,
-                           addrlen, buf, amount,
+                           addrlen, (PVOID)buf, amount,
                            &rvSent, &fd->secret->ol) == TRUE) {
         /* When ConnectEx is used, all previously set socket options and
          * property are not enabled and to enable them
@@ -494,7 +496,7 @@ _PR_MD_TCPSENDTO(PRFileDesc *fd, const void *buf, PRInt32 amount, PRIntn flags,
             if ( rv < 0 ) {
                 return -1;
             }
-            rv = GetOverlappedResult(osfd, &fd->secret->ol, &rvSent, FALSE);
+            rv = GetOverlappedResult((HANDLE)osfd, &fd->secret->ol, &rvSent, FALSE);
             if ( rv == TRUE ) {
                 return rvSent;
             } else {

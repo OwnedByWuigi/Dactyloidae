@@ -321,8 +321,8 @@ static PRStatus PR_CALLBACK SocketConnectContinue(
         } else {
 #if defined(_WIN64)
             if (fd->secret->overlappedActive) {
-                PRInt32 rvSent;
-                if (GetOverlappedResult(osfd, &fd->secret->ol, &rvSent, FALSE) == FALSE) {
+                DWORD rvSent;
+                if (GetOverlappedResult((HANDLE)osfd, &fd->secret->ol, &rvSent, FALSE) == FALSE) {
                     err = WSAGetLastError();
                     PR_LOG(_pr_io_lm, PR_LOG_MIN,
                            ("SocketConnectContinue GetOverlappedResult failed %d\n", err));
@@ -353,8 +353,8 @@ static PRStatus PR_CALLBACK SocketConnectContinue(
      * To get result we need to use GetOverlappedResult. */
     if (fd->secret->overlappedActive) {
         PR_ASSERT(fd->secret->nonblocking);
-        PRInt32 rvSent;
-        if (GetOverlappedResult(osfd, &fd->secret->ol, &rvSent, FALSE) == TRUE) {
+        DWORD rvSent;
+        if (GetOverlappedResult((HANDLE)osfd, &fd->secret->ol, &rvSent, FALSE) == TRUE) {
             fd->secret->overlappedActive = PR_FALSE;
             PR_LOG(_pr_io_lm, PR_LOG_MIN,
                    ("SocketConnectContinue GetOverlappedResult succeeded\n"));

@@ -26,6 +26,12 @@
 #include <assert.h>
 #include <arpa/inet.h>
 
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
+
 #include <log/logd.h>
 #include <log/logprint.h>
 
@@ -945,7 +951,11 @@ int android_log_printLogLine(
         return -1;
 
     do {
+#ifdef _WIN32
+        ret = _write(fd, outBuffer, totalLen);
+#else
         ret = write(fd, outBuffer, totalLen);
+#endif
     } while (ret < 0 && errno == EINTR);
 
     if (ret < 0) {
