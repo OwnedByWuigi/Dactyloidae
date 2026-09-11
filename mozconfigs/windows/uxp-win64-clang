@@ -64,7 +64,7 @@ ac_add_options --disable-crashreporter
 ac_add_options --disable-eme
 ac_add_options --disable-maintenance-service
 ac_add_options --disable-parental-controls
-ac_add_options --disable-ctypes
+ac_add_options --enable-ctypes
 mk_add_options MOZ_SERVICES_HEALTHREPORT=0
 export CROSS_COMPILE=0
 export MOZ_CRASHREPORTER=0
