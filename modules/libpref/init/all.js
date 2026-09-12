@@ -4570,6 +4570,8 @@ pref("gfx.direct2d.force-enabled", false);
 
 pref("layers.prefer-opengl", false);
 pref("layers.prefer-d3d9", false);
+// Experimental C GPU rectangle path. Requires D3D11.1 ClearView support and a restart.
+pref("layers.d3d11.gpu-rectangle-fills.enabled", false);
 // Enable fallback if d3d11 can't be used. See bug #1262187
 pref("layers.allow-d3d9-fallback", true);
 #endif
