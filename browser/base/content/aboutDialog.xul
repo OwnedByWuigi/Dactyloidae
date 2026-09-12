@@ -126,19 +126,19 @@
 #if defined(MOZ_OFFICIAL_BRANDING) || defined(MC_OFFICIAL)
 #ifdef MC_PRIVATE_BUILD
 <description class="text-blurb" id="communityDesc">
-              This is a private build of Hydra. If you did not manually build this copy from source yourself, then please download an official version from the <label class="text-link" href="https://eclipse.cx/projects/hydra">Eclipse Community website</label>.
+              This is a private build of Dactyloidae. If you did not manually build this copy from source yourself, then please download an official version from the <label class="text-link" href="https://dactyloidae.xyz/">Dactyloidae website</label>.
           </description>
 #else
           <description class="text-blurb" id="communityDesc">
-              <label class="text-link" href="https://eclipse.cx/projects/hydra">&brandShorterName;</label> is community software released by <label class="text-link" href="https://eclipse.cx">&vendorShortName;</label> and Mozilla developers. Learn <label class="text-link" useoriginprincipal="true" href="about:credits">who contributed</label> to this software.
+              <label class="text-link" href="https://dactyloidae.xyz/">&brandShorterName;</label> is community software released by <label class="text-link" href="https://dactyloidae.xyz/">&vendorShortName;</label> and Mozilla developers. Learn <label class="text-link" useoriginprincipal="true" href="about:credits">who contributed</label> to this software.
           </description>
           <description class="text-blurb" id="contributeDesc">
-              If you wish to contribute, please consider helping out by providing support to other users on the <label class="text-link" href="https://board.eclipse.cx/">&vendorShortName; forum</label> or getting involved in our development by tackling some of the issues found in our <label class="text-link" href="https://github.com/Eclipse-Community/UXP/">GitHub issue tracker</label>.
+              If you wish to contribute, please consider helping out by getting involved in our development by tackling some of the issues found in our <label class="text-link" href="https://repo.dactyloidae.xyz/Dactyloidae/UXP/issues">issue tracker</label>.
           </description>
 #endif
 #else
           <description class="text-blurb" id="communityDesc">
-          Dactyloidae is released by <label class="text-link" href="https://eclipse.cx">Eclipse Community</label>.
+          Dactyloidae is released by <label class="text-link" href="https://dactyloidae.xyz/">Dactyloidae Team</label>.
 		      </description>
 
           <description class="text-blurb">
@@ -150,7 +150,7 @@
 		      </description>
 		
           <description class="text-blurb" id="contributeDesc">
-		      If you wish to contribute, please consider helping out by getting involved in our development by tackling some of the issues found in our <label class="text-link" href="https://github.com/Eclipse-Community/Dactyloidae/">GitHub issue tracker</label>.
+		      If you wish to contribute, please consider helping out by getting involved in our development by tackling some of the issues found in our <label class="text-link" href="https://repo.dactyloidae.xyz/Dactyloidae/UXP/issues">issue tracker</label>.
           </description>
 #endif
         </vbox>
