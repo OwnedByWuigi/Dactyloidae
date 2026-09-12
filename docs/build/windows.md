@@ -1,37 +1,29 @@
-# How to compile Dactyloidae (as of version 13.2)
+# How to compile Dactyloidae
 
-Step 0. INSTALL GIT FOR WINDOWS!!!!!
+Step 1. Install Git for Windows (win7 users should install 2.46.2)
 
-Step 1. If you are on Windows 8.1 or older, mount your installation media.
+Step 2. Enable .NET 3.5 in optionalfeatures.exe\
+NOTE: Win8 users may need to use this https://github.com/abbodi1406/dotNetFx35W81
 
-Step 2. Go Win+R and type 'optionalfeatures.exe' and check .NET 3.5
+Step 3. Install VS 2019 Community with Desktop Developement with C++ and "C++ Windows XP Support for VS 2017 (v141)\
+and MSVC v141 - VS 2017 C++ x64/x86 build tools (v14.16)\
+Make sure you also get 10.0.19041 sdk
 
-Step 3. Get the DirectX SDK (June 2010) from HERE: https://archive.org/details/dxsdk_jun10
+Step 4. Get the DirectX SDK https://www.microsoft.com/en-us/download/details.aspx?id=6812\
+(NOTE if you get a S2023 error in the end you can safely ignore it)
 
-Step 4. After that has installed, get MozillaBuild 3.2 from HERE: https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-3.2.exe
+Step 5. Get and Install MozillaBuild from here https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-3.2.exe
 
-Step 5. After THAT has installed, you can commence onto installing the FWDK. First, get the .7z HERE: https://archive.org/details/funny-windows-development-kit
+Step 6. Copy shell-msvc-dactyl.bat from docs folder to your mozilla-build directory (usually at C:\mozilla-build)
 
-Step 6. Extract the FWDK to C:\Dev
+Step 7. Run shell-msvc-dactyl.bat from the mozilla-build directory.
 
-Step 7. Move the start-shell-ewdk and start-shell-ewdk-x64 from this folder into c:\mozilla-build.
+Step 8. Select the architecture that you want to build Dactyloidae for
 
-Step 8. Now that you have done all those prerequisites, open your start-shell-ewdk (64 if you want to build a 64 bit browser)
+Step 9. CD to the Repo (msys uses unix style dirs, c:\ is /c/ for example)
 
-Step 9. Git clone this repo if you have not already
+Step 10. Run ./build-msvc-win
 
-Step 10. CD into the directory of where your git clone is, and execute THESE commands:
+Step 10.5. After the build, if you really feel fancy, you can test your build before packaging it with  ``./mach run``
 
-``git config core.autocrlf false``
-
-``git config core.eof lf``
-
-``git rm --cached -r .``
-
-``git reset --hard``
-
-Step 11. Now that you have FINALLY done all those, you are now free to do a ``./mach build`` (isn't mozillabuild fun?)
-
-Step 11.5. After the build, if you really feel fancy, you can test your build before packaging it with  ``./mach run``
-
-Step 12. Run ``./mach installer ``  (64-bit only for now, sorry)
+Step 11. Run ``./mach installer``  (if you want to build an installer)
