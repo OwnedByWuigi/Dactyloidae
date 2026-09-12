@@ -34,11 +34,6 @@
 #include "FlacDecoder.h"
 #include "FlacDemuxer.h"
 
-#ifdef MOZ_DIRECTSHOW
-#include "DirectShowDecoder.h"
-#include "DirectShowReader.h"
-#endif
-
 #include "nsPluginHost.h"
 #include "MediaPrefs.h"
 
@@ -143,14 +138,6 @@ IsFlacSupportedType(const nsACString& aType,
   return FlacDecoder::CanHandleMediaType(aType, aCodecs);
 }
 
-#ifdef MOZ_DIRECTSHOW
-static bool
-IsDirectShowSupportedType(const nsACString& aType)
-{
-  return DirectShowDecoder::GetSupportedCodecs(aType, nullptr);
-}
-#endif
-
 static
 CanPlayStatus
 CanHandleCodecsType(const MediaContentType& aType,
@@ -210,11 +197,6 @@ CanHandleCodecsType(const MediaContentType& aType,
   if (IsFlacSupportedType(aType.GetMIMEType(), aType.GetCodecs())) {
     return CANPLAY_YES;
   }
-#ifdef MOZ_DIRECTSHOW
-  if (IsDirectShowSupportedType(aType.GetMIMEType())) {
-    return CANPLAY_YES;
-  }
-#endif
   if (!codecList) {
     return CANPLAY_MAYBE;
   }
@@ -276,11 +258,6 @@ CanHandleMediaType(const MediaContentType& aType,
   if (IsFlacSupportedType(aType.GetMIMEType())) {
     return CANPLAY_MAYBE;
   }
-#ifdef MOZ_DIRECTSHOW
-  if (IsDirectShowSupportedType(aType.GetMIMEType())) {
-    return CANPLAY_MAYBE;
-  }
-#endif
   return CANPLAY_NO;
 }
 
@@ -370,13 +347,6 @@ InstantiateDecoder(const nsACString& aType,
     return decoder.forget();
   }
 
-#ifdef MOZ_DIRECTSHOW
-  if (IsDirectShowSupportedType(aType)) {
-    decoder = new DirectShowDecoder(aOwner);
-    return decoder.forget();
-  }
-#endif
-
   return nullptr;
 }
 
@@ -423,11 +393,6 @@ MediaDecoderReader* DecoderTraits::CreateReader(const nsACString& aType, Abstrac
     decoderReader =
       new MediaFormatReader(aDecoder, new WebMDemuxer(aDecoder->GetResource()));
   }
-#ifdef MOZ_DIRECTSHOW
-  else if (IsDirectShowSupportedType(aType)) {
-    decoderReader = new DirectShowReader(aDecoder);
-  }
-#endif
 
   return decoderReader;
 }
@@ -453,9 +418,6 @@ bool DecoderTraits::IsSupportedInVideoDocument(const nsACString& aType)
     IsAACSupportedType(aType) ||
     IsWaveSupportedType(aType) ||
     IsFlacSupportedType(aType) ||
-#ifdef MOZ_DIRECTSHOW
-    IsDirectShowSupportedType(aType) ||
-#endif
     false;
 }
 
