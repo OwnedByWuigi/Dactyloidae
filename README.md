@@ -14,7 +14,7 @@ Some advantages over upstream, roytam1's Serpent, Eclipse Hydra and Firefox are:
 - Support for extensions in the Chrome and Edge Web Store (soon)
 - Support for extensions released for both Pale Moon, Basilisk and Firefox
 - WebExtensions support comparable to Firefox ESR 78
-- Literally being the fastest XUL browser (33.7 in Speedometer 2.1 compared to 22.4 in Pale Moon 34.2 AVX2)
+- Literally being the fastest XUL browser (48.7 in Speedometer 2.1 compared to 22.4 in Pale Moon 34.2 AVX2)
 - Re-add support for iOS, Android, Windows 2000 and later, NetBSD (soon OpenBSD)
 
 ## Interested in running Dactyloidae in Win9x?
