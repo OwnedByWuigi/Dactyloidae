@@ -16,8 +16,8 @@ export PATH="$CLANG:$PATH"
 
 ##Uncomment PGO for release build
 
-# 16 jobs for 16 cores
-mk_add_options MOZ_MAKE_FLAGS="-j6"
+# auto detect threads
+mk_add_options MOZ_MAKE_FLAGS="-j$NUMBER_OF_PROCESSORS"
 
 # x64 build
 ac_add_options --host=x86_64-pc-mingw32
