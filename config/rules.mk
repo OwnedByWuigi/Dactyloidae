@@ -531,7 +531,7 @@ endif
 ##############################################
 ifneq (1,$(NO_PROFILE_GUIDED_OPTIMIZE))
 ifdef MOZ_PROFILE_USE
-ifeq ($(OS_ARCH)_$(GNU_CC), WINNT_)
+ifeq ($(OS_ARCH)_$(GNU_CC)_$(CLANG_CL), WINNT__)
 # When building with PGO, we have to make sure to re-link
 # in the MOZ_PROFILE_USE phase if we linked in the
 # MOZ_PROFILE_GENERATE phase. We'll touch this pgo.relink
@@ -563,7 +563,7 @@ endif # MOZ_PROFILE_USE
 ifdef MOZ_PROFILE_GENERATE
 # Clean up profiling data during PROFILE_GENERATE phase
 export::
-ifeq ($(OS_ARCH)_$(GNU_CC), WINNT_)
+ifeq ($(OS_ARCH)_$(GNU_CC)_$(CLANG_CL), WINNT__)
 	$(foreach pgd,$(wildcard *.pgd),pgomgr -clear $(pgd);)
 else
 ifdef GNU_CC

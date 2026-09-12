@@ -876,7 +876,17 @@ case "$target" in
         if test "$AS_BIN"; then
             AS="$(basename "$AS_BIN")"
         fi
-        AR='lib'
+        if test -n "$CLANG_CL"; then
+            dnl Microsoft lib.exe cannot archive LLVM bitcode from ThinLTO.
+            AC_PATH_PROG(LLVM_LIB, llvm-lib.exe)
+            if test -z "$LLVM_LIB"; then
+                AC_MSG_ERROR([clang-cl requires llvm-lib.exe on PATH])
+            fi
+            dnl expandlibs invokes AR from native Windows Python.
+            AR="$(cd "$(dirname "$LLVM_LIB")" && pwd -W)/$(basename "$LLVM_LIB")"
+        else
+            AR='lib'
+        fi
         AR_FLAGS='-NOLOGO -OUT:$@'
         AR_EXTRACT=
         RANLIB='echo not_ranlib'
@@ -4546,6 +4556,9 @@ AC_SUBST(PROFILE_USE_CFLAGS)
 AC_SUBST(PROFILE_USE_LDFLAGS)
 
 fi # ! SKIP_COMPILER_CHECKS
+
+dnl Windows skips the GCC probes above, but still needs LLVM PGO setup.
+MOZ_CLANG_CL_PGO
 
 AC_DEFINE(CPP_THROW_NEW, [throw()])
 AC_LANG_C
