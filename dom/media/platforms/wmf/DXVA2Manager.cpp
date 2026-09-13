@@ -389,10 +389,9 @@ D3D9DXVA2Manager::Init(layers::KnowsCompositor* aKnowsCompositor,
   bool found = false;
   for (UINT i = 0; i < deviceCount; i++) {
     if (decoderDevices[i] == DXVA2_ModeH264_E ||
-        decoderDevices[i] == DXVA2_Intel_ModeH264_E) {
+        decoderDevices[i] == DXVA2_Intel_ModeH264_E ||
+		decoderDevices[i] == DXVA2_ModeVP9_VLD_Profile0) {
       mDecoderGUID = decoderDevices[i];
-      found = true;
-    } else if (decoderDevices[i] == DXVA2_ModeVP9_VLD_Profile0) {
       found = true;
     }
   }
@@ -696,10 +695,8 @@ D3D11DXVA2Manager::Init(layers::KnowsCompositor* aKnowsCompositor,
     GUID id;
     hr = videoDevice->GetVideoDecoderProfile(i, &id);
     if (SUCCEEDED(hr)) {
-      if (id == DXVA2_ModeH264_E || id == DXVA2_Intel_ModeH264_E) {
+      if (id == DXVA2_ModeH264_E || id == DXVA2_Intel_ModeH264_E || id == DXVA2_ModeVP9_VLD_Profile0) {
         mDecoderGUID = id;
-        found = true;
-      } else if (id == DXVA2_ModeVP9_VLD_Profile0) {
         found = true;
       }
     }
