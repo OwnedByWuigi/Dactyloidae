@@ -4,6 +4,7 @@
 browser.jar:
         content/browser/pictureInPicture.xul          (content/pictureInPicture.xul)
         content/browser/pictureInPicture.js           (content/pictureInPicture.js)
+        content/browser/pictureInPicture.css          (content/pictureInPicture.css)
         content/browser/pictureInPictureContent.js    (content/pictureInPictureContent.js)
 %  content browser %content/browser/ contentaccessible=yes
 #ifdef XP_MACOSX

@@ -11,6 +11,7 @@ var output = null;
 var still = null;
 var observer = null;
 var sourceWindow = null;
+var initialized = false;
 var events = ["play", "pause", "volumechange", "ended", "seeked", "resize"];
 
 function update() {
@@ -63,6 +64,12 @@ function closePlayer() {
 }
 
 addMessageListener("PictureInPicture:Init", message => {
+  // takeSource consumes the handoff. A duplicate initialization must not
+  // consume it again or close an already playing window.
+  if (initialized) {
+    return;
+  }
+  initialized = true;
   try {
     source = PictureInPicture.takeSource(message.data.id);
     sourceWindow = source.ownerGlobal;

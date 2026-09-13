@@ -13,6 +13,9 @@ var Player = {
   sourceTab: null,
 
   init() {
+    if (this.browser) {
+      return;
+    }
     let args = window.arguments[0];
     this.source = args.browser;
     if (!this.source || !this.source.isConnected) {
@@ -38,9 +41,16 @@ var Player = {
     browser.relatedBrowser = this.source;
     document.getElementById("player-container").appendChild(browser);
     let mm = browser.messageManager;
-    mm.addMessageListener("PictureInPicture:Ready", () => {
+    let initialized = false;
+    let ready = () => {
+      if (initialized) {
+        return;
+      }
+      initialized = true;
+      mm.removeMessageListener("PictureInPicture:Ready", ready);
       mm.sendAsyncMessage("PictureInPicture:Init", {id: args.id});
-    });
+    };
+    mm.addMessageListener("PictureInPicture:Ready", ready);
     mm.addMessageListener("PictureInPicture:Close", this.close);
     mm.addMessageListener("PictureInPicture:State", message => {
       document.getElementById("play").label = message.data.paused ?
@@ -79,8 +89,20 @@ var Player = {
   },
 };
 
-window.addEventListener("load", () => Player.init(), {once: true});
-window.addEventListener("unload", () => Player.destroy(), {once: true});
+// Only consume the listener for the player document's own load, rather than
+// a load from the embedded browser.
+window.addEventListener("load", function onLoad(event) {
+  if (event.target == document) {
+    window.removeEventListener("load", onLoad);
+    Player.init();
+  }
+});
+window.addEventListener("unload", function onUnload(event) {
+  if (event.target == document) {
+    window.removeEventListener("unload", onUnload);
+    Player.destroy();
+  }
+});
 window.addEventListener("keydown", event => {
   if (event.key == "Escape") {
     window.close();
