@@ -5187,7 +5187,7 @@ void HTMLMediaElement::SetMozPictureInPicture(bool aEnabled)
 {
   MOZ_ASSERT(NS_IsMainThread());
   mPictureInPicture = aEnabled;
-  if (mDecoder && !mDecoder->IsShutdown()) {
+  if (mDecoder && !mShuttingDown) {
     mDecoder->NotifyOwnerActivityChanged(!IsHidden());
   }
 }
