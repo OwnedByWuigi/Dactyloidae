@@ -72,7 +72,7 @@ this.PictureInPicture = {
     }
     let screen = browser.ownerGlobal.screen;
     let width = Math.min(480, screen.availWidth);
-    let height = Math.min(Math.round(width * data.height / data.width) + 48,
+    let height = Math.min(Math.round(width * data.height / data.width),
                           Math.round(screen.availHeight * 0.8));
     this.window = browser.ownerGlobal.openDialog(
       "chrome://browser/content/pictureInPicture.xul", "",

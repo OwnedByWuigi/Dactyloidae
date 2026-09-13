@@ -5,3 +5,100 @@
 browser[remote="true"] {
   -moz-binding: url("chrome://global/content/bindings/remote-browser.xml#remote-browser");
 }
+
+#picture-in-picture {
+  min-width: 300px;
+  min-height: 170px;
+  background: black;
+  color: white;
+}
+
+#player-container {
+  background: black;
+}
+
+#player-overlay {
+  -moz-window-dragging: drag;
+}
+
+.pip-controls {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+#player-overlay:hover .pip-controls,
+#player-overlay[keyboard] .pip-controls,
+#player-overlay[seeking] .pip-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#top-controls {
+  padding: 8px;
+  background: linear-gradient(rgba(0, 0, 0, .55), transparent);
+}
+
+#playback-controls {
+  padding: 12px 10px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .85));
+  -moz-window-dragging: no-drag;
+}
+
+.pip-controls button {
+  -moz-appearance: none;
+  -moz-window-dragging: no-drag;
+  min-width: 0;
+  margin: 2px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: rgba(30, 30, 30, .8);
+  color: white;
+  text-shadow: none;
+}
+
+.pip-controls button:hover,
+.pip-controls button:focus {
+  border-color: white;
+  background: #444;
+}
+
+#close {
+  font-size: 22px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+#seek {
+  display: block;
+  width: 100%;
+  margin: 0 0 6px;
+  cursor: pointer;
+  -moz-window-dragging: no-drag;
+}
+
+#seek:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+#time {
+  margin: 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+#resize {
+  justify-self: end;
+  align-self: end;
+  width: 14px;
+  height: 14px;
+  cursor: se-resize;
+  -moz-window-dragging: no-drag;
+  opacity: 0;
+}
+
+#resize:hover {
+  opacity: 1;
+}

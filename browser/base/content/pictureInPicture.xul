@@ -6,17 +6,35 @@
 <?xml-stylesheet href="chrome://browser/content/pictureInPicture.css" type="text/css"?>
 <!DOCTYPE window SYSTEM "chrome://browser/locale/browser.dtd">
 <window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
         id="picture-in-picture" windowtype="Browser:PictureInPicture"
-        title="&pictureInPicture.title;" width="480" height="318"
-        persist="screenX screenY width height" style="min-width: 240px; min-height: 160px;">
+        title="&pictureInPicture.title;" width="480" height="270"
+        hidechrome="true"
+        persist="screenX screenY width height">
   <script type="application/javascript" src="chrome://browser/content/pictureInPicture.js"/>
-  <vbox id="player-container" flex="1" style="background: black;"/>
-  <hbox align="center" pack="center">
-    <button id="play" label="&mediaPlay.label;" oncommand="Player.command('playpause');"/>
-    <button id="mute" label="&mediaMute.label;" oncommand="Player.command('mute');"/>
-    <button id="return" label="&pictureInPicture.return;" oncommand="Player.returnToTab();"/>
-    <button id="close" label="&pictureInPicture.close;" oncommand="window.close();"/>
-  </hbox>
+  <stack flex="1">
+    <vbox id="player-container" flex="1"/>
+    <vbox id="player-overlay" flex="1">
+      <hbox class="pip-controls" id="top-controls" pack="end">
+        <button id="close" label="&#x00D7;" tooltiptext="&pictureInPicture.close;"
+                aria-label="&pictureInPicture.close;" oncommand="window.close();"/>
+      </hbox>
+      <spacer flex="1"/>
+      <vbox class="pip-controls" id="playback-controls">
+        <html:input id="seek" type="range" min="0" max="1" step="0.1" value="0"
+                    disabled="disabled" aria-label="&pictureInPicture.seek;"
+                    oninput="Player.seek(this.value);" onchange="Player.finishSeeking();"/>
+        <hbox align="center">
+          <button id="play" label="&mediaPlay.label;" oncommand="Player.command('playpause');"/>
+          <button id="mute" label="&mediaMute.label;" oncommand="Player.command('mute');"/>
+          <label id="time" value="0:00 / 0:00" flex="1" crop="end"/>
+          <button id="return" label="&pictureInPicture.return;" oncommand="Player.returnToTab();"/>
+        </hbox>
+      </vbox>
+    </vbox>
+    <resizer id="resize" dir="bottomright" right="0" bottom="0"/>
+  </stack>
   <label id="pause-label" value="&mediaPause.label;" hidden="true"/>
   <label id="unmute-label" value="&mediaUnmute.label;" hidden="true"/>
+  <label id="live-label" value="&pictureInPicture.live;" hidden="true"/>
 </window>

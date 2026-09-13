@@ -11,6 +11,8 @@ var Player = {
   browser: null,
   source: null,
   sourceTab: null,
+  seeking: false,
+  state: null,
 
   init() {
     if (this.browser) {
@@ -53,19 +55,68 @@ var Player = {
     mm.addMessageListener("PictureInPicture:Ready", ready);
     mm.addMessageListener("PictureInPicture:Close", this.close);
     mm.addMessageListener("PictureInPicture:State", message => {
-      document.getElementById("play").label = message.data.paused ?
-        this.playLabel : document.getElementById("pause-label").value;
-      document.getElementById("mute").label = message.data.muted ?
-        document.getElementById("unmute-label").value : this.muteLabel;
+      this.updateState(message.data);
     });
     browser.addEventListener("oop-browser-crashed", this.close);
     mm.loadFrameScript("chrome://browser/content/pictureInPictureContent.js", false);
   },
 
-  command(command) {
+  command(command, data = {}) {
     if (this.browser) {
-      this.browser.messageManager.sendAsyncMessage("PictureInPicture:Command", {command});
+      this.browser.messageManager.sendAsyncMessage("PictureInPicture:Command",
+                                                   Object.assign({command}, data));
     }
+  },
+
+  formatTime(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) {
+      return "0:00";
+    }
+    seconds = Math.floor(seconds);
+    let hours = Math.floor(seconds / 3600);
+    let minutes = Math.floor(seconds / 60) % 60;
+    let pad = value => value < 10 ? "0" + value : String(value);
+    return (hours ? hours + ":" + pad(minutes) : String(minutes)) +
+           ":" + pad(seconds % 60);
+  },
+
+  updateTime(position) {
+    let duration = this.state && this.state.duration;
+    let total = Number.isFinite(duration) ? this.formatTime(duration) :
+      document.getElementById("live-label").value;
+    document.getElementById("time").value = this.formatTime(position) + " / " + total;
+  },
+
+  updateState(state) {
+    this.state = state;
+    document.getElementById("play").label = state.paused ?
+      this.playLabel : document.getElementById("pause-label").value;
+    document.getElementById("mute").label = state.muted ?
+      document.getElementById("unmute-label").value : this.muteLabel;
+    if (!this.seeking) {
+      let seek = document.getElementById("seek");
+      seek.disabled = !(state.seekableEnd > state.seekableStart);
+      seek.min = state.seekableStart;
+      seek.max = state.seekableEnd || 1;
+      seek.value = state.currentTime;
+      this.updateTime(state.currentTime);
+    }
+  },
+
+  seek(value) {
+    let position = Number(value);
+    if (!Number.isFinite(position) || document.getElementById("seek").disabled) {
+      return;
+    }
+    this.seeking = true;
+    document.getElementById("player-overlay").setAttribute("seeking", "true");
+    this.updateTime(position);
+    this.command("seek", {time: position});
+  },
+
+  finishSeeking() {
+    this.seeking = false;
+    document.getElementById("player-overlay").removeAttribute("seeking");
   },
 
   returnToTab() {
@@ -104,10 +155,22 @@ window.addEventListener("unload", function onUnload(event) {
   }
 });
 window.addEventListener("keydown", event => {
+  document.getElementById("player-overlay").setAttribute("keyboard", "true");
   if (event.key == "Escape") {
     window.close();
-  } else if (event.key == " " && event.target.localName != "button") {
+  } else if (event.target.localName == "input" || event.target.localName == "button") {
+    return;
+  } else if (event.key == " ") {
     event.preventDefault();
     Player.command("playpause");
+  } else if (event.key == "ArrowLeft" || event.key == "ArrowRight") {
+    event.preventDefault();
+    if (Player.state) {
+      Player.command("seek", {time: Player.state.currentTime +
+                                    (event.key == "ArrowLeft" ? -5 : 5)});
+    }
   }
+});
+window.addEventListener("mousemove", () => {
+  document.getElementById("player-overlay").removeAttribute("keyboard");
 });

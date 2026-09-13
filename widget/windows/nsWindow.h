@@ -152,6 +152,7 @@ public:
   virtual nsresult        MakeFullScreen(bool aFullScreen,
                                          nsIScreen* aScreen = nullptr) override;
   NS_IMETHOD              HideWindowChrome(bool aShouldHide) override;
+  void                    SetAlwaysOnTop(bool aAlwaysOnTop) override;
   NS_IMETHOD              Invalidate(bool aEraseBackground = false,
                                      bool aUpdateNCArea = false,
                                      bool aIncludeChildren = false);

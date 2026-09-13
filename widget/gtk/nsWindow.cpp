@@ -1256,6 +1256,15 @@ nsWindow::NativeMove()
 }
 
 void
+nsWindow::SetAlwaysOnTop(bool aAlwaysOnTop)
+{
+    nsBaseWidget::SetAlwaysOnTop(aAlwaysOnTop);
+    if (mShell) {
+        gtk_window_set_keep_above(GTK_WINDOW(mShell), aAlwaysOnTop);
+    }
+}
+
+void
 nsWindow::SetZIndex(int32_t aZIndex)
 {
     nsIWidget* oldPrev = GetPrevSibling();

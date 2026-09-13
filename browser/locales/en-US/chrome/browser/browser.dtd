@@ -781,3 +781,5 @@ you can use these alternative items. Otherwise, their values should be empty.  -
 <!ENTITY pictureInPicture.title "Picture-in-Picture">
 <!ENTITY pictureInPicture.return "Return to tab">
 <!ENTITY pictureInPicture.close "Close">
+<!ENTITY pictureInPicture.seek "Playback position">
+<!ENTITY pictureInPicture.live "Live">

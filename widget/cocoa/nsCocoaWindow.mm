@@ -1319,6 +1319,18 @@ nsCocoaWindow::SetSizeMode(nsSizeMode aMode)
 // This has to preserve the window's frame bounds.
 // This method requires (as does the Windows impl.) that you call Resize shortly
 // after calling HideWindowChrome. See bug 498835 for fixing this.
+void nsCocoaWindow::SetAlwaysOnTop(bool aAlwaysOnTop)
+{
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
+  nsBaseWidget::SetAlwaysOnTop(aAlwaysOnTop);
+  if (mWindow && (mWindowType == eWindowType_toplevel ||
+                  mWindowType == eWindowType_dialog)) {
+    [mWindow setLevel:aAlwaysOnTop ? NSFloatingWindowLevel : NSNormalWindowLevel];
+    [mWindow setHidesOnDeactivate:NO];
+  }
+  NS_OBJC_END_TRY_ABORT_BLOCK;
+}
+
 NS_IMETHODIMP nsCocoaWindow::HideWindowChrome(bool aShouldHide)
 {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
@@ -1353,6 +1365,9 @@ NS_IMETHODIMP nsCocoaWindow::HideWindowChrome(bool aShouldHide)
 
   // Re-import state.
   [mWindow importState:state];
+  if (mAlwaysOnTop) {
+    SetAlwaysOnTop(true);
+  }
 
   // Reparent the content view.
   [mWindow setContentView:contentView];

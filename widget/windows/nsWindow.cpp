@@ -2033,6 +2033,17 @@ nsWindow::BeginResizeDrag(WidgetGUIEvent* aEvent,
  *
  **************************************************************/
 
+void
+nsWindow::SetAlwaysOnTop(bool aAlwaysOnTop)
+{
+  nsBaseWidget::SetAlwaysOnTop(aAlwaysOnTop);
+  if (mWnd && (mWindowType == eWindowType_toplevel ||
+               mWindowType == eWindowType_dialog)) {
+    ::SetWindowPos(mWnd, aAlwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST,
+                   0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  }
+}
+
 // Position the window behind the given window
 void
 nsWindow::PlaceBehind(nsTopLevelWidgetZPlacement aPlacement,
@@ -2059,6 +2070,10 @@ nsWindow::PlaceBehind(nsTopLevelWidgetZPlacement aPlacement,
     flags |= SWP_NOACTIVATE;
   }
 
+  // Application z-order changes must not demote an always-on-top window.
+  if (mAlwaysOnTop) {
+    behind = HWND_TOPMOST;
+  }
   ::SetWindowPos(mWnd, behind, 0, 0, 0, 0, flags);
 }
 

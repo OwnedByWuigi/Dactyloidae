@@ -12,7 +12,8 @@ var still = null;
 var observer = null;
 var sourceWindow = null;
 var initialized = false;
-var events = ["play", "pause", "volumechange", "ended", "seeked", "resize"];
+var events = ["play", "pause", "volumechange", "ended", "seeking", "seeked",
+              "resize", "timeupdate", "durationchange", "progress"];
 
 function update() {
   if (!source) {
@@ -26,8 +27,40 @@ function update() {
     still.height = source.videoHeight;
     still.getContext("2d").drawImage(source, 0, 0, still.width, still.height);
   }
-  sendAsyncMessage("PictureInPicture:State",
-                   {paused: source.paused || source.ended, muted: source.muted});
+  let ranges = source.seekable;
+  sendAsyncMessage("PictureInPicture:State", {
+    paused: source.paused || source.ended,
+    muted: source.muted,
+    currentTime: source.currentTime,
+    duration: source.duration,
+    seekableStart: ranges.length ? ranges.start(0) : 0,
+    seekableEnd: ranges.length ? ranges.end(ranges.length - 1) : 0,
+  });
+}
+
+function seekTo(time) {
+  if (typeof time != "number" || !Number.isFinite(time)) {
+    return;
+  }
+  let ranges = source.seekable;
+  // Live streams may have no seekable range, or a moving DVR window.
+  // Pick the nearest valid point, including when there are gaps.
+  let position = null;
+  let distance = Infinity;
+  for (let i = 0; i < ranges.length; i++) {
+    let candidate = Math.max(ranges.start(i), Math.min(time, ranges.end(i)));
+    if (Math.abs(candidate - time) < distance) {
+      distance = Math.abs(candidate - time);
+      position = candidate;
+    }
+  }
+  if (position !== null) {
+    try {
+      source.currentTime = position;
+    } catch (error) {
+      Components.utils.reportError(error);
+    }
+  }
 }
 
 function cleanup() {
@@ -82,7 +115,11 @@ addMessageListener("PictureInPicture:Init", message => {
       element.style.cssText = "position:absolute;width:100%;height:100%;object-fit:contain";
       doc.body.appendChild(element);
     }
-    output.muted = true; // Audio continues to come from the originating video.
+    // Decoder capture redirects audio to the captured stream. Its samples
+    // already include the source's volume/mute settings. MediaStream sources
+    // keep their own audio output, so mute only that case to avoid an echo.
+    output.muted = !!source.srcObject;
+    output.volume = 1;
     source.mozPictureInPicture = true;
     stream = source.mozCaptureStream();
     output.srcObject = stream;
@@ -123,6 +160,9 @@ addMessageListener("PictureInPicture:Command", message => {
       break;
     case "mute":
       source.muted = !source.muted;
+      break;
+    case "seek":
+      seekTo(message.data.time);
       break;
     case "close":
       cleanup();
