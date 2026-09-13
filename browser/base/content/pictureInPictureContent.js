@@ -19,6 +19,11 @@ function update() {
   if (!source) {
     return;
   }
+  // Gate already-buffered audio here rather than waiting for source mute
+  // changes to travel through the decoder's capture queue.
+  if (output) {
+    output.muted = !!source.srcObject || source.muted;
+  }
   // Capture streams do not produce frames while their source is paused.
   // Keep a snapshot for that case, without changing the source's play state.
   still.hidden = !source.paused && !source.ended;
@@ -116,14 +121,14 @@ addMessageListener("PictureInPicture:Init", message => {
                              "max-width:none;max-height:none;object-fit:contain";
       doc.body.appendChild(element);
     }
-    // Decoder capture redirects audio to the captured stream. Its samples
-    // already include the source's volume/mute settings. MediaStream sources
-    // keep their own audio output, so mute only that case to avoid an echo.
-    output.muted = !!source.srcObject;
+    // Decoder capture redirects audio to this output. PiP content mute is
+    // applied here; other volume/mute policies remain in the decoder.
+    // MediaStream sources keep their own output, so avoid doubling it.
+    output.muted = !!source.srcObject || source.muted;
     output.volume = 1;
-    source.mozPictureInPicture = true;
     stream = source.mozCaptureStream();
     output.srcObject = stream;
+    source.mozPictureInPicture = true;
     output.play().catch(error => {
       Components.utils.reportError(error);
       closePlayer();
@@ -161,6 +166,7 @@ addMessageListener("PictureInPicture:Command", message => {
       break;
     case "mute":
       source.muted = !source.muted;
+      update();
       break;
     case "seek":
       seekTo(message.data.time);
