@@ -5183,6 +5183,15 @@ bool HTMLMediaElement::IsActive() const
   return ownerDoc && ownerDoc->IsActive() && ownerDoc->IsVisible();
 }
 
+void HTMLMediaElement::SetMozPictureInPicture(bool aEnabled)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  mPictureInPicture = aEnabled;
+  if (mDecoder && !mDecoder->IsShutdown()) {
+    mDecoder->NotifyOwnerActivityChanged(!IsHidden());
+  }
+}
+
 bool HTMLMediaElement::IsHidden() const
 {
   nsIDocument* ownerDoc;

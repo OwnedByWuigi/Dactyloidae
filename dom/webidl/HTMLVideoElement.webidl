@@ -46,6 +46,10 @@ partial interface HTMLVideoElement {
   // True if the video has an audio track available.
   readonly attribute boolean mozHasAudio;
 
+  // Browser UI only: keep the source decoder active for a floating player.
+  [ChromeOnly]
+  attribute boolean mozPictureInPicture;
+
   // True if the video should use a screen wake lock.
   [Pref="dom.wakelock.enabled", Func="Navigator::HasWakeLockSupport"]
   attribute boolean mozUseScreenWakeLock;

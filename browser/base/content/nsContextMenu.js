@@ -442,6 +442,11 @@ nsContextMenu.prototype = {
     this.showItem("context-media-loop", onMedia);
     this.showItem("context-media-showcontrols", onMedia && !this.target.controls);
     this.showItem("context-media-hidecontrols", this.target.controls && (this.onVideo || (this.onAudio && !this.inSyntheticDoc)));
+    this.showItem("context-video-pictureinpicture", this.onVideo);
+    this.setItemAttr("context-video-pictureinpicture", "disabled",
+                     !this.onVideo || this.target.error ||
+                     !this.target.videoWidth || !this.target.videoHeight ||
+                     !!this.target.mediaKeys);
     this.showItem("context-video-fullscreen", this.onVideo && this.target.ownerDocument.fullscreenElement == null);
     this.showItem("context-media-eme-learnmore", this.onDRMMedia);
     this.showItem("context-media-eme-separator", this.onDRMMedia);
@@ -1680,6 +1685,11 @@ nsContextMenu.prototype = {
 
   switchPageDirection: function() {
     this.browser.messageManager.sendAsyncMessage("SwitchDocumentDirection");
+  },
+
+  pictureInPicture: function() {
+    let {PictureInPicture} = Cu.import("resource:///modules/PictureInPicture.jsm", {});
+    PictureInPicture.open(this.browser, this.target);
   },
 
   mediaCommand : function(command, data) {

@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<!DOCTYPE window SYSTEM "chrome://browser/locale/browser.dtd">
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        id="picture-in-picture" windowtype="Browser:PictureInPicture"
+        title="&pictureInPicture.title;" width="480" height="318"
+        persist="screenX screenY width height" style="min-width: 240px; min-height: 160px;">
+  <script type="application/javascript" src="chrome://browser/content/pictureInPicture.js"/>
+  <vbox id="player-container" flex="1" style="background: black;"/>
+  <hbox align="center" pack="center">
+    <button id="play" label="&mediaPlay.label;" oncommand="Player.command('playpause');"/>
+    <button id="mute" label="&mediaMute.label;" oncommand="Player.command('mute');"/>
+    <button id="return" label="&pictureInPicture.return;" oncommand="Player.returnToTab();"/>
+    <button id="close" label="&pictureInPicture.close;" oncommand="window.close();"/>
+  </hbox>
+  <label id="pause-label" value="&mediaPause.label;" hidden="true"/>
+  <label id="unmute-label" value="&mediaUnmute.label;" hidden="true"/>
+</window>

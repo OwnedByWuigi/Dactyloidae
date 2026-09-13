@@ -681,6 +681,17 @@ addMessageListener("ContextMenu:MediaCommand", (message) => {
     () => {
       let media = message.objects.element;
       switch (message.data.command) {
+        case "pictureinpicture": {
+          let {PictureInPicture} = Cu.import("resource:///modules/PictureInPicture.jsm", {});
+          let data;
+          try {
+            data = PictureInPicture.register(media, message.data.data);
+          } catch (error) {
+            data = {id: message.data.data, error: error.message};
+          }
+          sendAsyncMessage("PictureInPicture:Prepared", data);
+          break;
+        }
         case "play":
           media.play();
           break;
