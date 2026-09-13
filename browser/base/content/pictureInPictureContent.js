@@ -107,12 +107,13 @@ addMessageListener("PictureInPicture:Init", message => {
     source = PictureInPicture.takeSource(message.data.id);
     sourceWindow = source.ownerGlobal;
     let doc = content.document;
-    doc.documentElement.style.cssText = "height:100%;background:black";
-    doc.body.style.cssText = "margin:0;height:100%;overflow:hidden";
+    doc.documentElement.style.cssText = "width:100%;height:100%;background:black;overflow:hidden";
+    doc.body.style.cssText = "margin:0;width:100%;height:100%;overflow:hidden";
     output = doc.createElement("video");
     still = doc.createElement("canvas");
     for (let element of [output, still]) {
-      element.style.cssText = "position:absolute;width:100%;height:100%;object-fit:contain";
+      element.style.cssText = "position:fixed;left:0;top:0;width:100vw;height:100vh;" +
+                             "max-width:none;max-height:none;object-fit:contain";
       doc.body.appendChild(element);
     }
     // Decoder capture redirects audio to the captured stream. Its samples

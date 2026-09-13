@@ -13,6 +13,71 @@ var Player = {
   sourceTab: null,
   seeking: false,
   state: null,
+  drag: null,
+
+  startDrag(event) {
+    if (event.button != 0 ||
+        event.target.closest("button, input, #playback-controls")) {
+      return;
+    }
+    let stack = document.getElementById("player-stack");
+    if (!stack.contains(event.target)) {
+      return;
+    }
+    event.preventDefault();
+    this.drag = {
+      direction: event.target.getAttribute("data-resize") || "",
+      pointerX: event.screenX,
+      pointerY: event.screenY,
+      x: window.screenX,
+      y: window.screenY,
+      width: window.outerWidth,
+      height: window.outerHeight,
+    };
+    // Capture keeps the gesture working after the pointer leaves the window.
+    stack.setCapture(true);
+    stack.setAttribute("dragging", "true");
+  },
+
+  moveDrag(event) {
+    let drag = this.drag;
+    if (!drag) {
+      return;
+    }
+    if (!(event.buttons & 1)) {
+      this.endDrag();
+      return;
+    }
+    event.preventDefault();
+    let dx = event.screenX - drag.pointerX;
+    let dy = event.screenY - drag.pointerY;
+    if (!drag.direction) {
+      window.moveTo(drag.x + dx, drag.y + dy);
+      return;
+    }
+    let west = drag.direction.includes("w");
+    let east = drag.direction.includes("e");
+    let north = drag.direction.includes("n");
+    let south = drag.direction.includes("s");
+    let width = Math.max(300, drag.width + (west ? -dx : east ? dx : 0));
+    let height = Math.max(170, drag.height + (north ? -dy : south ? dy : 0));
+    window.resizeTo(width, height);
+    // Anchor the opposite edge, using the actual size in case the platform
+    // imposed a constraint (for example, at a monitor boundary).
+    if (west || north) {
+      window.moveTo(west ? drag.x + drag.width - window.outerWidth : drag.x,
+                    north ? drag.y + drag.height - window.outerHeight : drag.y);
+    }
+  },
+
+  endDrag() {
+    if (this.drag) {
+      this.drag = null;
+      let stack = document.getElementById("player-stack");
+      stack.releaseCapture();
+      stack.removeAttribute("dragging");
+    }
+  },
 
   init() {
     if (this.browser) {
@@ -129,6 +194,7 @@ var Player = {
   },
 
   destroy() {
+    this.endDrag();
     if (this.sourceTab) {
       this.sourceTab.removeEventListener("TabClose", this.close);
       this.source.removeEventListener("oop-browser-crashed", this.close);
@@ -171,6 +237,14 @@ window.addEventListener("keydown", event => {
     }
   }
 });
-window.addEventListener("mousemove", () => {
+window.addEventListener("mousedown", event => Player.startDrag(event));
+window.addEventListener("mousemove", event => {
+  Player.moveDrag(event);
   document.getElementById("player-overlay").removeAttribute("keyboard");
+});
+window.addEventListener("mouseup", () => Player.endDrag());
+window.addEventListener("blur", event => {
+  if (event.target == window) {
+    Player.endDrag();
+  }
 });
