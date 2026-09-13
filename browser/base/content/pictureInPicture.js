@@ -3,6 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
+// The browser XBL bindings resolve these names in their owning window.
+const {utils: Cu, results: Cr} = Components;
+Cu.import("resource://gre/modules/Services.jsm");
+
 var Player = {
   browser: null,
   source: null,
