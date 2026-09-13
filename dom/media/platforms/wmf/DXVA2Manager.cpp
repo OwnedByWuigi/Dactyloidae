@@ -185,6 +185,10 @@ static const GUID DXVA2_Intel_ModeH264_E = {
   0x604F8E68, 0x4951, 0x4c54, { 0x88, 0xFE, 0xAB, 0xD2, 0x5C, 0x15, 0xB3, 0xD6 }
 };
 
+static const GUID DXVA2_ModeVP9_VLD_Profile0 = {
+  0x463707f8, 0xa1d0, 0x4585, { 0x87, 0x6d, 0x83, 0xaa, 0x6d, 0x60, 0xb8, 0x9e }
+};
+
 // This tests if a DXVA video decoder can be created for the given media type/resolution.
 // It uses the same decoder device (DXVA2_ModeH264_E - DXVA2_ModeH264_VLD_NoFGT) as the H264
 // decoder MFT provided by windows (CLSID_CMSH264DecoderMFT) uses, so we can use it to determine
@@ -388,7 +392,8 @@ D3D9DXVA2Manager::Init(layers::KnowsCompositor* aKnowsCompositor,
         decoderDevices[i] == DXVA2_Intel_ModeH264_E) {
       mDecoderGUID = decoderDevices[i];
       found = true;
-      break;
+    } else if (decoderDevices[i] == DXVA2_ModeVP9_VLD_Profile0) {
+      found = true;
     }
   }
   CoTaskMemFree(decoderDevices);
@@ -690,10 +695,13 @@ D3D11DXVA2Manager::Init(layers::KnowsCompositor* aKnowsCompositor,
   for (UINT i = 0; i < profileCount; i++) {
     GUID id;
     hr = videoDevice->GetVideoDecoderProfile(i, &id);
-    if (SUCCEEDED(hr) && (id == DXVA2_ModeH264_E || id == DXVA2_Intel_ModeH264_E)) {
-      mDecoderGUID = id;
-      found = true;
-      break;
+    if (SUCCEEDED(hr)) {
+      if (id == DXVA2_ModeH264_E || id == DXVA2_Intel_ModeH264_E) {
+        mDecoderGUID = id;
+        found = true;
+      } else if (id == DXVA2_ModeVP9_VLD_Profile0) {
+        found = true;
+      }
     }
   }
   if (!found) {
