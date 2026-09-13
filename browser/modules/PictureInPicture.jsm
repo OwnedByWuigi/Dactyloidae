@@ -5,8 +5,7 @@
 
 this.EXPORTED_SYMBOLS = ["PictureInPicture"];
 
-const {utils: Cu} = Components;
-Cu.import("resource://gre/modules/Services.jsm");
+const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 Cu.import("resource://gre/modules/Timer.jsm");
 
 // Each content process has its own module instance. Only a weak reference to
@@ -38,7 +37,8 @@ this.PictureInPicture = {
   },
 
   open(browser, video) {
-    let id = Services.uuid.generateUUID().toString();
+    let id = Cc["@mozilla.org/uuid-generator;1"]
+               .getService(Ci.nsIUUIDGenerator).generateUUID().toString();
     let request = ++this.request;
     let mm = browser.messageManager;
     let timer;
