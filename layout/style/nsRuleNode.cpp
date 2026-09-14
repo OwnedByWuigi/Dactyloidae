@@ -1788,6 +1788,25 @@ SetFactor(const nsCSSValue& aValue, float& aField, RuleNodeCacheConditions& aCon
     }
     return;
 
+  #include "CSSCalc.h"
+
+  struct RuleNodeReduceNumberCalcOps
+    : public mozilla::css::BasicFloatCalcOps
+    , public mozilla::css::CSSValueInputCalcOps
+  {
+    float ComputeLeafValue(const nsCSSValue& aValue)
+    {
+      MOZ_ASSERT(aValue.GetUnit() == eCSSUnit_Number,
+                 "Expected a number-only calc expression");
+      return aValue.GetFloatValue();
+    }
+
+    float ComputeNumber(const nsCSSValue& aValue)
+    {
+      return mozilla::css::ComputeCalc(aValue, *this);
+    }
+  };
+
   case eCSSUnit_Calc: {
     RuleNodeReduceNumberCalcOps ops;
     aField = css::ComputeCalc(aValue, ops);
