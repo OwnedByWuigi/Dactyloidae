@@ -218,9 +218,12 @@
             "enum": [
               "alarms",
               "clipboardWrite",
+              "dns",
               "idle",
               "notifications",
+              "privacy",
               "storage"
+              ,"unlimitedStorage"
             ]
           },
           { "$ref": "MatchPattern" }

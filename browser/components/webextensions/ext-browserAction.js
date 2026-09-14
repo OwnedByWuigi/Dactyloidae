@@ -76,6 +76,12 @@ function BrowserAction(options, extension) {
 
 BrowserAction.prototype = {
   build() {
+    let areas = {
+      navbar: CustomizableUI.AREA_NAVBAR,
+      menupanel: CustomizableUI.AREA_PANEL,
+      tabstrip: CustomizableUI.AREA_TABSTRIP,
+      personaltoolbar: CustomizableUI.AREA_BOOKMARKS,
+    };
     let widget = CustomizableUI.createWidget({
       id: this.id,
       viewId: this.viewId,
@@ -83,7 +89,8 @@ BrowserAction.prototype = {
       removable: true,
       label: this.defaults.title || this.extension.name,
       tooltiptext: this.defaults.title || "",
-      defaultArea: CustomizableUI.AREA_NAVBAR,
+      defaultArea: areas[this.extension.manifest.browser_action.default_area] ||
+                   CustomizableUI.AREA_NAVBAR,
 
       onBeforeCreated: document => {
         let view = document.createElementNS(XUL_NS, "panelview");
