@@ -2848,6 +2848,13 @@ IsInternalURIScheme(nsIURI* uri)
     return true;
   }
 
+  // Extension channels resolve to file: or jar:file: internally. Module
+  // imports must retain the public extension origin as their base URL.
+  bool isExtension;
+  if (NS_SUCCEEDED(uri->SchemeIs("moz-extension", &isExtension)) && isExtension) {
+    return true;
+  }
+
   return false;
 }
 
