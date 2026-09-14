@@ -2323,16 +2323,11 @@ JSStructuredCloneReader::readHeader()
         return false;
     }
 
-    // Some older IndexedDB writers stored the compatibility marker in the
-    // header. Read those records as durable cross-process data.
-    if (storedScope == JS::StructuredCloneScope::DifferentProcessForIndexedDB) {
-        storedScope = JS::StructuredCloneScope::DifferentProcess;
-    }
-
     if (allowedScope == JS::StructuredCloneScope::DifferentProcessForIndexedDB) {
         // Bug 1434308 and bug 1458320 - the scopes stored in old IndexedDB
         // clones are incorrect. Treat them as if they were DifferentProcess.
         allowedScope = JS::StructuredCloneScope::DifferentProcess;
+        return true;
     }
 
     if (storedScope < allowedScope) {

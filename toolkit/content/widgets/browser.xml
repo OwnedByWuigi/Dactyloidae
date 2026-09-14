@@ -457,7 +457,7 @@
 
       <property name="webProgress"
                 readonly="true"
-                onget="return this.docShell && this.docShell.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIWebProgress);"/>
+                onget="return this.docShell.QueryInterface(Components.interfaces.nsIInterfaceRequestor).getInterface(Components.interfaces.nsIWebProgress);"/>
 
       <field name="_contentWindow">null</field>
 
