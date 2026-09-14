@@ -938,6 +938,8 @@ nsContextMenu.prototype = {
 
   _openLinkInParameters : function (extra) {
     let params = { charset: gContextMenuContentData.charSet,
+                   currentBrowser: this.browser,
+                   frameOuterWindowID: this.frameOuterWindowID,
                    originPrincipal: this.principal,
                    triggeringPrincipal: this.principal,
                    referrerURI: gContextMenuContentData.documentURIObject,

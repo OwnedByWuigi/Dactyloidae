@@ -442,7 +442,9 @@ var ClickEventHandler = {
       }
     }
 
-    let json = { button: event.button, shiftKey: event.shiftKey,
+    let json = { frameOuterWindowID: ownerDoc.defaultView.QueryInterface(Ci.nsIInterfaceRequestor)
+                                      .getInterface(Ci.nsIDOMWindowUtils).outerWindowID,
+                 button: event.button, shiftKey: event.shiftKey,
                  ctrlKey: event.ctrlKey, metaKey: event.metaKey,
                  altKey: event.altKey, href: null, title: null,
                  bookmark: false, referrerPolicy: referrerPolicy,

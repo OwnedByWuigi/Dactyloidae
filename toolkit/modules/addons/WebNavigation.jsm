@@ -12,6 +12,7 @@ const Cu = Components.utils;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/Timer.jsm");
 
 XPCOMUtils.defineLazyModuleGetter(this, "RecentWindow",
                                   "resource:///modules/RecentWindow.jsm");
@@ -21,8 +22,6 @@ XPCOMUtils.defineLazyModuleGetter(this, "RecentWindow",
 // e.g. nsNavHistory::CheckIsRecentEvent, but with a lower threshold value).
 const RECENT_DATA_THRESHOLD = 5 * 1000000;
 
-// TODO:
-// onCreatedNavigationTarget
 
 var Manager = {
   // Map[string -> Map[listener -> URLFilter]]
@@ -32,7 +31,10 @@ var Manager = {
     // Collect recent tab transition data in a WeakMap:
     //   browser -> tabTransitionData
     this.recentTabTransitionData = new WeakMap();
+    this.createdNavigationTargetByOuterWindowId = new Map();
     Services.obs.addObserver(this, "autocomplete-did-enter-text", true);
+    Services.obs.addObserver(this, "webNavigation-createdNavigationTarget", false);
+    Services.mm.addMessageListener("Extension:CreatedNavigationTarget", this);
 
     Services.mm.addMessageListener("Content:Click", this);
     Services.mm.addMessageListener("Extension:DOMContentLoaded", this);
@@ -45,7 +47,13 @@ var Manager = {
 
   uninit() {
     // Stop collecting recent tab transition data and reset the WeakMap.
-    Services.obs.removeObserver(this, "autocomplete-did-enter-text", true);
+    Services.obs.removeObserver(this, "autocomplete-did-enter-text");
+    Services.obs.removeObserver(this, "webNavigation-createdNavigationTarget");
+    Services.mm.removeMessageListener("Extension:CreatedNavigationTarget", this);
+    for (let pending of this.createdNavigationTargetByOuterWindowId.values()) {
+      clearTimeout(pending.timer);
+    }
+    this.createdNavigationTargetByOuterWindowId.clear();
     this.recentTabTransitionData = new WeakMap();
 
     Services.mm.removeMessageListener("Content:Click", this);
@@ -102,6 +110,22 @@ var Manager = {
   observe: function(subject, topic, data) {
     if (topic == "autocomplete-did-enter-text") {
       this.onURLBarAutoCompletion(subject);
+    } else if (topic == "webNavigation-createdNavigationTarget") {
+      // The observed notification is coming from privileged JavaScript components running
+      // in the main process (e.g. when a new tab or window is opened using the context menu
+      // or Ctrl/Shift + click on a link).
+      const {
+        createdTabBrowser,
+        url,
+        sourceFrameOuterWindowID,
+        sourceTabBrowser,
+      } = subject.wrappedJSObject;
+
+      this.fire("onCreatedNavigationTarget", createdTabBrowser, {}, {
+        sourceTabBrowser,
+        sourceWindowId: sourceFrameOuterWindowID,
+        url,
+      });
     }
   },
 
@@ -241,6 +265,9 @@ var Manager = {
    */
   receiveMessage({name, data, target}) {
     switch (name) {
+      case "Extension:CreatedNavigationTarget":
+        this.onCreatedNavigationTarget(target, data);
+        break;
       case "Extension:StateChange":
         this.onStateChange(target, data);
         break;
@@ -272,6 +299,44 @@ var Manager = {
         this.setRecentTabTransitionData({link: true});
       }
     }
+  },
+
+  onCreatedNavigationTarget(browser, data) {
+    const {isSourceTab, createdWindowId, sourceWindowId, url} = data;
+
+    // Source and target frame scripts identify their browsers independently.
+    // Pair their messages by the new window's outer ID, in either arrival order.
+    const pairedMessage = this.createdNavigationTargetByOuterWindowId.get(createdWindowId);
+
+    if (!pairedMessage) {
+      // A tab can close before its frame script reports. Do not retain it forever.
+      let timer = setTimeout(() => {
+        this.createdNavigationTargetByOuterWindowId.delete(createdWindowId);
+      }, 30000);
+      this.createdNavigationTargetByOuterWindowId.set(createdWindowId, {browser, data, timer});
+      return;
+    }
+
+    if (pairedMessage.data.isSourceTab == isSourceTab) {
+      return;
+    }
+    clearTimeout(pairedMessage.timer);
+    this.createdNavigationTargetByOuterWindowId.delete(createdWindowId);
+
+    let sourceTabBrowser;
+    let createdTabBrowser;
+
+    if (isSourceTab) {
+      sourceTabBrowser = browser;
+      createdTabBrowser = pairedMessage.browser;
+    } else {
+      sourceTabBrowser = pairedMessage.browser;
+      createdTabBrowser = browser;
+    }
+
+    this.fire("onCreatedNavigationTarget", createdTabBrowser, {}, {
+      sourceTabBrowser, sourceWindowId, url,
+    });
   },
 
   onStateChange(browser, data) {
@@ -357,7 +422,7 @@ const EVENTS = [
   "onErrorOccurred",
   "onReferenceFragmentUpdated",
   "onHistoryStateUpdated",
-  // "onCreatedNavigationTarget",
+  "onCreatedNavigationTarget",
 ];
 
 var WebNavigation = {};
