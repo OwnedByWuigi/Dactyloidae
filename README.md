@@ -2,7 +2,7 @@
 <br>
 <a href="https://discord.gg/ycmQAMej77">Official Discord server</a>
 <br><br>
-<img src="https://dactyloidae.xyz/demo.jpg" height="500">
+<img src="docs/readme/demo.png" height="500">
 
 Dactyloidae is a heavily modified fork of Eclipse Hydra (fork of roytam1's Serpent, which is a fork of Basilisk, which is a fork of Firefox).
 
