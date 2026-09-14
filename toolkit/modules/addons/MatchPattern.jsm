@@ -18,7 +18,9 @@ this.EXPORTED_SYMBOLS = ["MatchPattern", "MatchGlobs", "MatchURLFilters"];
 
 /* globals MatchPattern, MatchGlobs */
 
-const PERMITTED_SCHEMES = ["http", "https", "file", "ftp", "data"];
+// WebExtensions also use WebSocket URLs for request filtering and
+// moz-extension URLs internally when validating web-accessible resources.
+const PERMITTED_SCHEMES = ["http", "https", "file", "ftp", "data", "ws", "wss", "moz-extension"];
 const PERMITTED_SCHEMES_REGEXP = PERMITTED_SCHEMES.join("|");
 
 // This function converts a glob pattern (containing * and possibly ?

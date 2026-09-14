@@ -922,7 +922,9 @@ BrowserGlue.prototype = {
     AutoCompletePopup.init();
     DateTimePickerHelper.init();
 
-    this._firstWindowLoaded();
+    if (typeof this._firstWindowLoaded == "function") {
+      this._firstWindowLoaded();
+    }
   },
 
   /**

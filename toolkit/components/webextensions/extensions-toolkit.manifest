@@ -8,6 +8,7 @@ category webextension-scripts notifications chrome://extensions/content/ext-noti
 category webextension-scripts i18n chrome://extensions/content/ext-i18n.js
 category webextension-scripts idle chrome://extensions/content/ext-idle.js
 category webextension-scripts webRequest chrome://extensions/content/ext-webRequest.js
+category webextension-scripts dns chrome://extensions/content/ext-dns.js
 category webextension-scripts webNavigation chrome://extensions/content/ext-webNavigation.js
 category webextension-scripts runtime chrome://extensions/content/ext-runtime.js
 category webextension-scripts extension chrome://extensions/content/ext-extension.js
@@ -47,3 +48,4 @@ category webextension-schemas test chrome://extensions/content/schemas/test.json
 category webextension-schemas top_sites chrome://extensions/content/schemas/top_sites.json
 category webextension-schemas web_navigation chrome://extensions/content/schemas/web_navigation.json
 category webextension-schemas web_request chrome://extensions/content/schemas/web_request.json
+category webextension-schemas dns chrome://extensions/content/schemas/dns.json
