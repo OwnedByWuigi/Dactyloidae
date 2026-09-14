@@ -5565,7 +5565,7 @@ gc::IsIncrementalGCUnsafe(JSRuntime* rt)
     MOZ_ASSERT(!rt->mainThread.suppressGC);
 	
     if (rt->keepAtoms())
-        return gc::AbortReason::KeepAtomsSet;
+        return gc::AbortReason::AbortRequested;
 
     if (!rt->gc.isIncrementalGCAllowed())
         return gc::AbortReason::IncrementalDisabled;
