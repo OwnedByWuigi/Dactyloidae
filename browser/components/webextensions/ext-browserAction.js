@@ -140,6 +140,15 @@ BrowserAction.prototype = {
       },
     });
 
+    // Older CustomizableUI versions remember that an extension widget was
+    // seen, but do not auto-add removable widgets again when its saved
+    // placement is missing (for example after an upgrade or profile reset).
+    // Ensure browser actions remain discoverable in the main toolbar while
+    // respecting an existing user-selected placement.
+    if (!CustomizableUI.getPlacementOfWidget(this.id)) {
+      CustomizableUI.addWidgetToArea(this.id, CustomizableUI.AREA_NAVBAR);
+    }
+
     this.tabContext.on("tab-select", // eslint-disable-line mozilla/balanced-listeners
                        (evt, tab) => { this.updateWindow(tab.ownerGlobal); });
 
