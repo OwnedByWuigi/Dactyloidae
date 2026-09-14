@@ -4,11 +4,11 @@
 
 "use strict";
 
+const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+
 const EXPORTED_SYMBOLS = ["SecurityInfo"];
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const { XPCOMUtils } = Cu.import("resource://gre/modules/XPCOMUtils.jsm", {});
 
 const wpl = Ci.nsIWebProgressListener;
 XPCOMUtils.defineLazyServiceGetter(
