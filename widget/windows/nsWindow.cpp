@@ -2033,6 +2033,17 @@ nsWindow::BeginResizeDrag(WidgetGUIEvent* aEvent,
  *
  **************************************************************/
 
+void
+nsWindow::SetAlwaysOnTop(bool aAlwaysOnTop)
+{
+  nsBaseWidget::SetAlwaysOnTop(aAlwaysOnTop);
+  if (mWnd && (mWindowType == eWindowType_toplevel ||
+               mWindowType == eWindowType_dialog)) {
+    ::SetWindowPos(mWnd, aAlwaysOnTop ? HWND_TOPMOST : HWND_NOTOPMOST,
+                   0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  }
+}
+
 // Position the window behind the given window
 void
 nsWindow::PlaceBehind(nsTopLevelWidgetZPlacement aPlacement,
@@ -2059,6 +2070,10 @@ nsWindow::PlaceBehind(nsTopLevelWidgetZPlacement aPlacement,
     flags |= SWP_NOACTIVATE;
   }
 
+  // Application z-order changes must not demote an always-on-top window.
+  if (mAlwaysOnTop) {
+    behind = HWND_TOPMOST;
+  }
   ::SetWindowPos(mWnd, behind, 0, 0, 0, 0, flags);
 }
 
@@ -3191,6 +3206,12 @@ NS_IMETHODIMP nsWindow::HideWindowChrome(bool aShouldHide)
   VERIFY_WINDOW_STYLE(style);
   ::SetWindowLongPtrW(hwnd, GWL_STYLE, style);
   ::SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exStyle);
+
+  // Apply the new non-client metrics immediately. Otherwise the client area
+  // keeps its old titlebar/border dimensions until the first move or resize.
+  ::SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
+                 SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
+                 SWP_NOZORDER | SWP_NOACTIVATE);
 
   return NS_OK;
 }

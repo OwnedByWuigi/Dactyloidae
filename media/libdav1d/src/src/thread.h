@@ -33,8 +33,8 @@
 #include <limits.h>
 #include <windows.h>
 
-#define PTHREAD_MUTEX_INITIALIZER SRWLOCK_INIT
-#define PTHREAD_ONCE_INIT INIT_ONCE_STATIC_INIT
+#define PTHREAD_MUTEX_INITIALIZER { 0 }
+#define PTHREAD_ONCE_INIT 0
 
 typedef struct {
     HANDLE h;
@@ -46,9 +46,16 @@ typedef struct {
     unsigned stack_size;
 } pthread_attr_t;
 
-typedef SRWLOCK pthread_mutex_t;
-typedef CONDITION_VARIABLE pthread_cond_t;
-typedef INIT_ONCE pthread_once_t;
+typedef struct {
+    volatile LONG state;
+    CRITICAL_SECTION cs;
+} pthread_mutex_t;
+struct dav1d_cond_waiter;
+typedef struct {
+    CRITICAL_SECTION cs;
+    struct dav1d_cond_waiter *head;
+} pthread_cond_t;
+typedef volatile LONG pthread_once_t;
 
 void dav1d_init_thread(void);
 void dav1d_set_thread_name(const wchar_t *name);
@@ -84,50 +91,51 @@ static inline int pthread_attr_setstacksize(pthread_attr_t *const attr,
 static inline int pthread_mutex_init(pthread_mutex_t *const mutex,
                                      const void *const attr)
 {
-    InitializeSRWLock(mutex);
+    mutex->state = 0;
     return 0;
 }
 
 static inline int pthread_mutex_destroy(pthread_mutex_t *const mutex) {
+    if (mutex->state == 2) DeleteCriticalSection(&mutex->cs);
     return 0;
 }
 
 static inline int pthread_mutex_lock(pthread_mutex_t *const mutex) {
-    AcquireSRWLockExclusive(mutex);
+    if (InterlockedCompareExchange(&mutex->state, 1, 0) == 0) {
+        InitializeCriticalSection(&mutex->cs);
+        InterlockedExchange(&mutex->state, 2);
+    } else {
+        while (InterlockedCompareExchange(&mutex->state, 2, 2) != 2)
+            Sleep(1);
+    }
+    EnterCriticalSection(&mutex->cs);
     return 0;
 }
 
 static inline int pthread_mutex_unlock(pthread_mutex_t *const mutex) {
-    ReleaseSRWLockExclusive(mutex);
+    LeaveCriticalSection(&mutex->cs);
     return 0;
 }
 
 static inline int pthread_cond_init(pthread_cond_t *const cond,
                                     const void *const attr)
 {
-    InitializeConditionVariable(cond);
+    InitializeCriticalSection(&cond->cs);
+    cond->head = NULL;
     return 0;
 }
 
 static inline int pthread_cond_destroy(pthread_cond_t *const cond) {
+    DeleteCriticalSection(&cond->cs);
     return 0;
 }
 
-static inline int pthread_cond_wait(pthread_cond_t *const cond,
-                                    pthread_mutex_t *const mutex)
-{
-    return !SleepConditionVariableSRW(cond, mutex, INFINITE, 0);
-}
-
-static inline int pthread_cond_signal(pthread_cond_t *const cond) {
-    WakeConditionVariable(cond);
-    return 0;
-}
-
-static inline int pthread_cond_broadcast(pthread_cond_t *const cond) {
-    WakeAllConditionVariable(cond);
-    return 0;
-}
+#define pthread_cond_wait dav1d_pthread_cond_wait
+#define pthread_cond_signal dav1d_pthread_cond_signal
+#define pthread_cond_broadcast dav1d_pthread_cond_broadcast
+int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex);
+int pthread_cond_signal(pthread_cond_t *cond);
+int pthread_cond_broadcast(pthread_cond_t *cond);
 
 #else
 

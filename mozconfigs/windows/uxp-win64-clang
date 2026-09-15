@@ -10,22 +10,21 @@ export CLANG=/c/clang/bin
 export CC="clang-cl.exe"
 export MT="llvm-mt.exe"
 export LD="lld-link.exe"
-export LIB="lib.exe"
 
 # Force PATH so UXP thinks only Clang is there
 export PATH="$CLANG:$PATH"
 
 ##Uncomment PGO for release build
 
-# 16 jobs for 16 cores
-mk_add_options MOZ_MAKE_FLAGS="-j6"
+# auto detect threads
+mk_add_options MOZ_MAKE_FLAGS="-j$NUMBER_OF_PROCESSORS"
 
 # x64 build
 ac_add_options --host=x86_64-pc-mingw32
 ac_add_options --target=x86_64-pc-mingw32
 
-# Build only Hydra
-ac_add_options --enable-application=basilisk
+# Build only Dactyloidae
+ac_add_options --enable-application=browser
 ac_add_options --disable-artifact-builds
 
 # Updater stuffs
@@ -43,7 +42,7 @@ ac_add_options --enable-devtools
 #ac_add_options --enable-install-strip
 ac_add_options --enable-jemalloc
 ac_add_options --enable-js-lto
-ac_add_options --enable-optimize="-O2 -Ob2ity -openmp -arch:AVX -w0 -w"
+ac_add_options --enable-optimize="-O2 -Ob2ity -arch:SSE2 -w0 -w"
 ac_add_options --enable-phoenix-extensions
 ac_add_options --enable-release
 ac_add_options --enable-shared-js
@@ -65,7 +64,7 @@ ac_add_options --disable-crashreporter
 ac_add_options --disable-eme
 ac_add_options --disable-maintenance-service
 ac_add_options --disable-parental-controls
-ac_add_options --disable-ctypes
+ac_add_options --enable-ctypes
 mk_add_options MOZ_SERVICES_HEALTHREPORT=0
 export CROSS_COMPILE=0
 export MOZ_CRASHREPORTER=0

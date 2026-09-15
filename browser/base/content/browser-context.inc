@@ -159,6 +159,9 @@
                 label="&mediaHideControls.label;"
                 accesskey="&mediaHideControls.accesskey;"
                 oncommand="gContextMenu.mediaCommand('hidecontrols');"/>
+      <menuitem id="context-video-pictureinpicture"
+                label="&pictureInPicture.title;"
+                oncommand="gContextMenu.pictureInPicture();"/>
       <menuitem id="context-video-fullscreen"
                 accesskey="&videoFullScreen.accesskey;"
                 label="&videoFullScreen.label;"

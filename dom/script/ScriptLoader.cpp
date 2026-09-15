@@ -2334,8 +2334,7 @@ ScriptLoader::EvaluateScript(ScriptLoadRequest* aRequest)
     }
 
     if (aRequest->IsModuleRequest()) {
-      // For modules, currentScript is set to null.
-      AutoCurrentScriptUpdater scriptUpdater(this, nullptr);
+      AutoCurrentScriptUpdater scriptUpdater(this, aRequest->Element());
 
       ModuleLoadRequest* request = aRequest->AsModuleRequest();
       MOZ_ASSERT(request->mModuleScript);
@@ -2846,6 +2845,13 @@ IsInternalURIScheme(nsIURI* uri)
   // Note: Extend this if other schemes need to be included.
   bool isResource;
   if (NS_SUCCEEDED(uri->SchemeIs("resource", &isResource)) && isResource) {
+    return true;
+  }
+
+  // Extension channels resolve to file: or jar:file: internally. Module
+  // imports must retain the public extension origin as their base URL.
+  bool isExtension;
+  if (NS_SUCCEEDED(uri->SchemeIs("moz-extension", &isExtension)) && isExtension) {
     return true;
   }
 

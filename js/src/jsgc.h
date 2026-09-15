@@ -32,6 +32,40 @@ class Nursery;
 
 namespace gc {
 
+struct FinalizePhase;
+
+#define GCSTATES(D) \
+    D(NotActive) \
+    D(MarkRoots) \
+    D(Mark) \
+    D(Sweep) \
+    D(Finalize) \
+    D(Compact) \
+    D(Decommit)
+enum class State {
+#define MAKE_STATE(name) name,
+    GCSTATES(MAKE_STATE)
+#undef MAKE_STATE
+};
+
+// Reasons we reset an ongoing incremental GC or perform a non-incremental GC.
+#define GC_ABORT_REASONS(D) \
+    D(None) \
+    D(NonIncrementalRequested) \
+    D(AbortRequested) \
+    D(Unused1) \
+    D(IncrementalDisabled) \
+    D(ModeChange) \
+    D(MallocBytesTrigger) \
+    D(GCBytesTrigger) \
+    D(ZoneChange) \
+    D(CompartmentRevived)
+enum class AbortReason {
+#define MAKE_REASON(name) name,
+    GC_ABORT_REASONS(MAKE_REASON)
+#undef MAKE_REASON
+};
+
 /*
  * Map from C++ type to alloc kind for non-object types. JSObject does not have
  * a 1:1 mapping, so must use Arena::thingSize.

@@ -94,13 +94,24 @@ ConsoleAPIStorageService.prototype = {
   getEvents: function CS_getEvents(aId)
   {
     if (aId != null) {
-      return (_consoleStorage.get(aId) || []).slice(0);
+      let storage = _consoleStorage.get(aId);
+      if (!storage) {
+        return [];
+      }
+      let { events, next } = storage;
+      return next === 0 ? events.slice() :
+             events.slice(next).concat(events.slice(0, next));
     }
 
     let result = [];
 
-    for (let [id, events] of _consoleStorage) {
-      result.push.apply(result, events);
+    for (let { events, next } of _consoleStorage.values()) {
+      for (let i = next; i < events.length; i++) {
+        result.push(events[i]);
+      }
+      for (let i = 0; i < next; i++) {
+        result.push(events[i]);
+      }
     }
 
     return result.sort(function(a, b) {
@@ -122,16 +133,21 @@ ConsoleAPIStorageService.prototype = {
    */
   recordEvent: function CS_recordEvent(aId, aOuterId, aEvent)
   {
-    if (!_consoleStorage.has(aId)) {
-      _consoleStorage.set(aId, []);
+    let storage = _consoleStorage.get(aId);
+    if (!storage) {
+      storage = { events: [], next: 0 };
+      _consoleStorage.set(aId, storage);
     }
 
-    let storage = _consoleStorage.get(aId);
-    storage.push(aEvent);
-
-    // truncate
-    if (storage.length > STORAGE_MAX_EVENTS) {
-      storage.shift();
+    // Overwrite the oldest event once full, without moving the other entries.
+    // Advance before notifying observers, which may read or reenter storage.
+    if (storage.events.length < STORAGE_MAX_EVENTS) {
+      storage.events.push(aEvent);
+    } else {
+      storage.events[storage.next] = aEvent;
+      if (++storage.next === STORAGE_MAX_EVENTS) {
+        storage.next = 0;
+      }
     }
 
     Services.obs.notifyObservers(aEvent, "console-api-log-event", aOuterId);

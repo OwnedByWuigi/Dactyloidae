@@ -1788,6 +1788,48 @@ SetFactor(const nsCSSValue& aValue, float& aField, RuleNodeCacheConditions& aCon
     }
     return;
 
+  #include "CSSCalc.h"
+
+  struct RuleNodeReduceNumberCalcOps
+    : public mozilla::css::BasicFloatCalcOps
+    , public mozilla::css::CSSValueInputCalcOps
+  {
+    float ComputeLeafValue(const nsCSSValue& aValue)
+    {
+      MOZ_ASSERT(aValue.GetUnit() == eCSSUnit_Number,
+                 "Expected a number-only calc expression");
+      return aValue.GetFloatValue();
+    }
+
+    float ComputeNumber(const nsCSSValue& aValue)
+    {
+      return mozilla::css::ComputeCalc(aValue, *this);
+    }
+  };
+
+  case eCSSUnit_Calc: {
+    RuleNodeReduceNumberCalcOps ops;
+    aField = css::ComputeCalc(aValue, ops);
+    if (mozilla::IsNaN(aField)) {
+      aField = 0.0f;
+    }
+    if (aFlags & SETFCT_POSITIVE) {
+      NS_ASSERTION(aField >= 0.0f, "negative value for positive-only property");
+      if (aField < 0.0f) {
+        aField = 0.0f;
+      }
+    }
+    if (aFlags & SETFCT_OPACITY) {
+      if (aField < 0.0f) {
+        aField = 0.0f;
+      }
+      if (aField > 1.0f) {
+        aField = 1.0f;
+      }
+    }
+    return;
+  }
+
   case eCSSUnit_Inherit:
     aConditions.SetUncacheable();
     aField = aParentValue;
@@ -8130,14 +8172,18 @@ nsRuleNode::ComputeBorderData(void* aStartStruct,
   {
     const nsCSSPropertyID* subprops =
       nsCSSProps::SubpropertyEntryFor(eCSSProperty_border_radius);
+    const float RADIUS_MAX = 17895697; // CSS length clamp value
     NS_FOR_CSS_FULL_CORNERS(corner) {
       int cx = FullToHalfCorner(corner, false);
       int cy = FullToHalfCorner(corner, true);
-      const nsCSSValue& radius = *aRuleData->ValueFor(subprops[corner]);
+      nsCSSValue radius = *aRuleData->ValueFor(subprops[corner]);
       nsStyleCoord parentX = parentBorder->mBorderRadius.Get(cx);
       nsStyleCoord parentY = parentBorder->mBorderRadius.Get(cy);
       nsStyleCoord coordX, coordY;
-
+      // Clamp border radius to the max value so it will not wrap and cause artifacts.
+      if (radius.GetFloatValue() > RADIUS_MAX) {
+        radius.SetFloatValue(RADIUS_MAX, eCSSUnit_Number);
+      }
       if (SetPairCoords(radius, coordX, coordY, parentX, parentY,
                         SETCOORD_LPH | SETCOORD_INITIAL_ZERO |
                           SETCOORD_STORE_CALC | SETCOORD_UNSET_INITIAL,

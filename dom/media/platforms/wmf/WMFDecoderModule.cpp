@@ -6,6 +6,7 @@
 #include "WMF.h"
 #include "WMFDecoderModule.h"
 #include "WMFVideoMFTManager.h"
+#include "WMFVP9MFTManager.h"
 #include "WMFAudioMFTManager.h"
 #include "MFTDecoder.h"
 #include "mozilla/DebugOnly.h"
@@ -81,6 +82,60 @@ WMFDecoderModule::Startup()
 }
 
 already_AddRefed<MediaDataDecoder>
+WMFDecoderModule::CreateVP9Decoder(const CreateDecoderParams& aParams)
+{
+  if (!MediaPrefs::PDMWMFVP9DecoderEnabled() || !sDXVAEnabled) {
+    return nullptr;
+  }
+
+  const bool mftAllowed = MediaPrefs::PDMWMFVP9MFTEnabled() && HasVP9MFT();
+  const bool dxva2Allowed =
+    MediaPrefs::PDMWMFVP9DXVA2Enabled() && IsVistaOrLater();
+  const bool dxva2First =
+    dxva2Allowed && (!mftAllowed || MediaPrefs::PDMWMFVP9DXVA2Preferred());
+
+  if (mftAllowed && !dxva2First) {
+    nsAutoPtr<WMFVideoMFTManager> mft(
+      new WMFVideoMFTManager(aParams.VideoConfig(),
+                             aParams.mKnowsCompositor,
+                             aParams.mImageContainer,
+                             sDXVAEnabled));
+    if (mft->Init()) {
+      RefPtr<MediaDataDecoder> decoder = new WMFMediaDataDecoder(
+        mft.forget(), aParams.mTaskQueue, aParams.mCallback);
+      return decoder.forget();
+    }
+  }
+
+  if (dxva2Allowed) {
+    nsAutoPtr<WMFVP9MFTManager> vp9(
+      new WMFVP9MFTManager(aParams.VideoConfig(),
+                           aParams.mKnowsCompositor,
+                           aParams.mImageContainer));
+    if (vp9->Init()) {
+      RefPtr<MediaDataDecoder> decoder = new WMFMediaDataDecoder(
+        vp9.forget(), aParams.mTaskQueue, aParams.mCallback);
+      return decoder.forget();
+    }
+  }
+
+  if (mftAllowed && dxva2First) {
+    nsAutoPtr<WMFVideoMFTManager> mft(
+      new WMFVideoMFTManager(aParams.VideoConfig(),
+                             aParams.mKnowsCompositor,
+                             aParams.mImageContainer,
+                             sDXVAEnabled));
+    if (mft->Init()) {
+      RefPtr<MediaDataDecoder> decoder = new WMFMediaDataDecoder(
+        mft.forget(), aParams.mTaskQueue, aParams.mCallback);
+      return decoder.forget();
+    }
+  }
+
+  return nullptr;
+}
+
+already_AddRefed<MediaDataDecoder>
 WMFDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
 {
   // Temporary - forces use of VPXDecoder when alpha is present.
@@ -89,6 +144,10 @@ WMFDecoderModule::CreateVideoDecoder(const CreateDecoderParams& aParams)
   // check.
   if (aParams.VideoConfig().HasAlpha()) {
     return nullptr;
+  }
+
+  if (VPXDecoder::IsVP9(aParams.VideoConfig().mMimeType)) {
+    return CreateVP9Decoder(aParams);
   }
 
   nsAutoPtr<WMFVideoMFTManager> manager(
@@ -192,6 +251,29 @@ WMFDecoderModule::HasH264()
 }
 
 /* static */ bool
+WMFDecoderModule::HasVP9MFT()
+{
+  return CanCreateWMFDecoder<CLSID_WebmMfVpxDec>();
+}
+
+/* static */ bool
+WMFDecoderModule::HasVP9DXVA2(layers::KnowsCompositor* aKnowsCompositor)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!aKnowsCompositor || !IsVistaOrLater() || !sDXVAEnabled ||
+      !MediaPrefs::PDMWMFVP9DecoderEnabled() ||
+      !MediaPrefs::PDMWMFVP9DXVA2Enabled() ||
+      !gfx::gfxVars::CanUseHardwareVideoDecoding()) {
+    return false;
+  }
+
+  nsCString failureReason;
+  nsAutoPtr<DXVA2Manager> manager(WMFVideoMFTManager::CreateVP9DXVA(
+    aKnowsCompositor, failureReason, DXVAVP9Manager::GetVP9DecoderGUID()));
+  return !!manager;
+}
+
+/* static */ bool
 WMFDecoderModule::HasAAC()
 {
   return CanCreateWMFDecoder<CLSID_CMSAACDecMFT>();
@@ -248,8 +330,17 @@ WMFDecoderModule::Supports(const TrackInfo& aTrackInfo,
     return true;
   }
   if (MediaPrefs::PDMWMFVP9DecoderEnabled() && sDXVAEnabled) {
-    if ((VPXDecoder::IsVP8(aTrackInfo.mMimeType) ||
-         VPXDecoder::IsVP9(aTrackInfo.mMimeType)) &&
+    if (VPXDecoder::IsVP9(aTrackInfo.mMimeType)) {
+      const bool dxva2 =
+        MediaPrefs::PDMWMFVP9DXVA2Enabled() && IsVistaOrLater();
+      const bool mft =
+        MediaPrefs::PDMWMFVP9MFTEnabled() && CanCreateWMFDecoder<CLSID_WebmMfVpxDec>();
+      if (dxva2 || mft) {
+        return true;
+      }
+    }
+    // vp8 needs mft, no dxva for it , useless anyways.
+    if (VPXDecoder::IsVP8(aTrackInfo.mMimeType) &&
         CanCreateWMFDecoder<CLSID_WebmMfVpxDec>()) {
       return true;
     }

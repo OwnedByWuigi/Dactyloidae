@@ -2404,6 +2404,12 @@ void HTMLMediaElement::SetVolumeInternal()
   float effectiveVolume = ComputedVolume();
 
   if (mDecoder) {
+    // PiP applies content mute at its playback element, after the capture
+    // queue. Keep those samples available for immediate unmute, while still
+    // honoring audio-channel, playback-rate and disabled-track muting.
+    if (mPictureInPicture && !(mMuted & ~MUTED_BY_CONTENT)) {
+      effectiveVolume = float(mVolume * mAudioChannelVolume);
+    }
     mDecoder->SetVolume(effectiveVolume);
   } else if (MediaStream* stream = GetSrcMediaStream()) {
     if (mSrcStreamIsPlaying) {
@@ -5181,6 +5187,16 @@ bool HTMLMediaElement::IsActive() const
 {
   nsIDocument* ownerDoc = OwnerDoc();
   return ownerDoc && ownerDoc->IsActive() && ownerDoc->IsVisible();
+}
+
+void HTMLMediaElement::SetMozPictureInPicture(bool aEnabled)
+{
+  MOZ_ASSERT(NS_IsMainThread());
+  mPictureInPicture = aEnabled;
+  if (mDecoder && !mShuttingDown) {
+    SetVolumeInternal();
+    mDecoder->NotifyOwnerActivityChanged(!IsHidden());
+  }
 }
 
 bool HTMLMediaElement::IsHidden() const

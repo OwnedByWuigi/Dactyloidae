@@ -273,6 +273,18 @@ function openLinkIn(url, where, params) {
   // Note that if |w| is null we might have no current browser (we'll open a new window).
   var aCurrentBrowser = params.currentBrowser || (w && w.gBrowser.selectedBrowser);
 
+  // Capture the source before opening a foreground tab changes the selection.
+  function notifyNavigationTarget(createdTabBrowser) {
+    if (params.frameOuterWindowID && aCurrentBrowser) {
+      Services.obs.notifyObservers({wrappedJSObject: {
+        url,
+        createdTabBrowser,
+        sourceTabBrowser: aCurrentBrowser,
+        sourceFrameOuterWindowID: params.frameOuterWindowID,
+      }}, "webNavigation-createdNavigationTarget", null);
+    }
+  }
+
   if (where == "save") {
     // TODO(1073187): propagate referrerPolicy.
 
@@ -365,7 +377,21 @@ function openLinkIn(url, where, params) {
       features += ",private";
     }
 
-    Services.ww.openWindow(w || window, getBrowserURL(), null, features, sa);
+    let newWindow = Services.ww.openWindow(w || window, getBrowserURL(), null, features, sa);
+    if (params.frameOuterWindowID && aCurrentBrowser) {
+      let cleanup = () => {
+        Services.obs.removeObserver(observer, "browser-delayed-startup-finished");
+        newWindow.removeEventListener("unload", cleanup);
+      };
+      let observer = subject => {
+        if (subject == newWindow) {
+          cleanup();
+          notifyNavigationTarget(newWindow.gBrowser.selectedBrowser);
+        }
+      };
+      Services.obs.addObserver(observer, "browser-delayed-startup-finished", false);
+      newWindow.addEventListener("unload", cleanup);
+    }
     return;
   }
 
@@ -474,6 +500,7 @@ function openLinkIn(url, where, params) {
       triggeringPrincipal: aTriggeringPrincipal,
     });
     browserUsedForLoad = tabUsedForLoad.linkedBrowser;
+    notifyNavigationTarget(browserUsedForLoad);
     break;
   }
 

@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Class selector query fast path</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="file_class_selector_checks.js"></script>
+<script>
+  checkClassSelectors(function(source, type) {
+    return new DOMParser().parseFromString(source, type);
+  }, is);
+</script>

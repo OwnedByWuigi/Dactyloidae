@@ -1,8 +1,8 @@
 <img src="browser/branding/unofficial/content/about-wordmark.svg" alt="Dactyloidae web browser" height="60">
 <br>
-<a href="https://discord.gg/ecx">Official Discord server</a>
+<a href="https://discord.gg/ycmQAMej77">Official Discord server</a>
 <br><br>
-<img src="https://dactyloidae.xyz/demo.jpg" height="500">
+<img src="docs/readme/demo.png" height="500">
 
 Dactyloidae is a heavily modified fork of Eclipse Hydra (fork of roytam1's Serpent, which is a fork of Basilisk, which is a fork of Firefox).
 
@@ -14,7 +14,7 @@ Some advantages over upstream, roytam1's Serpent, Eclipse Hydra and Firefox are:
 - Support for extensions in the Chrome and Edge Web Store (soon)
 - Support for extensions released for both Pale Moon, Basilisk and Firefox
 - WebExtensions support comparable to Firefox ESR 78
-- Literally being the fastest XUL browser (33.7 in Speedometer 2.1 compared to 22.4 in Pale Moon 34.2 AVX2)
+- Literally being the fastest XUL browser (48.7 in Speedometer 2.1 compared to 22.4 in Pale Moon 34.2 AVX2)
 - Re-add support for iOS, Android, Windows 2000 and later, NetBSD (soon OpenBSD)
 
 ## Interested in running Dactyloidae in Win9x?

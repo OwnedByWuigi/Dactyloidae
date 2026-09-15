@@ -27,6 +27,7 @@
 #include "builtin/SymbolObject.h"
 #include "builtin/TypedObject.h"
 #include "builtin/WeakMapObject.h"
+#include "builtin/WeakRefObject.h"
 #include "builtin/WeakSetObject.h"
 #include "vm/Debugger.h"
 #include "vm/EnvironmentObject.h"
@@ -463,6 +464,7 @@ GlobalObject::initStandardClasses(JSContext* cx, Handle<GlobalObject*> global)
         if (!ensureConstructor(cx, global, static_cast<JSProtoKey>(k)))
             return false;
     }
+
     return true;
 }
 
@@ -537,6 +539,7 @@ GlobalObject::initSelfHostingBuiltins(JSContext* cx, Handle<GlobalObject*> globa
            InitBareBuiltinCtor(cx, global, JSProto_Int32Array) &&
            InitBareSymbolCtor(cx, global) &&
            InitBareWeakMapCtor(cx, global) &&
+           InitBareWeakRefCtor(cx, global) &&
            InitStopIterationClass(cx, global) &&
            DefineFunctions(cx, global, builtins, AsIntrinsic);
 }

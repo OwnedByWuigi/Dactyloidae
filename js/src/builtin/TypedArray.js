@@ -37,10 +37,25 @@ function TypedArrayLengthMethod() {
     return TypedArrayLength(this);
 }
 
+function TypedArrayContentTypeIsBigIntMethod() {
+    return IsBigInt64TypedArray(this) || IsBigUint64TypedArray(this);
+}
+
+function ThrowIfTypedArrayOutOfBounds(tarray) {
+    if (TypedArrayIsOutOfBounds(tarray))
+        ThrowTypeError(JSMSG_TYPED_ARRAY_OUT_OF_BOUNDS);
+}
+
+function ThrowIfPossiblyWrappedTypedArrayOutOfBounds(tarray) {
+    if (PossiblyWrappedTypedArrayIsOutOfBounds(tarray))
+        ThrowTypeError(JSMSG_TYPED_ARRAY_OUT_OF_BOUNDS);
+}
+
 function GetAttachedArrayBuffer(tarray) {
     var buffer = ViewedArrayBufferIfReified(tarray);
     if (IsDetachedBuffer(buffer))
         ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
+    ThrowIfTypedArrayOutOfBounds(tarray);
     return buffer;
 }
 
@@ -58,6 +73,13 @@ function IsTypedArrayEnsuringArrayBuffer(arg) {
     if (IsObject(arg) && IsTypedArray(arg)) {
         GetAttachedArrayBuffer(arg);
         return true;
+    }
+
+    if (IsObject(arg) && IsPossiblyWrappedTypedArray(arg)) {
+        if (PossiblyWrappedTypedArrayHasDetachedBuffer(arg))
+            ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
+        ThrowIfPossiblyWrappedTypedArrayOutOfBounds(arg);
+        return false;
     }
 
     callFunction(CallTypedArrayMethodIfWrapped, arg, "GetAttachedArrayBufferMethod");
@@ -79,6 +101,7 @@ function ValidateTypedArray(obj, error) {
         if (IsPossiblyWrappedTypedArray(obj)) {
             if (PossiblyWrappedTypedArrayHasDetachedBuffer(obj))
                 ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
+            ThrowIfPossiblyWrappedTypedArrayOutOfBounds(obj);
             return false;
         }
     }
@@ -1024,12 +1047,18 @@ function TypedArraySet(overloaded, offset = 0) {
     // Steps 9-10.
     var targetBuffer = GetAttachedArrayBuffer(target);
 
+    ThrowIfTypedArrayOutOfBounds(target);
+
     // Step 11.
     var targetLength = TypedArrayLength(target);
 
     // Steps 12 et seq.
-    if (IsPossiblyWrappedTypedArray(overloaded))
+    if (IsPossiblyWrappedTypedArray(overloaded)) {
+        if (PossiblyWrappedTypedArrayHasDetachedBuffer(overloaded))
+            ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
+        ThrowIfPossiblyWrappedTypedArrayOutOfBounds(overloaded);
         return SetFromTypedArray(target, overloaded, targetOffset, targetLength);
+    }
 
     return SetFromNonTypedArray(target, overloaded, targetOffset, targetLength, targetBuffer);
 }
@@ -1365,6 +1394,8 @@ function TypedArraySubarray(begin, end) {
         return callFunction(CallTypedArrayMethodIfWrapped, this, begin, end,
                             "TypedArraySubarray");
     }
+
+    GetAttachedArrayBuffer(obj);
 
     // Steps 4-6.
     var buffer = TypedArrayBuffer(obj);
@@ -1846,7 +1877,10 @@ function ArrayBufferSlice(start, end) {
         ThrowTypeError(JSMSG_TYPED_ARRAY_DETACHED);
 
     // Steps 19-21.
-    ArrayBufferCopyData(new_, 0, O, first | 0, newLen | 0, isWrapped);
+    var currentLen = ArrayBufferByteLength(O);
+    var copyLen = first >= currentLen ? 0 : std_Math_min(newLen, currentLen - first);
+    if (copyLen > 0)
+        ArrayBufferCopyData(new_, 0, O, first | 0, copyLen | 0, isWrapped);
 
     // Step 22.
     return new_;

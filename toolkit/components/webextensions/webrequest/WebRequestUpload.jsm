@@ -4,21 +4,19 @@
 
 "use strict";
 
+const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+
 const EXPORTED_SYMBOLS = ["WebRequestUpload"];
 
 /* exported WebRequestUpload */
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const { XPCOMUtils } = Cu.import("resource://gre/modules/XPCOMUtils.jsm", {});
 
-const { ExtensionUtils } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionUtils.jsm"
-);
+const { ExtensionUtils } = Cu.import("resource://gre/modules/ExtensionUtils.jsm", {});
 
 const { DefaultMap } = ExtensionUtils;
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["TextEncoder"]);
+Cu.importGlobalProperties(["TextEncoder"]);
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -475,7 +473,8 @@ function* getRawDataChunked(
     // the file, rather than its data.
     if (
       unbuffered instanceof Ci.nsIFileInputStream ||
-      unbuffered instanceof Ci.mozIRemoteLazyInputStream
+      ("mozIRemoteLazyInputStream" in Ci &&
+       unbuffered instanceof Ci.mozIRemoteLazyInputStream)
     ) {
       // But this is not actually supported yet.
       yield { file: "<file>" };

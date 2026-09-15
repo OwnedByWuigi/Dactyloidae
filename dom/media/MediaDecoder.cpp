@@ -1250,7 +1250,11 @@ MediaDecoder::SetElementVisibility(bool aIsVisible)
 {
   MOZ_ASSERT(NS_IsMainThread());
   mElementVisible = aIsVisible;
-  mIsVisible = !mForcedHidden && mElementVisible;
+  // A floating player remains visible when its source tab is in the
+  // background or the original video is scrolled out of view.
+  HTMLMediaElement* element = mOwner ? mOwner->GetMediaElement() : nullptr;
+  mIsVisible = (element && element->MozPictureInPicture()) ||
+               (!mForcedHidden && mElementVisible);
 }
 
 void

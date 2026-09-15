@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<?xml-stylesheet href="chrome://global/skin/" type="text/css"?>
+<?xml-stylesheet href="chrome://browser/content/pictureInPicture.css" type="text/css"?>
+<!DOCTYPE window SYSTEM "chrome://browser/locale/browser.dtd">
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
+        id="picture-in-picture" windowtype="Browser:PictureInPicture"
+        title="&pictureInPicture.title;" width="480" height="270"
+        hidechrome="true"
+        persist="screenX screenY width height">
+  <script type="application/javascript" src="chrome://browser/content/pictureInPicture.js"/>
+  <html:div id="player-stack">
+    <html:div id="player-container"/>
+    <html:div id="player-overlay">
+      <html:div class="pip-controls" id="top-controls">
+        <button id="close" label="&#x00D7;" tooltiptext="&pictureInPicture.close;"
+                aria-label="&pictureInPicture.close;" oncommand="window.close();"/>
+      </html:div>
+      <html:div id="drag-area"/>
+      <html:div class="pip-controls" id="playback-controls">
+        <html:input id="seek" type="range" min="0" max="1" step="0.1" value="0"
+                    disabled="disabled" aria-label="&pictureInPicture.seek;"
+                    oninput="Player.seek(this.value);" onchange="Player.finishSeeking();"/>
+        <html:div id="button-row">
+          <button id="play" label="&mediaPlay.label;" oncommand="Player.command('playpause');"/>
+          <button id="mute" label="&mediaMute.label;" oncommand="Player.command('mute');"/>
+          <label id="time" value="0:00 / 0:00" flex="1" crop="end"/>
+          <button id="return" label="&pictureInPicture.return;" oncommand="Player.returnToTab();"/>
+        </html:div>
+      </html:div>
+    </html:div>
+    <html:div class="resize-edge" data-resize="n"/>
+    <html:div class="resize-edge" data-resize="s"/>
+    <html:div class="resize-edge" data-resize="e"/>
+    <html:div class="resize-edge" data-resize="w"/>
+    <html:div class="resize-corner" data-resize="nw"/>
+    <html:div class="resize-corner" data-resize="ne"/>
+    <html:div class="resize-corner" data-resize="sw"/>
+    <html:div class="resize-corner" data-resize="se"/>
+  </html:div>
+  <label id="pause-label" value="&mediaPause.label;" hidden="true"/>
+  <label id="unmute-label" value="&mediaUnmute.label;" hidden="true"/>
+  <label id="live-label" value="&pictureInPicture.live;" hidden="true"/>
+</window>

@@ -66,6 +66,56 @@ BEGIN_TEST(testIndexToString)
 }
 END_TEST(testIndexToString)
 
+BEGIN_TEST(testDtoaCacheInterleaved)
+{
+    JS::RootedString first(cx, js::NumberToString<js::CanGC>(cx, 1234.5));
+    CHECK(first);
+    JS::RootedString second(cx, js::NumberToString<js::CanGC>(cx, 6789.5));
+    CHECK(second);
+    JS::RootedString third(cx, js::IndexToString(cx, 123456));
+    CHECK(third);
+    JS::RootedString fourth(cx, js::IndexToString(cx, 654321));
+    CHECK(fourth);
+
+    for (size_t i = 0; i < 10; i++) {
+        CHECK(js::NumberToString<js::CanGC>(cx, 1234.5) == first);
+        CHECK(js::NumberToString<js::CanGC>(cx, 6789.5) == second);
+        CHECK(js::IndexToString(cx, 123456) == third);
+        CHECK(js::IndexToString(cx, 654321) == fourth);
+    }
+
+    // Every raw string pointer must be invalidated, not just the latest one.
+    JS_GC(cx);
+    CHECK(!cx->compartment()->dtoaCache.lookup(10, 1234.5));
+    CHECK(!cx->compartment()->dtoaCache.lookup(10, 6789.5));
+    CHECK(!cx->compartment()->dtoaCache.lookup(10, 123456));
+    CHECK(!cx->compartment()->dtoaCache.lookup(10, 654321));
+
+    // The radix is part of the key. Signed zero can share its string.
+    js::DtoaCache cache;
+    cache.cache(10, 0.0, &first->asFlat());
+    cache.cache(16, 0.0, &second->asFlat());
+    CHECK(cache.lookup(10, -0.0) == first);
+    CHECK(cache.lookup(16, -0.0) == second);
+    CHECK(!cache.lookup(2, 0.0));
+    cache.purge();
+    CHECK(!cache.lookup(10, 0.0));
+    CHECK(!cache.lookup(16, 0.0));
+
+    for (size_t i = 0; i < 12; i++)
+        cache.cache(10, double(i), &first->asFlat());
+    for (size_t i = 0; i < 8; i++)
+        CHECK(!cache.lookup(10, double(i)));
+    for (size_t i = 8; i < 12; i++)
+        CHECK(cache.lookup(10, double(i)) == first);
+
+    // A failed string allocation must never turn into a cache hit.
+    cache.cache(10, 12.0, nullptr);
+    CHECK(!cache.lookup(10, 12.0));
+    return true;
+}
+END_TEST(testDtoaCacheInterleaved)
+
 BEGIN_TEST(testStringIsIndex)
 {
     for (size_t i = 0, sz = ArrayLength(tests); i < sz; i++) {

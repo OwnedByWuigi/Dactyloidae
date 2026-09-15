@@ -5,6 +5,6 @@
 <!ENTITY  brandShorterName      "Dactyloidae">
 <!ENTITY  brandShortName        "Dactyloidae">
 <!ENTITY  brandFullName         "Dactyloidae">
-<!ENTITY  vendorShortName       "Eclipse Community">
-<!ENTITY  vendorFullName        "Eclipse Community">
-<!ENTITY  trademarkInfo.part1   "Dactyloidae and the Dactyloidae logo are trademarks of Eclipse Community.">
+<!ENTITY  vendorShortName       "Dactyloidae">
+<!ENTITY  vendorFullName        "Dactyloidae">
+<!ENTITY  trademarkInfo.part1   "Dactyloidae and the Dactyloidae logo are trademarks of Dactyloidae Team.">

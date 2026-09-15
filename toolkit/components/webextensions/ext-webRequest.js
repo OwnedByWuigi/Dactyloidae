@@ -4,8 +4,6 @@ var {classes: Cc, interfaces: Ci, utils: Cu} = Components;
 
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
-XPCOMUtils.defineLazyModuleGetter(this, "MatchPattern",
-                                  "resource://gre/modules/MatchPattern.jsm");
 XPCOMUtils.defineLazyModuleGetter(this, "WebRequest",
                                   "resource://gre/modules/WebRequest.jsm");
 
@@ -75,11 +73,16 @@ function WebRequestEventManager(context, eventName) {
         }
       }
 
+      if (data.registerTraceableChannel) {
+        let remoteTab = context.xulBrowser && context.xulBrowser.frameLoader
+                          ? context.xulBrowser.frameLoader.remoteTab : null;
+        data.registerTraceableChannel({id: context.extension.id}, remoteTab);
+      }
       return context.runSafe(callback, data2);
     };
 
     let filter2 = {};
-    filter2.urls = new MatchPattern(filter.urls);
+    filter2.urls = filter.urls;
     if (filter.types) {
       filter2.types = filter.types;
     }
@@ -105,7 +108,9 @@ function WebRequestEventManager(context, eventName) {
       }
     }
 
-    WebRequest[eventName].addListener(listener, filter2, info2);
+    WebRequest[eventName].addListener(listener, filter2, info2, {
+      policy: {id: context.extension.id, allowedOrigins: context.extension.whiteListedHosts},
+    });
     return () => {
       WebRequest[eventName].removeListener(listener);
     };
@@ -117,14 +122,6 @@ function WebRequestEventManager(context, eventName) {
 WebRequestEventManager.prototype = Object.create(SingletonEventManager.prototype);
 
 function makeWebRequestEvent(context, eventName) {
-  if (!(eventName in WebRequest) || !WebRequest[eventName]) {
-    let name = `webRequest.${eventName}`;
-    return new SingletonEventManager(context, name, () => {
-      Cu.reportError(`webRequest.${eventName} is not supported by this runtime.`);
-      return () => {};
-    }).api();
-  }
-
   return new WebRequestEventManager(context, eventName).api();
 }
 
@@ -156,7 +153,7 @@ extensions.registerSchemaAPI("webRequest", "addon_parent", context => {
 
         return WebRequest.getSecurityInfo({
           id: requestId,
-          policy: context.extension.policy,
+          policy: {id: context.extension.id},
           remoteTab,
           options,
         });

@@ -38,6 +38,7 @@
 #include "js/UniquePtr.h"
 #include "unicode/uchar.h"
 #include "unicode/unorm2.h"
+#include "vm/CharacterOperations.h"
 #include "vm/GlobalObject.h"
 #include "vm/Interpreter.h"
 #include "vm/Opcodes.h"
@@ -1640,7 +1641,11 @@ FirstCharMatcherUnrolled(const TextChar* text, uint32_t n, const PatChar pat)
 static const char*
 FirstCharMatcher8bit(const char* text, uint32_t n, const char pat)
 {
-#if  defined(__clang__)
+#ifdef JS_HAS_SSE2_CHARACTER_OPERATIONS
+    if (n >= 16)
+        return FindCharacter(text, n, pat);
+#endif
+#if defined(__clang__)
     return FirstCharMatcherUnrolled<char, char>(text, n, pat);
 #else
     return reinterpret_cast<const char*>(memchr(text, pat, n));
@@ -1650,6 +1655,10 @@ FirstCharMatcher8bit(const char* text, uint32_t n, const char pat)
 static const char16_t*
 FirstCharMatcher16bit(const char16_t* text, uint32_t n, const char16_t pat)
 {
+#ifdef JS_HAS_SSE2_CHARACTER_OPERATIONS
+    if (n >= 8)
+        return FindCharacter(text, n, pat);
+#endif
 #if defined(XP_DARWIN) || defined(XP_WIN)
     /*
      * Performance of memchr is horrible in OSX. Windows is better,
@@ -1734,18 +1743,14 @@ StringMatch(const TextChar* text, uint32_t textLen, const PatChar* pat, uint32_t
         return -1;
 
 #if defined(__i386__) || defined(_M_IX86) || defined(__i386)
-    /*
-     * Given enough registers, the unrolled loop below is faster than the
-     * following loop. 32-bit x86 does not have enough registers.
-     */
+    // Avoid the generic substring matcher for a single character on x86.
+    // FindCharacter uses SSE2 where available, including mixed encodings.
     if (patLen == 1) {
-        const PatChar p0 = *pat;
-        const TextChar* end = text + textLen;
-        for (const TextChar* c = text; c != end; ++c) {
-            if (*c == p0)
-                return c - text;
-        }
-        return -1;
+        // A two-byte needle cannot match Latin1 text if it exceeds 0xff.
+        if (sizeof(TextChar) == 1 && uint32_t(*pat) > 0xff)
+            return -1;
+        const TextChar* match = FindCharacter(text, textLen, TextChar(*pat));
+        return match ? int(match - text) : -1;
     }
 #endif
 
@@ -3344,6 +3349,8 @@ static const JSFunctionSpec string_methods[] = {
     JS_SELF_HOSTED_FN("toLocaleUpperCase", "String_toLocaleUpperCase", 0,0),
     JS_SELF_HOSTED_FN("localeCompare", "String_localeCompare", 1,0),
     JS_SELF_HOSTED_FN("repeat", "String_repeat",      1,0),
+    JS_SELF_HOSTED_FN("isWellFormed", "String_isWellFormed", 0,0),
+    JS_SELF_HOSTED_FN("toWellFormed", "String_toWellFormed", 0,0),
     JS_FN("normalize",         str_normalize,         0,0),
 
     /* Perl-ish methods (search is actually Python-esque). */

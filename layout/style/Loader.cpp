@@ -885,9 +885,10 @@ SheetLoadData::OnStreamComplete(nsIUnicharStreamLoader* aLoader,
   }
 
   // In standards mode, a style sheet must have one of these MIME
-  // types to be processed at all.  In quirks mode, we accept any
-  // MIME type, but only if the style sheet is same-origin with the
-  // requesting document or parent sheet.  See bug 524223.
+  // types to be processed at all, unless it is same-origin.
+  // For same-origin sheets, we accept any MIME type to match modern
+  // browser behavior (Chrome, Firefox). Cross-origin sheets require
+  // a valid CSS MIME type for security.
 
   bool validType = contentType.EqualsLiteral("text/css") ||
     contentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE) ||
@@ -906,7 +907,7 @@ SheetLoadData::OnStreamComplete(nsIUnicharStreamLoader* aLoader,
       }
     }
 
-    if (sameOrigin && mLoader->mCompatMode == eCompatibility_NavQuirks) {
+    if (sameOrigin) {
       errorMessage = "MimeNotCssWarn";
       errorFlag = nsIScriptError::warningFlag;
     } else {

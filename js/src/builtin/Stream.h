@@ -165,6 +165,8 @@ class CountQueuingStrategy : public NativeObject
     static const Class protoClass_;
 };
 
+[[nodiscard]] bool InitStreamExtras(JSContext* cx, HandleObject global);
+
 } // namespace js
 
 #endif /* builtin_Stream_h */

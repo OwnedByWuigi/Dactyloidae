@@ -2,13 +2,12 @@
 
 ##Uncomment PGO for release build
 
-# 16 jobs for 16 cores
-mk_add_options MOZ_MAKE_FLAGS="-j6"
+# auto detect threads
+mk_add_options MOZ_MAKE_FLAGS="-j$NUMBER_OF_PROCESSORS"
 
 # x86 build
 ac_add_options --host=i686-pc-mingw32
 ac_add_options --target=i686-pc-mingw32
-WIN32_REDIST_DIR=$VCINSTALLDIR/Redist/MSVC/14.16.27012/x86
 
 # Build only Hydra
 ac_add_options --enable-application=basilisk

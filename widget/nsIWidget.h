@@ -803,6 +803,12 @@ class nsIWidget : public nsISupports
      */
     virtual void SetZIndex(int32_t aZIndex) = 0;
 
+    // Keep a top-level window above ordinary windows, including other apps.
+    virtual void SetAlwaysOnTop(bool aAlwaysOnTop)
+    {
+      mAlwaysOnTop = aAlwaysOnTop;
+    }
+
     /**
      * Gets the widget's z-index.
      */
@@ -2032,6 +2038,7 @@ protected:
     bool mOnDestroyCalled;
     nsWindowType mWindowType;
     int32_t mZIndex;
+    bool mAlwaysOnTop = false;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIWidget, NS_IWIDGET_IID)

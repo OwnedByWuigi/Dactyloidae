@@ -47,3 +47,4 @@ category webextension-schemas test chrome://extensions/content/schemas/test.json
 category webextension-schemas top_sites chrome://extensions/content/schemas/top_sites.json
 category webextension-schemas web_navigation chrome://extensions/content/schemas/web_navigation.json
 category webextension-schemas web_request chrome://extensions/content/schemas/web_request.json
+category webextension-schemas dns chrome://extensions/content/schemas/dns.json

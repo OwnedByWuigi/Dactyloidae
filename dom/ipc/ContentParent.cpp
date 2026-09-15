@@ -881,9 +881,20 @@ ContentParent::CreateBrowser(const TabContext& aContext,
     constructorSender = CreateContentBridgeParent(aContext, initialPriority,
                                                   openerTabId, &tabId);
   } else {
-    constructorSender =
-      GetNewOrUsedBrowserProcess(aContext.IsMozBrowserElement(),
-                                 initialPriority, nullptr, aFreshProcess);
+    if (aOpenerContentParent && !aFreshProcess) {
+      // relatedBrowser requires the same process, not another process from
+      // the pool. Picture-in-Picture shares a video through a process-local
+      // module, and cannot use a randomly selected content process.
+      if (!aOpenerContentParent->IsAlive() ||
+          aOpenerContentParent->IsForBrowser() != aContext.IsMozBrowserElement()) {
+        return nullptr;
+      }
+      constructorSender = aOpenerContentParent;
+    } else {
+      constructorSender =
+        GetNewOrUsedBrowserProcess(aContext.IsMozBrowserElement(),
+                                   initialPriority, nullptr, aFreshProcess);
+    }
     if (!constructorSender) {
       return nullptr;
     }

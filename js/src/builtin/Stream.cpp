@@ -5,6 +5,7 @@
 
 #include "builtin/Stream.h"
 
+#include "js/CompilationAndEvaluation.h"
 #include "js/Stream.h"
 
 #include "jscntxt.h"
@@ -15,6 +16,10 @@
 #include "jsobjinlines.h"
 
 #include "vm/NativeObject-inl.h"
+
+#include "zlib.h"
+
+#include <string.h>
 
 using namespace js;
 
@@ -96,14 +101,72 @@ Is(const HandleValue v)
     return v.isObject() && v.toObject().is<T>();
 }
 
-#ifdef DEBUG
+template<class T>
+MOZ_ALWAYS_INLINE bool
+IsMaybeWrapped(const HandleValue v)
+{
+    if (!v.isObject())
+        return false;
+
+    JSObject* obj = &v.toObject();
+    if (obj->is<T>())
+        return true;
+
+    JSObject* unwrapped = CheckedUnwrap(obj);
+    return unwrapped && unwrapped->is<T>();
+}
+
+template<class T>
+MOZ_ALWAYS_INLINE T*
+UnwrapInternalSlotObject(JSObject* obj)
+{
+    JSObject* unwrapped = UncheckedUnwrap(obj);
+    MOZ_ASSERT(unwrapped);
+    MOZ_ASSERT(unwrapped->is<T>());
+    return &unwrapped->as<T>();
+}
+
+template<class T>
+MOZ_ALWAYS_INLINE T*
+UnwrapMaybeWrappedArg(const HandleValue v)
+{
+    if (!v.isObject())
+        return nullptr;
+
+    JSObject* obj = &v.toObject();
+    if (obj->is<T>())
+        return &obj->as<T>();
+
+    JSObject* unwrapped = CheckedUnwrap(obj);
+    if (!unwrapped || !unwrapped->is<T>())
+        return nullptr;
+
+    return &unwrapped->as<T>();
+}
+
 static bool
 IsReadableStreamController(const JSObject* controller)
 {
     return controller->is<ReadableStreamDefaultController>() ||
            controller->is<ReadableByteStreamController>();
 }
-#endif // DEBUG
+
+[[nodiscard]] static NativeObject*
+UnwrapMaybeWrappedReadableStreamController(const HandleValue v)
+{
+    if (!v.isObject())
+        return nullptr;
+
+    JSObject* obj = &v.toObject();
+    if (IsReadableStreamController(obj))
+        return &obj->as<NativeObject>();
+
+    JSObject* unwrapped = CheckedUnwrap(obj);
+    if (!unwrapped || !IsReadableStreamController(unwrapped))
+        return nullptr;
+
+    return &unwrapped->as<NativeObject>();
+}
 
 static inline uint32_t
 ControllerFlags(const NativeObject* controller)
@@ -183,7 +246,8 @@ inline static MOZ_MUST_USE ReadableStream*
 StreamFromController(const NativeObject* controller)
 {
     MOZ_ASSERT(IsReadableStreamController(controller));
-    return &controller->getFixedSlot(ControllerSlot_Stream).toObject().as<ReadableStream>();
+    return UnwrapInternalSlotObject<ReadableStream>(
+        &controller->getFixedSlot(ControllerSlot_Stream).toObject());
 }
 
 inline static MOZ_MUST_USE NativeObject*
@@ -215,15 +279,17 @@ inline static MOZ_MUST_USE ReadableStream*
 StreamFromReader(const NativeObject* reader)
 {
     MOZ_ASSERT(ReaderHasStream(reader));
-    return &reader->getFixedSlot(ReaderSlot_Stream).toObject().as<ReadableStream>();
+    return UnwrapInternalSlotObject<ReadableStream>(
+        &reader->getFixedSlot(ReaderSlot_Stream).toObject());
 }
 
 inline static MOZ_MUST_USE NativeObject*
 ReaderFromStream(const NativeObject* stream)
 {
     Value readerVal = stream->getFixedSlot(StreamSlot_Reader);
-    MOZ_ASSERT(JS::IsReadableStreamReader(&readerVal.toObject()));
-    return &readerVal.toObject().as<NativeObject>();
+    NativeObject* reader = UnwrapInternalSlotObject<NativeObject>(&readerVal.toObject());
+    MOZ_ASSERT(JS::IsReadableStreamReader(reader));
+    return reader;
 }
 
 inline static bool
@@ -305,26 +371,55 @@ RejectNonGenericMethod(JSContext* cx, const CallArgs& args,
     return ReturnPromiseRejectedWithPendingError(cx, args);
 }
 
-inline static MOZ_MUST_USE NativeObject*
+[[nodiscard]] static bool
+ResolveMaybeWrappedPromise(JSContext* cx, HandleObject promise, HandleValue value)
+{
+    RootedObject wrappedPromise(cx, promise);
+    RootedValue wrappedValue(cx, value);
+    if (!JS_WrapObject(cx, &wrappedPromise) || !JS_WrapValue(cx, &wrappedValue))
+        return false;
+    return ResolvePromise(cx, wrappedPromise, wrappedValue);
+}
+
+[[nodiscard]] static bool
+RejectMaybeWrappedPromise(JSContext* cx, HandleObject promise, HandleValue reason)
+{
+    RootedObject wrappedPromise(cx, promise);
+    RootedValue wrappedReason(cx, reason);
+    if (!JS_WrapObject(cx, &wrappedPromise) || !JS_WrapValue(cx, &wrappedReason))
+        return false;
+    return RejectPromise(cx, wrappedPromise, wrappedReason);
+}
+
+[[nodiscard]] inline static NativeObject*
 SetNewList(JSContext* cx, HandleNativeObject container, uint32_t slot)
 {
-    NativeObject* list = NewObjectWithNullTaggedProto<PlainObject>(cx);
-    if (!list)
-        return nullptr;
-    container->setFixedSlot(slot, ObjectValue(*list));
+    RootedNativeObject list(cx);
+    {
+        JSAutoCompartment ac(cx, container);
+        list = NewObjectWithNullTaggedProto<PlainObject>(cx);
+        if (!list)
+            return nullptr;
+        container->setFixedSlot(slot, ObjectValue(*list));
+    }
     return list;
 }
 
 inline static MOZ_MUST_USE bool
 AppendToList(JSContext* cx, HandleNativeObject list, HandleValue value)
 {
+    JSAutoCompartment ac(cx, list);
+    RootedValue wrappedValue(cx, value);
+    if (!JS_WrapValue(cx, &wrappedValue))
+        return false;
+
     uint32_t length = list->getDenseInitializedLength();
 
     if (!list->ensureElements(cx, length + 1))
         return false;
 
     list->ensureDenseInitializedLength(cx, length, 1);
-    list->setDenseElement(length, value);
+    list->setDenseElement(length, wrappedValue);
 
     return true;
 }
@@ -341,6 +436,7 @@ template<class T>
 inline static MOZ_MUST_USE T*
 ShiftFromList(JSContext* cx, HandleNativeObject list)
 {
+    JSAutoCompartment ac(cx, list);
     uint32_t length = list->getDenseInitializedLength();
     MOZ_ASSERT(length > 0);
 
@@ -915,30 +1011,79 @@ ReadableStream_getReader(JSContext* cx, unsigned argc, Value* vp)
     return CallNonGenericMethod<Is<ReadableStream>, ReadableStream_getReader_impl>(cx, args);
 }
 
+[[nodiscard]] static bool
+CallStreamExtra(JSContext* cx, const char* name, HandleValue streamVal,
+                HandleValue arg0, HandleValue arg1, MutableHandleValue rval)
+{
+    RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
+    if (!global)
+        return false;
+
+    RootedValue fun(cx);
+    if (!JS_GetProperty(cx, global, name, &fun))
+        return false;
+
+    if (!fun.isObject() || !IsCallable(fun)) {
+        if (!InitStreamExtras(cx, global))
+            return false;
+        if (!JS_GetProperty(cx, global, name, &fun))
+            return false;
+    }
+
+    if (!fun.isObject() || !IsCallable(fun)) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_READABLESTREAM_METHOD_NOT_IMPLEMENTED, name);
+        return false;
+    }
+
+    FixedInvokeArgs<3> invokeArgs(cx);
+    invokeArgs[0].set(streamVal);
+    invokeArgs[1].set(arg0);
+    invokeArgs[2].set(arg1);
+    return Call(cx, fun, UndefinedHandleValue, invokeArgs, rval);
+}
+
 // Streams spec, 3.2.4.4. pipeThrough({ writable, readable }, options)
-static MOZ_MUST_USE bool
+[[nodiscard]] static bool
 ReadableStream_pipeThrough(JSContext* cx, unsigned argc, Value* vp)
 {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_READABLESTREAM_METHOD_NOT_IMPLEMENTED, "pipeThrough");
-    return false;
-    // // Step 1: Perform ? Invoke(this, "pipeTo", « writable, options »).
+    CallArgs args = CallArgsFromVp(argc, vp);
+    if (!Is<ReadableStream>(args.thisv())) {
+        ReportValueError3(cx, JSMSG_INCOMPATIBLE_PROTO, JSDVG_SEARCH_STACK, args.thisv(),
+                          nullptr, "pipeThrough", "");
+        return false;
+    }
 
-    // // Step 2: Return readable.
-    // return readable;
+    RootedValue rval(cx);
+    if (!CallStreamExtra(cx, "__uxpStreamsPipeThrough", args.thisv(),
+                         args.get(0), args.get(1), &rval))
+        return false;
+
+    args.rval().set(rval);
+    return true;
 }
 
 // Streams spec, 3.2.4.5. pipeTo(dest, { preventClose, preventAbort, preventCancel } = {})
-// TODO: Unimplemented since spec is not complete yet.
-static MOZ_MUST_USE bool
+[[nodiscard]] static bool
 ReadableStream_pipeTo(JSContext* cx, unsigned argc, Value* vp)
 {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_READABLESTREAM_METHOD_NOT_IMPLEMENTED, "pipeTo");
-    return false;
+    CallArgs args = CallArgsFromVp(argc, vp);
+    if (!Is<ReadableStream>(args.thisv())) {
+        ReportValueError3(cx, JSMSG_INCOMPATIBLE_PROTO, JSDVG_SEARCH_STACK, args.thisv(),
+                          nullptr, "pipeTo", "");
+        return false;
+    }
+
+    RootedValue rval(cx);
+    if (!CallStreamExtra(cx, "__uxpStreamsPipeTo", args.thisv(),
+                         args.get(0), args.get(1), &rval))
+        return false;
+
+    args.rval().set(rval);
+    return true;
 }
 
-static MOZ_MUST_USE bool
+[[nodiscard]] static bool
 ReadableStreamTee(JSContext* cx, Handle<ReadableStream*> stream, bool cloneForBranch2,
                   MutableHandle<ReadableStream*> branch1, MutableHandle<ReadableStream*> branch2);
 
@@ -1313,7 +1458,8 @@ ReadableStreamAddReadIntoRequest(JSContext* cx, Handle<ReadableStream*> stream)
 {
     // Step 1: MOZ_ASSERT: ! IsReadableStreamBYOBReader(stream.[[reader]]) is true.
     RootedValue val(cx, stream->getFixedSlot(StreamSlot_Reader));
-    RootedNativeObject reader(cx, &val.toObject().as<ReadableStreamBYOBReader>());
+    RootedNativeObject reader(cx, ReaderFromStream(stream));
+    MOZ_ASSERT(reader->is<ReadableStreamBYOBReader>());
 
     // Step 2: MOZ_ASSERT: stream.[[state]] is "readable" or "closed".
     MOZ_ASSERT(stream->readable() || stream->closed());
@@ -1326,7 +1472,8 @@ ReadableStreamAddReadIntoRequest(JSContext* cx, Handle<ReadableStream*> stream)
     // Step 4: Let readIntoRequest be Record {[[promise]]: promise}.
     // Step 5: Append readIntoRequest as the last element of stream.[[reader]].[[readIntoRequests]].
     val = reader->getFixedSlot(ReaderSlot_Requests);
-    RootedNativeObject readIntoRequests(cx, &val.toObject().as<NativeObject>());
+    RootedNativeObject readIntoRequests(cx);
+    readIntoRequests = UnwrapInternalSlotObject<NativeObject>(&val.toObject());
     // Since [[promise]] is the Record's only field, we store it directly.
     val = ObjectValue(*promise);
     if (!AppendToList(cx, readIntoRequests, val))
@@ -1356,7 +1503,8 @@ ReadableStreamAddReadRequest(JSContext* cx, Handle<ReadableStream*> stream)
   // Step 4: Let readRequest be Record {[[promise]]: promise}.
   // Step 5: Append readRequest as the last element of stream.[[reader]].[[readRequests]].
   RootedValue val(cx, reader->getFixedSlot(ReaderSlot_Requests));
-  RootedNativeObject readRequests(cx, &val.toObject().as<NativeObject>());
+  RootedNativeObject readRequests(cx);
+  readRequests = UnwrapInternalSlotObject<NativeObject>(&val.toObject());
 
   // Since [[promise]] is the Record's only field, we store it directly.
   val = ObjectValue(*promise);
@@ -1400,6 +1548,8 @@ ReadableStream::cancel(JSContext* cx, Handle<ReadableStream*> stream, HandleValu
     //         with stream.[[storedError]].
     if (stream->errored()) {
         RootedValue storedError(cx, stream->getFixedSlot(StreamSlot_StoredError));
+        if (!JS_WrapValue(cx, &storedError))
+            return nullptr;
         return PromiseObject::unforgeableReject(cx, storedError);
     }
 
@@ -1443,13 +1593,14 @@ ReadableStreamCloseInternal(JSContext* cx, Handle<ReadableStream*> stream)
       return true;
 
   // Step 5: If ! IsReadableStreamDefaultReader(reader) is true,
-  RootedNativeObject reader(cx, &val.toObject().as<NativeObject>());
+  RootedNativeObject reader(cx, ReaderFromStream(stream));
   if (reader->is<ReadableStreamDefaultReader>()) {
       // Step a: Repeat for each readRequest that is an element of
       //         reader.[[readRequests]],
       val = reader->getFixedSlot(ReaderSlot_Requests);
       if (!val.isUndefined()) {
-          RootedNativeObject readRequests(cx, &val.toObject().as<NativeObject>());
+          RootedNativeObject readRequests(cx);
+          readRequests = UnwrapInternalSlotObject<NativeObject>(&val.toObject());
           uint32_t len = readRequests->getDenseInitializedLength();
           RootedObject readRequest(cx);
           RootedObject resultObj(cx);
@@ -1462,7 +1613,7 @@ ReadableStreamCloseInternal(JSContext* cx, Handle<ReadableStream*> stream)
               if (!resultObj)
                   return false;
               resultVal = ObjectValue(*resultObj);
-              if (!ResolvePromise(cx, readRequest, resultVal))
+              if (!ResolveMaybeWrappedPromise(cx, readRequest, resultVal))
                   return false;
           }
 
@@ -1474,7 +1625,7 @@ ReadableStreamCloseInternal(JSContext* cx, Handle<ReadableStream*> stream)
   // Step 6: Resolve reader.[[closedPromise]] with undefined.
   // Step 7: Return (implicit).
   RootedObject closedPromise(cx, &reader->getFixedSlot(ReaderSlot_ClosedPromise).toObject());
-  if (!ResolvePromise(cx, closedPromise, UndefinedHandleValue))
+  if (!ResolveMaybeWrappedPromise(cx, closedPromise, UndefinedHandleValue))
       return false;
 
   if (stream->mode() == JS::ReadableStreamMode::ExternalSource &&
@@ -1502,7 +1653,13 @@ ReadableStreamErrorInternal(JSContext* cx, Handle<ReadableStream*> stream, Handl
     SetStreamState(stream, (state & ReadableStream::Disturbed) | ReadableStream::Errored);
 
     // Step 4: Set stream.[[storedError]] to e.
-    stream->setFixedSlot(StreamSlot_StoredError, e);
+    RootedValue storedError(cx, e);
+    {
+        JSAutoCompartment ac(cx, stream);
+        if (!JS_WrapValue(cx, &storedError))
+            return false;
+        stream->setFixedSlot(StreamSlot_StoredError, storedError);
+    }
 
     // Step 5: Let reader be stream.[[reader]].
     RootedValue val(cx, stream->getFixedSlot(StreamSlot_Reader));
@@ -1510,20 +1667,21 @@ ReadableStreamErrorInternal(JSContext* cx, Handle<ReadableStream*> stream, Handl
     // Step 6: If reader is undefined, return.
     if (val.isUndefined())
         return true;
-    RootedNativeObject reader(cx, &val.toObject().as<NativeObject>());
+    RootedNativeObject reader(cx, ReaderFromStream(stream));
 
     // Steps 7,8: (Identical in our implementation.)
     // Step a: Repeat for each readRequest that is an element of
     //         reader.[[readRequests]],
     val = reader->getFixedSlot(ReaderSlot_Requests);
-    RootedNativeObject readRequests(cx, &val.toObject().as<NativeObject>());
-    Rooted<PromiseObject*> readRequest(cx);
+    RootedNativeObject readRequests(cx);
+    readRequests = UnwrapInternalSlotObject<NativeObject>(&val.toObject());
+    RootedObject readRequest(cx);
     uint32_t len = readRequests->getDenseInitializedLength();
     for (uint32_t i = 0; i < len; i++) {
         // Step i: Reject readRequest.[[promise]] with e.
         val = readRequests->getDenseElement(i);
-        readRequest = &val.toObject().as<PromiseObject>();
-        if (!PromiseObject::reject(cx, readRequest, e))
+        readRequest = &val.toObject();
+        if (!RejectMaybeWrappedPromise(cx, readRequest, e))
             return false;
     }
 
@@ -1533,8 +1691,8 @@ ReadableStreamErrorInternal(JSContext* cx, Handle<ReadableStream*> stream, Handl
 
     // Step 9: Reject reader.[[closedPromise]] with e.
     val = reader->getFixedSlot(ReaderSlot_ClosedPromise);
-    Rooted<PromiseObject*> closedPromise(cx, &val.toObject().as<PromiseObject>());
-    if (!PromiseObject::reject(cx, closedPromise, e))
+    RootedObject closedPromise(cx, &val.toObject());
+    if (!RejectMaybeWrappedPromise(cx, closedPromise, e))
         return false;
 
     if (stream->mode() == JS::ReadableStreamMode::ExternalSource &&
@@ -1558,7 +1716,7 @@ ReadableStreamFulfillReadOrReadIntoRequest(JSContext* cx, Handle<ReadableStream*
 {
     // Step 1: Let reader be stream.[[reader]].
     RootedValue val(cx, stream->getFixedSlot(StreamSlot_Reader));
-    RootedNativeObject reader(cx, &val.toObject().as<NativeObject>());
+    RootedNativeObject reader(cx, ReaderFromStream(stream));
 
     // Step 2: Let readIntoRequest be the first element of
     //         reader.[[readIntoRequests]].
@@ -1566,7 +1724,8 @@ ReadableStreamFulfillReadOrReadIntoRequest(JSContext* cx, Handle<ReadableStream*
     //         all other elements downward (so that the second becomes the first,
     //         and so on).
     val = reader->getFixedSlot(ReaderSlot_Requests);
-    RootedNativeObject readIntoRequests(cx, &val.toObject().as<NativeObject>());
+    RootedNativeObject readIntoRequests(cx);
+    readIntoRequests = UnwrapInternalSlotObject<NativeObject>(&val.toObject());
     Rooted<PromiseObject*> readIntoRequest(cx);
     readIntoRequest = ShiftFromList<PromiseObject>(cx, readIntoRequests);
     MOZ_ASSERT(readIntoRequest);
@@ -1577,7 +1736,8 @@ ReadableStreamFulfillReadOrReadIntoRequest(JSContext* cx, Handle<ReadableStream*
     if (!iterResult)
         return false;
     val = ObjectValue(*iterResult);
-    return PromiseObject::resolve(cx, readIntoRequest, val);
+    RootedObject readIntoRequestObj(cx, readIntoRequest);
+    return ResolveMaybeWrappedPromise(cx, readIntoRequestObj, val);
 }
 
 // Streams spec, 3.4.8. ReadableStreamGetNumReadIntoRequests ( stream )
@@ -1592,7 +1752,8 @@ ReadableStreamGetNumReadRequests(ReadableStream* stream)
         return 0;
     NativeObject* reader = ReaderFromStream(stream);
     Value readRequests = reader->getFixedSlot(ReaderSlot_Requests);
-    return readRequests.toObject().as<NativeObject>().getDenseInitializedLength();
+    NativeObject* requests = UnwrapInternalSlotObject<NativeObject>(&readRequests.toObject());
+    return requests->getDenseInitializedLength();
 }
 
 // Stream spec 3.4.10. ReadableStreamHasBYOBReader ( stream )
@@ -1604,7 +1765,10 @@ ReadableStreamHasBYOBReader(ReadableStream* stream)
     // Step 3: If ! IsReadableStreamBYOBReader(reader) is false, return false.
     // Step 4: Return true.
     Value reader = stream->getFixedSlot(StreamSlot_Reader);
-    return reader.isObject() && reader.toObject().is<ReadableStreamBYOBReader>();
+    if (!reader.isObject())
+        return false;
+    JSObject* unwrapped = UncheckedUnwrap(&reader.toObject());
+    return unwrapped && unwrapped->is<ReadableStreamBYOBReader>();
 }
 
 // Streap spec 3.4.11. ReadableStreamHasDefaultReader ( stream )
@@ -1616,7 +1780,10 @@ ReadableStreamHasDefaultReader(ReadableStream* stream)
     // Step 3: If ! ReadableStreamDefaultReader(reader) is false, return false.
     // Step 4: Return true.
     Value reader = stream->getFixedSlot(StreamSlot_Reader);
-    return reader.isObject() && reader.toObject().is<ReadableStreamDefaultReader>();
+    if (!reader.isObject())
+        return false;
+    JSObject* unwrapped = UncheckedUnwrap(&reader.toObject());
+    return unwrapped && unwrapped->is<ReadableStreamDefaultReader>();
 }
 
 static MOZ_MUST_USE bool
@@ -1663,13 +1830,12 @@ ReadableStreamDefaultReader::constructor(JSContext* cx, unsigned argc, Value* vp
         return false;
 
     // Step 1: If ! IsReadableStream(stream) is false, throw a TypeError exception.
-    if (!Is<ReadableStream>(args.get(0))) {
+    Rooted<ReadableStream*> stream(cx, UnwrapMaybeWrappedArg<ReadableStream>(args.get(0)));
+    if (!stream) {
         ReportArgTypeError(cx, "ReadableStreamDefaultReader", "ReadableStream",
                            args.get(0));
         return false;
     }
-
-    Rooted<ReadableStream*> stream(cx, &args.get(0).toObject().as<ReadableStream>());
 
     RootedObject reader(cx, CreateReadableStreamDefaultReader(cx, stream));
     if (!reader)
@@ -1680,36 +1846,40 @@ ReadableStreamDefaultReader::constructor(JSContext* cx, unsigned argc, Value* vp
 }
 
 // Streams spec, 3.5.4.1 get closed
-static MOZ_MUST_USE bool
-ReadableStreamDefaultReader_closed(JSContext* cx, unsigned argc, Value* vp)
+[[nodiscard]] static bool
+ReadableStreamDefaultReader_closed_impl(JSContext* cx, const CallArgs& args)
 {
-    CallArgs args = CallArgsFromVp(argc, vp);
-
-    // Step 1: If ! IsReadableStreamDefaultReader(this) is false, return a promise
-    //         rejected with a TypeError exception.
-    if (!Is<ReadableStreamDefaultReader>(args.thisv()))
-        return RejectNonGenericMethod(cx, args, "ReadableStreamDefaultReader", "get closed");
-
     // Step 2: Return this.[[closedPromise]].
     NativeObject* reader = &args.thisv().toObject().as<NativeObject>();
     args.rval().set(reader->getFixedSlot(ReaderSlot_ClosedPromise));
     return true;
 }
 
-static MOZ_MUST_USE JSObject*
-ReadableStreamReaderGenericCancel(JSContext* cx, HandleNativeObject reader, HandleValue reason);
-
-// Streams spec, 3.5.4.2. cancel ( reason )
-static MOZ_MUST_USE bool
-ReadableStreamDefaultReader_cancel(JSContext* cx, unsigned argc, Value* vp)
+static bool
+ReadableStreamDefaultReader_closed(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
     // Step 1: If ! IsReadableStreamDefaultReader(this) is false, return a promise
     //         rejected with a TypeError exception.
-    if (!Is<ReadableStreamDefaultReader>(args.thisv()))
-        return RejectNonGenericMethod(cx, args, "ReadableStreamDefaultReader", "cancel");
+    if (!Is<ReadableStreamDefaultReader>(args.thisv())) {
+        if (IsMaybeWrapped<ReadableStreamDefaultReader>(args.thisv())) {
+            return CallNonGenericMethod<Is<ReadableStreamDefaultReader>,
+                                        ReadableStreamDefaultReader_closed_impl>(cx, args);
+        }
+        return RejectNonGenericMethod(cx, args, "ReadableStreamDefaultReader", "get closed");
+    }
 
+    return ReadableStreamDefaultReader_closed_impl(cx, args);
+}
+
+static MOZ_MUST_USE JSObject*
+ReadableStreamReaderGenericCancel(JSContext* cx, HandleNativeObject reader, HandleValue reason);
+
+// Streams spec, 3.5.4.2. cancel ( reason )
+[[nodiscard]] static bool
+ReadableStreamDefaultReader_cancel_impl(JSContext* cx, const CallArgs& args)
+{
     // Step 2: If this.[[ownerReadableStream]] is undefined, return a promise
     //         rejected with a TypeError exception.
     RootedNativeObject reader(cx, &args.thisv().toObject().as<NativeObject>());
@@ -1727,17 +1897,28 @@ ReadableStreamDefaultReader_cancel(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-// Streams spec, 3.5.4.3 read ( )
-static MOZ_MUST_USE bool
-ReadableStreamDefaultReader_read(JSContext* cx, unsigned argc, Value* vp)
+static bool
+ReadableStreamDefaultReader_cancel(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
     // Step 1: If ! IsReadableStreamDefaultReader(this) is false, return a promise
     //         rejected with a TypeError exception.
-    if (!Is<ReadableStreamDefaultReader>(args.thisv()))
-        return RejectNonGenericMethod(cx, args, "ReadableStreamDefaultReader", "read");
+    if (!Is<ReadableStreamDefaultReader>(args.thisv())) {
+        if (IsMaybeWrapped<ReadableStreamDefaultReader>(args.thisv())) {
+            return CallNonGenericMethod<Is<ReadableStreamDefaultReader>,
+                                        ReadableStreamDefaultReader_cancel_impl>(cx, args);
+        }
+        return RejectNonGenericMethod(cx, args, "ReadableStreamDefaultReader", "cancel");
+    }
 
+    return ReadableStreamDefaultReader_cancel_impl(cx, args);
+}
+
+// Streams spec, 3.5.4.3 read ( )
+[[nodiscard]] static bool
+ReadableStreamDefaultReader_read_impl(JSContext* cx, const CallArgs& args)
+{
     // Step 2: If this.[[ownerReadableStream]] is undefined, return a promise
     //         rejected with a TypeError exception.
     Rooted<ReadableStreamDefaultReader*> reader(cx);
@@ -1756,7 +1937,25 @@ ReadableStreamDefaultReader_read(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
-static MOZ_MUST_USE bool
+static bool
+ReadableStreamDefaultReader_read(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    // Step 1: If ! IsReadableStreamDefaultReader(this) is false, return a promise
+    //         rejected with a TypeError exception.
+    if (!Is<ReadableStreamDefaultReader>(args.thisv())) {
+        if (IsMaybeWrapped<ReadableStreamDefaultReader>(args.thisv())) {
+            return CallNonGenericMethod<Is<ReadableStreamDefaultReader>,
+                                        ReadableStreamDefaultReader_read_impl>(cx, args);
+        }
+        return RejectNonGenericMethod(cx, args, "ReadableStreamDefaultReader", "read");
+    }
+
+    return ReadableStreamDefaultReader_read_impl(cx, args);
+}
+
+[[nodiscard]] static bool
 ReadableStreamReaderGenericRelease(JSContext* cx, HandleNativeObject reader);
 
 // Streams spec, 3.5.4.4. releaseLock ( )
@@ -1811,8 +2010,7 @@ static const JSPropertySpec ReadableStreamDefaultReader_properties[] = {
     JS_PS_END
 };
 
-CLASS_SPEC(ReadableStreamDefaultReader, 1, ReaderSlotCount, ClassSpec::DontDefineConstructor, 0,
-           JS_NULL_CLASS_OPS);
+CLASS_SPEC(ReadableStreamDefaultReader, 1, ReaderSlotCount, 0, 0, JS_NULL_CLASS_OPS);
 
 
 // Streams spec, 3.6.3 new ReadableStreamBYOBReader ( stream )
@@ -1862,12 +2060,12 @@ ReadableStreamBYOBReader::constructor(JSContext* cx, unsigned argc, Value* vp)
         return false;
 
     // Step 1: If ! IsReadableStream(stream) is false, throw a TypeError exception.
-    if (!Is<ReadableStream>(args.get(0))) {
+    Rooted<ReadableStream*> stream(cx, UnwrapMaybeWrappedArg<ReadableStream>(args.get(0)));
+    if (!stream) {
         ReportArgTypeError(cx, "ReadableStreamBYOBReader", "ReadableStream", args.get(0));
         return false;
     }
 
-    Rooted<ReadableStream*> stream(cx, &args.get(0).toObject().as<ReadableStream>());
     RootedObject reader(cx, CreateReadableStreamBYOBReader(cx, stream));
     if (!reader)
         return false;
@@ -2026,7 +2224,7 @@ static const JSFunctionSpec ReadableStreamBYOBReader_methods[] = {
     JS_FS_END
 };
 
-CLASS_SPEC(ReadableStreamBYOBReader, 1, 3, ClassSpec::DontDefineConstructor, 0, JS_NULL_CLASS_OPS);
+CLASS_SPEC(ReadableStreamBYOBReader, 1, 3, 0, 0, JS_NULL_CLASS_OPS);
 
 inline static MOZ_MUST_USE bool
 ReadableStreamControllerCallPullIfNeeded(JSContext* cx, HandleNativeObject controller);
@@ -2047,7 +2245,21 @@ ReadableStreamReaderGenericCancel(JSContext* cx, HandleNativeObject reader, Hand
     // Step 2: Assert: stream is not undefined (implicit).
 
     // Step 3: Return ! ReadableStreamCancel(stream, reason).
-    return &ReadableStreamCancel(cx, stream, reason)->as<PromiseObject>();
+    RootedObject cancelPromise(cx);
+    {
+        JSAutoCompartment ac(cx, stream);
+        RootedValue wrappedReason(cx, reason);
+        if (!JS_WrapValue(cx, &wrappedReason))
+            return nullptr;
+
+        cancelPromise = ReadableStreamCancel(cx, stream, wrappedReason);
+        if (!cancelPromise)
+            return nullptr;
+    }
+
+    if (!JS_WrapObject(cx, &cancelPromise))
+        return nullptr;
+    return cancelPromise;
 }
 
 // Streams spec, 3.7.4. ReadableStreamReaderGenericInitialize ( reader, stream )
@@ -2056,10 +2268,19 @@ ReadableStreamReaderGenericInitialize(JSContext* cx, HandleNativeObject reader,
                                       Handle<ReadableStream*> stream)
 {
     // Step 1: Set reader.[[ownerReadableStream]] to stream.
-    reader->setFixedSlot(ReaderSlot_Stream, ObjectValue(*stream));
+    RootedValue streamVal(cx, ObjectValue(*stream));
+    if (!JS_WrapValue(cx, &streamVal))
+        return false;
+    reader->setFixedSlot(ReaderSlot_Stream, streamVal);
 
     // Step 2: Set stream.[[reader]] to reader.
-    stream->setFixedSlot(StreamSlot_Reader, ObjectValue(*reader));
+    RootedValue readerVal(cx, ObjectValue(*reader));
+    {
+        JSAutoCompartment ac(cx, stream);
+        if (!JS_WrapValue(cx, &readerVal))
+            return false;
+        stream->setFixedSlot(StreamSlot_Reader, readerVal);
+    }
 
     // Step 3: If stream.[[state]] is "readable",
     RootedObject promise(cx);
@@ -2080,6 +2301,8 @@ ReadableStreamReaderGenericInitialize(JSContext* cx, HandleNativeObject reader,
         // Step ii: Set reader.[[closedPromise]] to a new promise rejected with
         //          stream.[[storedError]].
         RootedValue storedError(cx, stream->getFixedSlot(StreamSlot_StoredError));
+        if (!JS_WrapValue(cx, &storedError))
+            return false;
         promise = PromiseObject::unforgeableReject(cx, storedError);
     }
 
@@ -2098,7 +2321,7 @@ ReadableStreamReaderGenericRelease(JSContext* cx, HandleNativeObject reader)
     Rooted<ReadableStream*> stream(cx, StreamFromReader(reader));
 
     // Step 2: Assert: reader.[[ownerReadableStream]].[[reader]] is reader.
-    MOZ_ASSERT(&stream->getFixedSlot(StreamSlot_Reader).toObject() == reader);
+    MOZ_ASSERT(ReaderFromStream(stream) == reader);
 
     // Create an exception to reject promises with below. We don't have a
     // clean way to do this, unfortunately.
@@ -2156,6 +2379,8 @@ ReadableStreamBYOBReader::read(JSContext* cx, Handle<ReadableStreamBYOBReader*> 
     //         stream.[[storedError]].
     if (stream->errored()) {
         RootedValue storedError(cx, stream->getFixedSlot(StreamSlot_StoredError));
+        if (!JS_WrapValue(cx, &storedError))
+            return nullptr;
         return PromiseObject::unforgeableReject(cx, storedError);
     }
 
@@ -2347,40 +2572,12 @@ CreateReadableStreamDefaultController(JSContext* cx, Handle<ReadableStream*> str
 bool
 ReadableStreamDefaultController::constructor(JSContext* cx, unsigned argc, Value* vp)
 {
-    CallArgs args = CallArgsFromVp(argc, vp);
-
-    if (!ThrowIfNotConstructing(cx, args, "ReadableStreamDefaultController"))
-        return false;
-
-    // Step 1: If ! IsReadableStream(stream) is false, throw a TypeError exception.
-    HandleValue streamVal = args.get(0);
-    if (!Is<ReadableStream>(streamVal)) {
-        ReportArgTypeError(cx, "ReadableStreamDefaultController", "ReadableStream",
-                           args.get(0));
-        return false;
-    }
-
-    Rooted<ReadableStream*> stream(cx, &streamVal.toObject().as<ReadableStream>());
-
-    // Step 2: If stream.[[readableStreamController]] is not undefined, throw a
-    //         TypeError exception.
-    if (HasController(stream)) {
-        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                  JSMSG_READABLESTREAM_CONTROLLER_SET);
-        return false;
-    }
-
-    // Steps 3-11.
-    RootedObject controller(cx, CreateReadableStreamDefaultController(cx, stream, args.get(1),
-                                                                      args.get(2), args.get(3)));
-    if (!controller)
-        return false;
-
-    args.rval().setObject(*controller);
-    return true;
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_NO_CONSTRUCTOR,
+                              "ReadableStreamDefaultController");
+    return false;
 }
 
-static MOZ_MUST_USE double
+[[nodiscard]] static double
 ReadableStreamControllerGetDesiredSizeUnchecked(NativeObject* controller);
 
 // Streams spec, 3.8.4.1. get desiredSize
@@ -2390,7 +2587,8 @@ static MOZ_MUST_USE bool
 ReadableStreamController_desiredSize_impl(JSContext* cx, const CallArgs& args)
 {
     RootedNativeObject controller(cx);
-    controller = &args.thisv().toObject().as<NativeObject>();
+    controller = UnwrapMaybeWrappedReadableStreamController(args.thisv());
+    MOZ_ASSERT(controller);
 
     // Streams spec, 3.9.8. steps 1-4.
     // 3.9.8. Step 1: Let stream be controller.[[controlledReadableStream]].
@@ -2420,8 +2618,12 @@ ReadableStreamDefaultController_desiredSize(JSContext* cx, unsigned argc, Value*
     // Step 1: If ! IsReadableStreamDefaultController(this) is false, throw a
     //         TypeError exception.
     CallArgs args = CallArgsFromVp(argc, vp);
-    return CallNonGenericMethod<Is<ReadableStreamDefaultController>,
-                                ReadableStreamController_desiredSize_impl>(cx, args);
+    if (!IsMaybeWrapped<ReadableStreamDefaultController>(args.thisv())) {
+        ReportValueError3(cx, JSMSG_INCOMPATIBLE_PROTO, JSDVG_SEARCH_STACK, args.thisv(),
+                          nullptr, "ReadableStreamDefaultController", "get desiredSize");
+        return false;
+    }
+    return ReadableStreamController_desiredSize_impl(cx, args);
 }
 
 static MOZ_MUST_USE bool
@@ -2456,7 +2658,8 @@ static MOZ_MUST_USE bool
 ReadableStreamDefaultController_close_impl(JSContext* cx, const CallArgs& args)
 {
     Rooted<ReadableStreamDefaultController*> controller(cx);
-    controller = &args.thisv().toObject().as<ReadableStreamDefaultController>();
+    controller = UnwrapMaybeWrappedArg<ReadableStreamDefaultController>(args.thisv());
+    MOZ_ASSERT(controller);
 
     // Steps 2-3.
     if (!VerifyControllerStateForClosing(cx, controller))
@@ -2476,8 +2679,12 @@ ReadableStreamDefaultController_close(JSContext* cx, unsigned argc, Value* vp)
     //         TypeError exception.
 
     CallArgs args = CallArgsFromVp(argc, vp);
-    return CallNonGenericMethod<Is<ReadableStreamDefaultController>,
-                                ReadableStreamDefaultController_close_impl>(cx, args);
+    if (!IsMaybeWrapped<ReadableStreamDefaultController>(args.thisv())) {
+        ReportValueError3(cx, JSMSG_INCOMPATIBLE_PROTO, JSDVG_SEARCH_STACK, args.thisv(),
+                          nullptr, "ReadableStreamDefaultController", "close");
+        return false;
+    }
+    return ReadableStreamDefaultController_close_impl(cx, args);
 }
 
 static MOZ_MUST_USE bool
@@ -2490,7 +2697,8 @@ static MOZ_MUST_USE bool
 ReadableStreamDefaultController_enqueue_impl(JSContext* cx, const CallArgs& args)
 {
     Rooted<ReadableStreamDefaultController*> controller(cx);
-    controller = &args.thisv().toObject().as<ReadableStreamDefaultController>();
+    controller = UnwrapMaybeWrappedArg<ReadableStreamDefaultController>(args.thisv());
+    MOZ_ASSERT(controller);
 
     // Step 2: If this.[[closeRequested]] is true, throw a TypeError exception.
     if (ControllerFlags(controller) & ControllerFlag_CloseRequested) {
@@ -2522,8 +2730,12 @@ ReadableStreamDefaultController_enqueue(JSContext* cx, unsigned argc, Value* vp)
     //         TypeError exception.
 
     CallArgs args = CallArgsFromVp(argc, vp);
-    return CallNonGenericMethod<Is<ReadableStreamDefaultController>,
-                                ReadableStreamDefaultController_enqueue_impl>(cx, args);
+    if (!IsMaybeWrapped<ReadableStreamDefaultController>(args.thisv())) {
+        ReportValueError3(cx, JSMSG_INCOMPATIBLE_PROTO, JSDVG_SEARCH_STACK, args.thisv(),
+                          nullptr, "ReadableStreamDefaultController", "enqueue");
+        return false;
+    }
+    return ReadableStreamDefaultController_enqueue_impl(cx, args);
 }
 
 // Streams spec, 3.8.4.4. error ( e )
@@ -2531,7 +2743,8 @@ static MOZ_MUST_USE bool
 ReadableStreamDefaultController_error_impl(JSContext* cx, const CallArgs& args)
 {
     Rooted<ReadableStreamDefaultController*> controller(cx);
-    controller = &args.thisv().toObject().as<ReadableStreamDefaultController>();
+    controller = UnwrapMaybeWrappedArg<ReadableStreamDefaultController>(args.thisv());
+    MOZ_ASSERT(controller);
 
     // Step 2: Let stream be this.[[controlledReadableStream]].
     // Step 3: If stream.[[state]] is not "readable", throw a TypeError exception.
@@ -2555,8 +2768,12 @@ ReadableStreamDefaultController_error(JSContext* cx, unsigned argc, Value* vp)
     //         TypeError exception.
 
     CallArgs args = CallArgsFromVp(argc, vp);
-    return CallNonGenericMethod<Is<ReadableStreamDefaultController>,
-                                ReadableStreamDefaultController_error_impl>(cx, args);
+    if (!IsMaybeWrapped<ReadableStreamDefaultController>(args.thisv())) {
+        ReportValueError3(cx, JSMSG_INCOMPATIBLE_PROTO, JSDVG_SEARCH_STACK, args.thisv(),
+                          nullptr, "ReadableStreamDefaultController", "error");
+        return false;
+    }
+    return ReadableStreamDefaultController_error_impl(cx, args);
 }
 
 static const JSPropertySpec ReadableStreamDefaultController_properties[] = {
@@ -2571,8 +2788,7 @@ static const JSFunctionSpec ReadableStreamDefaultController_methods[] = {
     JS_FS_END
 };
 
-CLASS_SPEC(ReadableStreamDefaultController, 4, 7, ClassSpec::DontDefineConstructor, 0,
-           JS_NULL_CLASS_OPS);
+CLASS_SPEC(ReadableStreamDefaultController, 4, 7, 0, 0, JS_NULL_CLASS_OPS);
 
 /**
  * Unified implementation of ReadableStream controllers' [[CancelSteps]] internal
@@ -3116,36 +3332,9 @@ ReadableByteStreamController::hasExternalSource() {
 bool
 ReadableByteStreamController::constructor(JSContext* cx, unsigned argc, Value* vp)
 {
-    CallArgs args = CallArgsFromVp(argc, vp);
-
-    if (!ThrowIfNotConstructing(cx, args, "ReadableByteStreamController"))
-        return false;
-
-    // Step 1: If ! IsReadableStream(stream) is false, throw a TypeError exception.
-    HandleValue streamVal = args.get(0);
-    if (!Is<ReadableStream>(streamVal)) {
-        ReportArgTypeError(cx, "ReadableStreamDefaultController", "ReadableStream",
-                           args.get(0));
-        return false;
-    }
-
-    Rooted<ReadableStream*> stream(cx, &streamVal.toObject().as<ReadableStream>());
-
-    // Step 2: If stream.[[readableStreamController]] is not undefined, throw a
-    //         TypeError exception.
-    if (HasController(stream)) {
-        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                  JSMSG_READABLESTREAM_CONTROLLER_SET);
-        return false;
-    }
-
-    RootedObject controller(cx, CreateReadableByteStreamController(cx, stream, args.get(1),
-                                                                   args.get(2)));
-    if (!controller)
-        return false;
-
-    args.rval().setObject(*controller);
-    return true;
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_NO_CONSTRUCTOR,
+                              "ReadableByteStreamController");
+    return false;
 }
 
 // Version of the ReadableByteStreamConstructor that's specialized for
@@ -3451,8 +3640,8 @@ static const ClassOps ReadableByteStreamControllerClassOps = {
     nullptr,        /* trace   */
 };
 
-CLASS_SPEC(ReadableByteStreamController, 3, 9, ClassSpec::DontDefineConstructor,
-           JSCLASS_BACKGROUND_FINALIZE, &ReadableByteStreamControllerClassOps);
+CLASS_SPEC(ReadableByteStreamController, 3, 9, 0, JSCLASS_BACKGROUND_FINALIZE,
+           &ReadableByteStreamControllerClassOps);
 
 // Streams spec, 3.10.5.1. [[PullSteps]] ()
 // Unified with 3.8.5.1 above.
@@ -3638,38 +3827,9 @@ CreateReadableStreamBYOBRequest(JSContext* cx, Handle<ReadableByteStreamControll
 bool
 ReadableStreamBYOBRequest::constructor(JSContext* cx, unsigned argc, Value* vp)
 {
-    CallArgs args = CallArgsFromVp(argc, vp);
-    HandleValue controllerVal = args.get(0);
-    HandleValue viewVal = args.get(1);
-
-    if (!ThrowIfNotConstructing(cx, args, "ReadableStreamBYOBRequest"))
-        return false;
-
-    // TODO: open PR against spec to add these checks.
-    // They're expected to have happened in code using requests.
-    if (!Is<ReadableByteStreamController>(controllerVal)) {
-        ReportArgTypeError(cx, "ReadableStreamBYOBRequest",
-                           "ReadableByteStreamController", args.get(0));
-        return false;
-    }
-
-    Rooted<ReadableByteStreamController*> controller(cx);
-    controller = &controllerVal.toObject().as<ReadableByteStreamController>();
-
-    if (!viewVal.isObject() || !JS_IsArrayBufferViewObject(&viewVal.toObject())) {
-        ReportArgTypeError(cx, "ReadableStreamBYOBRequest", "ArrayBuffer view",
-                           args.get(1));
-        return false;
-    }
-
-    RootedArrayBufferObject view(cx, &viewVal.toObject().as<ArrayBufferObject>());
-
-    RootedObject request(cx, CreateReadableStreamBYOBRequest(cx, controller, view));
-    if (!request)
-        return false;
-
-    args.rval().setObject(*request);
-    return true;
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_NO_CONSTRUCTOR,
+                              "ReadableStreamBYOBRequest");
+    return false;
 }
 
 // Streams spec, 3.11.4.1 get view
@@ -3804,8 +3964,7 @@ static const JSFunctionSpec ReadableStreamBYOBRequest_methods[] = {
     JS_FS_END
 };
 
-CLASS_SPEC(ReadableStreamBYOBRequest, 3, 2, ClassSpec::DontDefineConstructor, 0,
-           JS_NULL_CLASS_OPS);
+CLASS_SPEC(ReadableStreamBYOBRequest, 3, 2, 0, 0, JS_NULL_CLASS_OPS);
 
 // Streams spec, 3.12.1. IsReadableStreamBYOBRequest ( x )
 // Implemented via is<ReadableStreamBYOBRequest>()
@@ -4899,7 +5058,15 @@ js::ByteLengthQueuingStrategy::constructor(JSContext* cx, unsigned argc, Value* 
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    RootedObject strategy(cx, NewBuiltinClassInstance<ByteLengthQueuingStrategy>(cx));
+    if (!ThrowIfNotConstructing(cx, args, "ByteLengthQueuingStrategy"))
+        return false;
+
+    RootedObject proto(cx);
+    RootedObject newTarget(cx, &args.newTarget().toObject());
+    if (!GetPrototypeFromConstructor(cx, newTarget, &proto))
+        return false;
+
+    RootedObject strategy(cx, NewObjectWithClassProto<ByteLengthQueuingStrategy>(cx, proto));
     if (!strategy)
         return false;
 
@@ -4945,7 +5112,16 @@ js::CountQueuingStrategy::constructor(JSContext* cx, unsigned argc, Value* vp)
 {
     CallArgs args = CallArgsFromVp(argc, vp);
 
-    Rooted<CountQueuingStrategy*> strategy(cx, NewBuiltinClassInstance<CountQueuingStrategy>(cx));
+    if (!ThrowIfNotConstructing(cx, args, "CountQueuingStrategy"))
+        return false;
+
+    RootedObject proto(cx);
+    RootedObject newTarget(cx, &args.newTarget().toObject());
+    if (!GetPrototypeFromConstructor(cx, newTarget, &proto))
+        return false;
+
+    Rooted<CountQueuingStrategy*> strategy(cx);
+    strategy = NewObjectWithClassProto<CountQueuingStrategy>(cx, proto);
     if (!strategy)
         return false;
 
@@ -4998,7 +5174,8 @@ DequeueValue(JSContext* cx, HandleNativeObject container, MutableHandleValue chu
 
     // Step 2: Assert: queue is not empty.
     RootedValue val(cx, container->getFixedSlot(QueueContainerSlot_Queue));
-    RootedNativeObject queue(cx, &val.toObject().as<NativeObject>());
+    RootedNativeObject queue(cx);
+    queue = UnwrapInternalSlotObject<NativeObject>(&val.toObject());
     MOZ_ASSERT(queue->getDenseInitializedLength() > 0);
 
     // Step 3. Let pair be the first element of queue.
@@ -5020,7 +5197,10 @@ DequeueValue(JSContext* cx, HandleNativeObject container, MutableHandleValue chu
     container->setFixedSlot(QueueContainerSlot_TotalSize, NumberValue(totalSize));
 
     // Step 7: Return pair.[[value]].
-    chunk.set(pair->value());
+    RootedValue chunkVal(cx, pair->value());
+    if (!JS_WrapValue(cx, &chunkVal))
+        return false;
+    chunk.set(chunkVal);
     return true;
 }
 
@@ -5049,19 +5229,27 @@ EnqueueValueWithSize(JSContext* cx, HandleNativeObject container, HandleValue va
     // Step 4: Append Record {[[value]]: value, [[size]]: size} as the last element
     //         of container.[[queue]].
     RootedValue val(cx, container->getFixedSlot(QueueContainerSlot_Queue));
-    RootedNativeObject queue(cx, &val.toObject().as<NativeObject>());
+    RootedNativeObject queue(cx);
+    queue = UnwrapInternalSlotObject<NativeObject>(&val.toObject());
 
-    QueueEntry* entry = QueueEntry::create(cx, value, size);
-    if (!entry)
-        return false;
-    val = ObjectValue(*entry);
-    if (!AppendToList(cx, queue, val))
-        return false;
+    {
+        JSAutoCompartment ac(cx, queue);
+        RootedValue wrappedValue(cx, value);
+        if (!JS_WrapValue(cx, &wrappedValue))
+            return false;
 
-    // Step 5: Set container.[[queueTotalSize]] to
-    //         container.[[queueTotalSize]] + size.
-    double totalSize = container->getFixedSlot(QueueContainerSlot_TotalSize).toNumber();
-    container->setFixedSlot(QueueContainerSlot_TotalSize, NumberValue(totalSize + size));
+        QueueEntry* entry = QueueEntry::create(cx, wrappedValue, size);
+        if (!entry)
+            return false;
+        val = ObjectValue(*entry);
+        if (!AppendToList(cx, queue, val))
+            return false;
+
+        // Step 5: Set container.[[queueTotalSize]] to
+        //         container.[[queueTotalSize]] + size.
+        double totalSize = container->getFixedSlot(QueueContainerSlot_TotalSize).toNumber();
+        container->setFixedSlot(QueueContainerSlot_TotalSize, NumberValue(totalSize + size));
+    }
 
     return true;
 }
@@ -5485,4 +5673,2286 @@ js::UnwrapReadableStream(JSObject* obj)
     if (JSObject* unwrapped = CheckedUnwrap(obj))
         return unwrapped->is<ReadableStream>() ? unwrapped : nullptr;
     return nullptr;
+}
+
+namespace {
+
+enum class StreamCompressionFormat {
+    Deflate,
+    DeflateRaw,
+    Gzip
+};
+
+struct StreamCompressionContext
+{
+    z_stream mStream;
+    StreamCompressionFormat mFormat;
+    bool mCompress;
+    bool mFinished;
+    bool mInitialized;
+
+    StreamCompressionContext(StreamCompressionFormat format, bool compress)
+      : mFormat(format),
+        mCompress(compress),
+        mFinished(false),
+        mInitialized(false)
+    {
+        memset(&mStream, 0, sizeof(mStream));
+    }
+
+    ~StreamCompressionContext()
+    {
+        if (!mInitialized)
+            return;
+        if (mCompress)
+            deflateEnd(&mStream);
+        else
+            inflateEnd(&mStream);
+    }
+};
+
+static int
+WindowBitsForFormat(StreamCompressionFormat format)
+{
+    switch (format) {
+      case StreamCompressionFormat::Deflate:
+        return MAX_WBITS;
+      case StreamCompressionFormat::DeflateRaw:
+        return -MAX_WBITS;
+      case StreamCompressionFormat::Gzip:
+        return MAX_WBITS + 16;
+    }
+    MOZ_CRASH("Unknown compression stream format");
+}
+
+static bool
+ParseCompressionFormat(JSContext* cx, HandleValue value,
+                       StreamCompressionFormat* format)
+{
+    RootedString str(cx, ToString<CanGC>(cx, value));
+    if (!str)
+        return false;
+
+    bool match = false;
+    if (!JS_StringEqualsAscii(cx, str, "deflate", &match))
+        return false;
+    if (match) {
+        *format = StreamCompressionFormat::Deflate;
+        return true;
+    }
+
+    if (!JS_StringEqualsAscii(cx, str, "deflate-raw", &match))
+        return false;
+    if (match) {
+        *format = StreamCompressionFormat::DeflateRaw;
+        return true;
+    }
+
+    if (!JS_StringEqualsAscii(cx, str, "gzip", &match))
+        return false;
+    if (match) {
+        *format = StreamCompressionFormat::Gzip;
+        return true;
+    }
+
+    if (!JS_StringEqualsAscii(cx, str, "brotli", &match))
+        return false;
+
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_NOT_EXPECTED_TYPE,
+                              "CompressionStream", "supported format",
+                              match ? "unsupported brotli format" : "unknown format");
+    return false;
+}
+
+static void
+StreamCompressionContextFinalize(FreeOp* fop, JSObject* obj)
+{
+    auto* context = static_cast<StreamCompressionContext*>(JS_GetPrivate(obj));
+    if (context)
+        js_delete(context);
+}
+
+static const ClassOps StreamCompressionContextClassOps = {
+    nullptr, /* addProperty */
+    nullptr, /* delProperty */
+    nullptr, /* getProperty */
+    nullptr, /* setProperty */
+    nullptr, /* enumerate */
+    nullptr, /* resolve */
+    nullptr, /* mayResolve */
+    StreamCompressionContextFinalize,
+    nullptr, /* call */
+    nullptr, /* hasInstance */
+    nullptr, /* construct */
+    nullptr  /* trace */
+};
+
+static const Class StreamCompressionContextClass = {
+    "StreamCompressionContext",
+    JSCLASS_HAS_PRIVATE,
+    &StreamCompressionContextClassOps
+};
+
+static bool
+CreateStreamCompressionContext(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (args.length() < 2) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_MORE_ARGS_NEEDED,
+                                  "__uxpCreateCompressionContext", "1", "s");
+        return false;
+    }
+
+    StreamCompressionFormat format;
+    if (!ParseCompressionFormat(cx, args.get(0), &format))
+        return false;
+
+    bool compress = ToBoolean(args.get(1));
+    auto* context = js_new<StreamCompressionContext>(format, compress);
+    if (!context) {
+        ReportOutOfMemory(cx);
+        return false;
+    }
+
+    int windowBits = WindowBitsForFormat(format);
+    int zerr = compress
+               ? deflateInit2(&context->mStream, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+                              windowBits, 8, Z_DEFAULT_STRATEGY)
+               : inflateInit2(&context->mStream, windowBits);
+    if (zerr != Z_OK) {
+        js_delete(context);
+        JS_ReportErrorASCII(cx, "Failed to initialize compression stream");
+        return false;
+    }
+    context->mInitialized = true;
+
+    RootedObject obj(cx, NewObjectWithGivenProto(cx, &StreamCompressionContextClass, nullptr));
+    if (!obj) {
+        js_delete(context);
+        return false;
+    }
+
+    JS_SetPrivate(obj, context);
+    args.rval().setObject(*obj);
+    return true;
+}
+
+static bool
+GetBufferSourceBytes(JSContext* cx, HandleValue value, Vector<uint8_t>* bytes)
+{
+    if (!value.isObject()) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_NOT_EXPECTED_TYPE,
+                                  "CompressionStream", "BufferSource",
+                                  InformalValueTypeName(value));
+        return false;
+    }
+
+    RootedObject obj(cx, &value.toObject());
+    if (JS_IsArrayBufferViewObject(obj)) {
+        uint32_t length = JS_GetArrayBufferViewByteLength(obj);
+        if (length == 0)
+            return true;
+
+        JS::AutoCheckCannotGC nogc(cx);
+        bool isShared;
+        uint8_t* data = static_cast<uint8_t*>(JS_GetArrayBufferViewData(obj, &isShared, nogc));
+        return bytes->append(data, length);
+    }
+
+    if (JS_IsArrayBufferObject(obj)) {
+        uint32_t length = JS_GetArrayBufferByteLength(obj);
+        if (length == 0)
+            return true;
+
+        JS::AutoCheckCannotGC nogc(cx);
+        bool isShared;
+        uint8_t* data = JS_GetArrayBufferData(obj, &isShared, nogc);
+        return bytes->append(data, length);
+    }
+
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_NOT_EXPECTED_TYPE,
+                              "CompressionStream", "BufferSource",
+                              obj->getClass()->name);
+    return false;
+}
+
+static bool
+AppendUint8Array(JSContext* cx, HandleObject array, uint32_t* index,
+                 const uint8_t* data, size_t length)
+{
+    if (length == 0)
+        return true;
+
+    if (length > UINT32_MAX) {
+        ReportAllocationOverflow(cx);
+        return false;
+    }
+
+    RootedObject view(cx, JS_NewUint8Array(cx, length));
+    if (!view)
+        return false;
+
+    {
+        JS::AutoCheckCannotGC nogc(cx);
+        bool isShared;
+        uint8_t* viewData = static_cast<uint8_t*>(JS_GetArrayBufferViewData(view, &isShared, nogc));
+        memcpy(viewData, data, length);
+    }
+
+    RootedValue viewVal(cx, ObjectValue(*view));
+    return JS_SetElement(cx, array, (*index)++, viewVal);
+}
+
+static bool
+StreamCompressionProcess(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    if (args.length() < 3 || !args[0].isObject() ||
+        !args[0].toObject().hasClass(&StreamCompressionContextClass)) {
+        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                  JSMSG_NOT_EXPECTED_TYPE,
+                                  "__uxpCompressionProcess",
+                                  "StreamCompressionContext", "other");
+        return false;
+    }
+
+    auto* context =
+        static_cast<StreamCompressionContext*>(JS_GetPrivate(&args[0].toObject()));
+    if (!context) {
+        JS_ReportErrorASCII(cx, "Compression stream is already finished");
+        return false;
+    }
+
+    bool finish = ToBoolean(args.get(2));
+
+    if (context->mFinished) {
+        if (finish && args.get(1).isUndefined()) {
+            RootedObject emptyChunks(cx, JS_NewArrayObject(cx, 0));
+            if (!emptyChunks)
+                return false;
+            args.rval().setObject(*emptyChunks);
+            return true;
+        }
+        JS_ReportErrorASCII(cx, "Compression stream is already finished");
+        return false;
+    }
+
+    Vector<uint8_t> input(cx);
+    if (!args.get(1).isUndefined() && !GetBufferSourceBytes(cx, args.get(1), &input))
+        return false;
+
+    RootedObject chunks(cx, JS_NewArrayObject(cx, 0));
+    if (!chunks)
+        return false;
+
+    z_stream& stream = context->mStream;
+    stream.next_in = input.empty() ? nullptr : input.begin();
+    stream.avail_in = input.length();
+
+    uint32_t chunkIndex = 0;
+    const int flush = finish ? Z_FINISH : Z_NO_FLUSH;
+    bool madeProgress;
+
+    do {
+        uint8_t output[16384];
+        stream.next_out = output;
+        stream.avail_out = sizeof(output);
+
+        uint32_t beforeIn = stream.avail_in;
+        uint32_t beforeOut = stream.avail_out;
+        int zerr = context->mCompress ? deflate(&stream, flush) : inflate(&stream, flush);
+
+        size_t produced = sizeof(output) - stream.avail_out;
+        if (!AppendUint8Array(cx, chunks, &chunkIndex, output, produced))
+            return false;
+
+        madeProgress = produced > 0 || stream.avail_in != beforeIn ||
+                       stream.avail_out != beforeOut;
+
+        if (zerr == Z_STREAM_END) {
+            context->mFinished = true;
+            if (!context->mCompress && stream.avail_in != 0) {
+                JS_ReportErrorASCII(cx, "Compressed input has trailing data");
+                return false;
+            }
+            break;
+        }
+
+        if (zerr == Z_BUF_ERROR && !madeProgress)
+            break;
+
+        if (zerr != Z_OK && zerr != Z_BUF_ERROR) {
+            JS_ReportErrorASCII(cx, stream.msg ? stream.msg : "Compression stream error");
+            return false;
+        }
+    } while (stream.avail_out == 0 || stream.avail_in != 0 ||
+             (finish && !context->mFinished && madeProgress));
+
+    if (finish && !context->mFinished) {
+        JS_ReportErrorASCII(cx, "Compressed input ended before the end of stream");
+        return false;
+    }
+
+    args.rval().setObject(*chunks);
+    return true;
+}
+
+bool
+ReleaseReadableStreamReaderSilently(JSContext* cx, unsigned argc, Value* vp)
+{
+    CallArgs args = CallArgsFromVp(argc, vp);
+    args.rval().setBoolean(true);
+
+    if (!args.get(0).isObject())
+        return true;
+
+    RootedObject readerObj(cx, &args[0].toObject());
+    if (!readerObj->is<ReadableStreamDefaultReader>() &&
+        !readerObj->is<ReadableStreamBYOBReader>())
+        return true;
+
+    RootedNativeObject reader(cx, &readerObj->as<NativeObject>());
+    if (!ReaderHasStream(reader))
+        return true;
+
+    Value requestsVal = reader->getFixedSlot(ReaderSlot_Requests);
+    if (!requestsVal.isUndefined()) {
+        NativeObject* requests = &requestsVal.toObject().as<NativeObject>();
+        if (requests->getDenseInitializedLength() != 0) {
+            args.rval().setBoolean(false);
+            return true;
+        }
+    }
+
+    Rooted<ReadableStream*> stream(cx, StreamFromReader(reader));
+    MOZ_ASSERT(&stream->getFixedSlot(StreamSlot_Reader).toObject() == reader);
+
+    RootedObject closedPromise(cx, PromiseObject::unforgeableResolve(cx, UndefinedHandleValue));
+    if (!closedPromise)
+        return false;
+    reader->setFixedSlot(ReaderSlot_ClosedPromise, ObjectValue(*closedPromise));
+
+    stream->setFixedSlot(StreamSlot_Reader, UndefinedValue());
+    reader->setFixedSlot(ReaderSlot_Stream, UndefinedValue());
+    return true;
+}
+
+} // anonymous namespace
+
+bool
+js::InitStreamExtras(JSContext* cx, HandleObject global)
+{
+    if (!JS_DefineFunction(cx, global, "__uxpCreateCompressionContext",
+                           CreateStreamCompressionContext, 2, 0))
+        return false;
+
+    if (!JS_DefineFunction(cx, global, "__uxpCompressionProcess",
+                           StreamCompressionProcess, 3, 0))
+        return false;
+
+    if (!JS_DefineFunction(cx, global, "__uxpReleaseReadableStreamReaderSilently",
+                           ReleaseReadableStreamReaderSilently, 1, 0))
+        return false;
+
+    static const char source[] =
+  R"JS(
+(function(global) {
+  "use strict";
+
+  if (global.__uxpStreamsInitialized)
+    return;
+  Object.defineProperty(global, "__uxpStreamsInitialized",
+                        { value: true, configurable: true });
+
+  var objectToString = Object.prototype.toString;
+  var hasOwn = Object.prototype.hasOwnProperty;
+
+  function isObject(value) {
+    return (typeof value === "object" && value !== null) ||
+           typeof value === "function";
+  }
+
+  function requiredObject(value, name) {
+    if (!isObject(value))
+      throw new TypeError(name + " is not an object");
+    return value;
+  }
+
+  function newPromiseCapability() {
+    var resolve, reject;
+    var promise = new Promise(function(res, rej) {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise: promise, resolve: resolve, reject: reject };
+  }
+
+  function promiseCall(fn, receiver, args) {
+    try {
+      return Promise.resolve(fn.apply(receiver, args || []));
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
+
+  function getMethod(value, name) {
+    var method = value[name];
+    if (method === undefined || method === null)
+      return undefined;
+    if (typeof method !== "function")
+      throw new TypeError(name + " is not callable");
+    return method;
+  }
+
+  function makeDOMException(message, name) {
+    if (typeof global.DOMException === "function")
+      return new global.DOMException(message, name);
+    var error = new Error(message);
+    error.name = name;
+    return error;
+  }
+
+  function define(name, value) {
+    if (hasOwn.call(global, name) && global[name] !== undefined)
+      return;
+    Object.defineProperty(global, name, {
+      value: value,
+      writable: true,
+      configurable: true
+    });
+  }
+
+  var writableState = new WeakMap();
+  var writerState = new WeakMap();
+  var writableControllerState = new WeakMap();
+
+  function isWritableStream(stream) {
+    return writableState.has(stream);
+  }
+
+  function isWritableStreamDefaultWriter(writer) {
+    return writerState.has(writer);
+  }
+
+  function rejectPromise(error) {
+    return Promise.reject(error);
+  }
+
+  function silenceRejection(promise) {
+    try {
+      if (promise && typeof promise.catch === "function")
+        promise.catch(function() {});
+    } catch (e) {}
+  }
+
+  function releaseReaderLock(reader) {
+    try {
+      if (global.__uxpReleaseReadableStreamReaderSilently(reader))
+        return;
+    } catch (e) {}
+    Promise.resolve().then(function() {
+      try {
+        if (global.__uxpReleaseReadableStreamReaderSilently(reader))
+          return;
+      } catch (e) {}
+      try { silenceRejection(reader.closed); } catch (e) {}
+      try { reader.releaseLock(); } catch (e) {}
+    });
+  }
+
+  function releaseWriterLock(writer) {
+    try { silenceRejection(writer.closed); } catch (e) {}
+    try { silenceRejection(writer.ready); } catch (e) {}
+    try { writer.releaseLock(); } catch (e) {}
+  }
+
+  function syncWritableWriterWithStream(writer, state) {
+    var ws = writerState.get(writer);
+    if (!ws || ws.stream === undefined)
+      return;
+
+    ws.readyPromise = state.readyPromise;
+    if (state.state === "closed") {
+      ws.closedPromise = Promise.resolve(undefined);
+    } else if (state.state === "errored") {
+      ws.closedPromise = Promise.reject(state.storedError);
+      ws.closedPromise.catch(function() {});
+    } else {
+      ws.closedPromise = state.closedPromise;
+    }
+  }
+
+  function writableError(stream, error) {
+    var state = writableState.get(stream);
+    if (!state || state.state === "closed" || state.state === "errored")
+      return;
+    state.state = "errored";
+    state.storedError = error;
+    state.ready.reject(error);
+    state.closed.reject(error);
+    state.readyPromise.catch(function() {});
+    state.closedPromise.catch(function() {});
+    if (state.writer)
+      syncWritableWriterWithStream(state.writer, state);
+  }
+
+  function writableClose(stream) {
+    var state = writableState.get(stream);
+    if (!state || state.state === "closed")
+      return;
+    state.state = "closed";
+    state.ready.resolve(undefined);
+    state.closed.resolve(undefined);
+    if (state.writer)
+      syncWritableWriterWithStream(state.writer, state);
+  }
+
+  function writableStreamWrite(stream, chunk) {
+    var state = writableState.get(stream);
+    if (!state)
+      return rejectPromise(new TypeError("WritableStream expected"));
+    if (state.state === "closed")
+      return rejectPromise(new TypeError("WritableStream is closed"));
+    if (state.state === "errored")
+      return rejectPromise(state.storedError);
+    if (state.state === "closing")
+      return rejectPromise(new TypeError("WritableStream is closing"));
+
+    var size = 1;
+    try {
+      size = state.sizeAlgorithm(chunk);
+      if (!Number.isFinite(size) || size < 0)
+        throw new RangeError("Invalid chunk size");
+    } catch (e) {
+      writableError(stream, e);
+      return rejectPromise(e);
+    }
+
+    state.queueTotalSize += size;
+    if (state.queueTotalSize > state.highWaterMark && state.backpressure === false) {
+      state.backpressure = true;
+      state.ready = newPromiseCapability();
+      state.readyPromise = state.ready.promise;
+      if (state.writer)
+        syncWritableWriterWithStream(state.writer, state);
+    }
+
+    var write = state.sink.write;
+    var controller = state.controller;
+    var writePromise = state.writeChain.then(function() {
+      if (state.state === "errored")
+        throw state.storedError;
+      if (write)
+        return write.call(state.sink, chunk, controller);
+      return undefined;
+    });
+    state.writeChain = writePromise.then(function(value) {
+      state.queueTotalSize -= size;
+      if (state.queueTotalSize <= state.highWaterMark && state.backpressure) {
+        state.backpressure = false;
+        state.ready.resolve(undefined);
+        state.ready = newPromiseCapability();
+        state.ready.resolve(undefined);
+        state.readyPromise = state.ready.promise;
+        if (state.writer)
+          syncWritableWriterWithStream(state.writer, state);
+      }
+      return value;
+    }, function(error) {
+      writableError(stream, error);
+      throw error;
+    });
+    state.writeChain.catch(function() {});
+    return writePromise;
+  }
+
+  function writableStreamClose(stream) {
+    var state = writableState.get(stream);
+    if (!state)
+      return rejectPromise(new TypeError("WritableStream expected"));
+    if (state.state === "closed")
+      return rejectPromise(new TypeError("WritableStream is already closed"));
+    if (state.state === "errored")
+      return rejectPromise(state.storedError);
+    if (state.state === "closing")
+      return rejectPromise(new TypeError("WritableStream is already closing"));
+
+    state.state = "closing";
+    var close = state.sink.close;
+    var closePromise = state.writeChain.then(function() {
+      if (close)
+        return close.call(state.sink);
+      return undefined;
+    }).then(function(value) {
+      writableClose(stream);
+      return value;
+    }, function(error) {
+      writableError(stream, error);
+      throw error;
+    });
+    state.writeChain = closePromise.catch(function() {});
+    return closePromise;
+  }
+
+  function writableStreamAbort(stream, reason) {
+    var state = writableState.get(stream);
+    if (!state)
+      return rejectPromise(new TypeError("WritableStream expected"));
+    if (state.state === "closed")
+      return Promise.resolve(undefined);
+    if (state.state === "errored")
+      return rejectPromise(state.storedError);
+
+    var abort = state.sink.abort;
+    state.state = "errored";
+    state.storedError = reason;
+    if (state.abortController) {
+      try { state.abortController.abort(); } catch (e) {}
+    }
+    state.ready.reject(reason);
+    state.closed.reject(reason);
+    state.readyPromise.catch(function() {});
+    state.closedPromise.catch(function() {});
+    if (state.writer)
+      syncWritableWriterWithStream(state.writer, state);
+
+    var abortPromise = abort ? promiseCall(abort, state.sink, [reason])
+                             : Promise.resolve(undefined);
+    return abortPromise;
+  }
+
+  function WritableStreamDefaultController() {
+    throw new TypeError("Illegal constructor");
+  }
+
+  WritableStreamDefaultController.prototype.error = function(error) {
+    var state = writableControllerState.get(this);
+    if (!state)
+      throw new TypeError("WritableStreamDefaultController expected");
+    writableError(state.stream, error);
+  };
+
+  try {
+    Object.defineProperty(WritableStreamDefaultController.prototype, "signal", {
+      configurable: true,
+      get: function() {
+        var state = writableControllerState.get(this);
+        if (!state)
+          throw new TypeError("WritableStreamDefaultController expected");
+        return state.abortController ? state.abortController.signal : undefined;
+      }
+    });
+  } catch (e) {}
+
+  Object.defineProperty(WritableStreamDefaultController.prototype,
+                        Symbol.toStringTag,
+                        { value: "WritableStreamDefaultController",
+                          configurable: true });
+
+  function WritableStream(underlyingSink, strategy) {
+    if (!(this instanceof WritableStream))
+      throw new TypeError("WritableStream must be constructed with new");
+
+    underlyingSink = underlyingSink === undefined ? {} : requiredObject(underlyingSink, "underlyingSink");
+    strategy = strategy === undefined ? {} : requiredObject(strategy, "strategy");
+
+    if (underlyingSink.type !== undefined)
+      throw new RangeError("Invalid writable stream type");
+
+    var highWaterMark = strategy.highWaterMark === undefined ? 1 : Number(strategy.highWaterMark);
+    if (Number.isNaN(highWaterMark) || highWaterMark < 0)
+      throw new RangeError("Invalid highWaterMark");
+
+    var sizeAlgorithm = strategy.size;
+    if (sizeAlgorithm === undefined)
+      sizeAlgorithm = function() { return 1; };
+    if (typeof sizeAlgorithm !== "function")
+      throw new TypeError("strategy.size is not callable");
+
+    var controller = Object.create(WritableStreamDefaultController.prototype);
+    var abortController = typeof global.AbortController === "function"
+      ? new global.AbortController()
+      : undefined;
+    var ready = newPromiseCapability();
+    ready.resolve(undefined);
+    var closed = newPromiseCapability();
+    var state = {
+      sink: underlyingSink,
+      controller: controller,
+      signal: undefined,
+      state: "writable",
+      storedError: undefined,
+      writer: undefined,
+      abortController: abortController,
+      writeChain: Promise.resolve(undefined),
+      ready: ready,
+      readyPromise: ready.promise,
+      closed: closed,
+      closedPromise: closed.promise,
+      highWaterMark: highWaterMark,
+      sizeAlgorithm: sizeAlgorithm,
+      queueTotalSize: 0,
+      backpressure: false
+    };
+    writableState.set(this, state);
+    writableControllerState.set(controller, {
+      stream: this,
+      abortController: abortController
+    });
+
+    var start = underlyingSink.start;
+    if (start !== undefined) {
+      if (typeof start !== "function")
+        throw new TypeError("underlyingSink.start is not callable");
+      state.writeChain = promiseCall(start, underlyingSink, [controller]).catch(function(error) {
+        writableError(this, error);
+        throw error;
+      }.bind(this));
+      state.writeChain.catch(function() {});
+    }
+  }
+
+  Object.defineProperty(WritableStream.prototype, "locked", {
+    configurable: true,
+    get: function() {
+      var state = writableState.get(this);
+      if (!state)
+        throw new TypeError("WritableStream expected");
+      return state.writer !== undefined;
+    }
+  });
+
+  WritableStream.prototype.abort = function(reason) {
+    if (!isWritableStream(this))
+      return rejectPromise(new TypeError("WritableStream expected"));
+    if (writableState.get(this).writer !== undefined)
+      return rejectPromise(new TypeError("WritableStream is locked"));
+    return writableStreamAbort(this, reason);
+  };
+
+  WritableStream.prototype.close = function() {
+    if (!isWritableStream(this))
+      return rejectPromise(new TypeError("WritableStream expected"));
+    if (writableState.get(this).writer !== undefined)
+      return rejectPromise(new TypeError("WritableStream is locked"));
+    return writableStreamClose(this);
+  };
+
+  WritableStream.prototype.getWriter = function() {
+    if (!isWritableStream(this))
+      throw new TypeError("WritableStream expected");
+    return new WritableStreamDefaultWriter(this);
+  };
+
+  Object.defineProperty(WritableStream.prototype, Symbol.toStringTag,
+                        { value: "WritableStream", configurable: true });
+
+  function WritableStreamDefaultWriter(stream) {
+    if (!(this instanceof WritableStreamDefaultWriter))
+      throw new TypeError("WritableStreamDefaultWriter must be constructed with new");
+    if (!isWritableStream(stream))
+      throw new TypeError("WritableStream expected");
+
+    var state = writableState.get(stream);
+    if (state.writer !== undefined)
+      throw new TypeError("WritableStream is locked");
+
+    state.writer = this;
+    writerState.set(this, {
+      stream: stream,
+      readyPromise: state.readyPromise,
+      closedPromise: state.closedPromise
+    });
+  }
+
+  Object.defineProperty(WritableStreamDefaultWriter.prototype, "closed", {
+    configurable: true,
+    get: function() {
+      var state = writerState.get(this);
+      if (!state)
+        return rejectPromise(new TypeError("WritableStreamDefaultWriter expected"));
+      return state.closedPromise;
+    }
+  });
+
+  Object.defineProperty(WritableStreamDefaultWriter.prototype, "desiredSize", {
+    configurable: true,
+    get: function() {
+      var state = writerState.get(this);
+      if (!state)
+        throw new TypeError("WritableStreamDefaultWriter expected");
+      if (state.stream === undefined)
+        throw new TypeError("Writer lock is released");
+      var streamState = writableState.get(state.stream);
+      if (streamState.state === "errored")
+        return null;
+      if (streamState.state === "closed")
+        return 0;
+      return streamState.highWaterMark - streamState.queueTotalSize;
+    }
+  });
+
+  Object.defineProperty(WritableStreamDefaultWriter.prototype, "ready", {
+    configurable: true,
+    get: function() {
+      var state = writerState.get(this);
+      if (!state)
+        return rejectPromise(new TypeError("WritableStreamDefaultWriter expected"));
+      return state.readyPromise;
+    }
+  });
+
+  WritableStreamDefaultWriter.prototype.abort = function(reason) {
+    var state = writerState.get(this);
+    if (!state || state.stream === undefined)
+      return rejectPromise(new TypeError("Writer lock is released"));
+    return writableStreamAbort(state.stream, reason);
+  };
+
+  WritableStreamDefaultWriter.prototype.close = function() {
+    var state = writerState.get(this);
+    if (!state || state.stream === undefined)
+      return rejectPromise(new TypeError("Writer lock is released"));
+    return writableStreamClose(state.stream);
+  };
+
+  WritableStreamDefaultWriter.prototype.releaseLock = function() {
+    var state = writerState.get(this);
+    if (!state)
+      throw new TypeError("WritableStreamDefaultWriter expected");
+    if (state.stream === undefined)
+      return;
+    var streamState = writableState.get(state.stream);
+    if (streamState.writer === this)
+      streamState.writer = undefined;
+    state.stream = undefined;
+    state.readyPromise = rejectPromise(new TypeError("Writer lock is released"));
+    state.closedPromise = rejectPromise(new TypeError("Writer lock is released"));
+    state.readyPromise.catch(function() {});
+    state.closedPromise.catch(function() {});
+  };
+
+  WritableStreamDefaultWriter.prototype.write = function(chunk) {
+    var state = writerState.get(this);
+    if (!state || state.stream === undefined)
+      return rejectPromise(new TypeError("Writer lock is released"));
+    return writableStreamWrite(state.stream, chunk);
+  };
+
+)JS"
+R"JS(
+
+  Object.defineProperty(WritableStreamDefaultWriter.prototype, Symbol.toStringTag,
+                        { value: "WritableStreamDefaultWriter",
+                          configurable: true });
+
+  var transformState = new WeakMap();
+  var transformControllerState = new WeakMap();
+
+  function TransformStreamDefaultController() {
+    throw new TypeError("Illegal constructor");
+  }
+
+  Object.defineProperty(TransformStreamDefaultController.prototype, "desiredSize", {
+    configurable: true,
+    get: function() {
+      var state = transformControllerState.get(this);
+      if (!state)
+        throw new TypeError("TransformStreamDefaultController expected");
+      return state.readableController.desiredSize;
+    }
+  });
+
+  TransformStreamDefaultController.prototype.enqueue = function(chunk) {
+    var state = transformControllerState.get(this);
+    if (!state)
+      throw new TypeError("TransformStreamDefaultController expected");
+    state.readableController.enqueue(chunk);
+  };
+
+  TransformStreamDefaultController.prototype.error = function(reason) {
+    var state = transformControllerState.get(this);
+    if (!state)
+      throw new TypeError("TransformStreamDefaultController expected");
+    state.readableController.error(reason);
+    writableError(state.stream.writable, reason);
+  };
+
+  TransformStreamDefaultController.prototype.terminate = function() {
+    var state = transformControllerState.get(this);
+    if (!state)
+      throw new TypeError("TransformStreamDefaultController expected");
+    try {
+      state.readableController.close();
+    } catch (e) {}
+    writableError(state.stream.writable, new TypeError("TransformStream terminated"));
+  };
+
+  Object.defineProperty(TransformStreamDefaultController.prototype,
+                        Symbol.toStringTag,
+                        { value: "TransformStreamDefaultController",
+                          configurable: true });
+
+  function errorReadableController(controller, error) {
+    try {
+      controller.error(error);
+    } catch (e) {}
+  }
+
+  function TransformStream(transformer, writableStrategy, readableStrategy) {
+    if (!(this instanceof TransformStream))
+      throw new TypeError("TransformStream must be constructed with new");
+
+    transformer = transformer === undefined ? {} : requiredObject(transformer, "transformer");
+    writableStrategy = writableStrategy === undefined ? {} : requiredObject(writableStrategy, "writableStrategy");
+    readableStrategy = readableStrategy === undefined ? {} : requiredObject(readableStrategy, "readableStrategy");
+
+    if (transformer.readableType !== undefined)
+      throw new RangeError("Invalid readableType");
+    if (transformer.writableType !== undefined)
+      throw new RangeError("Invalid writableType");
+
+    var controller = Object.create(TransformStreamDefaultController.prototype);
+    var readableController;
+    var stream = this;
+    var startAlgorithm = getMethod(transformer, "start");
+    var transformAlgorithm = getMethod(transformer, "transform");
+    var flushAlgorithm = getMethod(transformer, "flush");
+    var cancelAlgorithm = getMethod(transformer, "cancel");
+
+    var readable = new ReadableStream({
+      start: function(c) {
+        readableController = c;
+        transformControllerState.set(controller, {
+          stream: stream,
+          readableController: c
+        });
+      },
+      cancel: function(reason) {
+        if (cancelAlgorithm)
+          return cancelAlgorithm.call(transformer, reason);
+        return undefined;
+      }
+    }, readableStrategy);
+
+    var startPromise = startAlgorithm
+      ? promiseCall(startAlgorithm, transformer, [controller])
+      : Promise.resolve(undefined);
+    startPromise = startPromise.then(undefined, function(error) {
+      if (readableController)
+        errorReadableController(readableController, error);
+      throw error;
+    });
+
+    var writable = new WritableStream({
+      start: function() {
+        return startPromise;
+      },
+      write: function(chunk) {
+        var result;
+        try {
+          if (transformAlgorithm) {
+            result = transformAlgorithm.call(transformer, chunk, controller);
+          } else {
+            controller.enqueue(chunk);
+            result = undefined;
+          }
+        } catch (error) {
+          errorReadableController(readableController, error);
+          throw error;
+        }
+        return Promise.resolve(result).then(undefined, function(error) {
+          errorReadableController(readableController, error);
+          throw error;
+        });
+      },
+      close: function() {
+        var result = flushAlgorithm
+          ? promiseCall(flushAlgorithm, transformer, [controller])
+          : Promise.resolve(undefined);
+        return result.then(function() {
+          readableController.close();
+        }, function(error) {
+          errorReadableController(readableController, error);
+          throw error;
+        });
+      },
+      abort: function(reason) {
+        readableController.error(reason);
+      }
+    }, writableStrategy);
+
+    transformState.set(this, {
+      readable: readable,
+      writable: writable,
+      controller: controller
+    });
+  }
+
+  Object.defineProperty(TransformStream.prototype, "readable", {
+    configurable: true,
+    get: function() {
+      var state = transformState.get(this);
+      if (!state)
+        throw new TypeError("TransformStream expected");
+      return state.readable;
+    }
+  });
+
+  Object.defineProperty(TransformStream.prototype, "writable", {
+    configurable: true,
+    get: function() {
+      var state = transformState.get(this);
+      if (!state)
+        throw new TypeError("TransformStream expected");
+      return state.writable;
+    }
+  });
+
+  Object.defineProperty(TransformStream.prototype, Symbol.toStringTag,
+                        { value: "TransformStream", configurable: true });
+
+  function isReadableStreamObject(value) {
+    if (!isObject(value) || !global.ReadableStream)
+      return false;
+    try {
+      return value instanceof global.ReadableStream;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function isUncloneableStreamChunk(value) {
+    return isObject(value) &&
+           (isWritableStream(value) ||
+            isReadableStreamObject(value) ||
+            transformState.has(value));
+  }
+
+  function makeDataCloneError() {
+    return makeDOMException("The object could not be cloned.", "DataCloneError");
+  }
+
+  function cloneTransferReasonError(value) {
+    var constructors = [
+      global.EvalError,
+      global.RangeError,
+      global.ReferenceError,
+      global.SyntaxError,
+      global.TypeError,
+      global.URIError,
+      global.Error
+    ];
+
+    for (var i = 0; i < constructors.length; ++i) {
+      var C = constructors[i];
+      if (typeof C !== "function")
+        continue;
+      try {
+        if (!(value instanceof C))
+          continue;
+      } catch (e) {
+        continue;
+      }
+
+      var message = "";
+      var descriptor;
+      try {
+        descriptor = Object.getOwnPropertyDescriptor(value, "message");
+      } catch (e) {
+        descriptor = undefined;
+      }
+      if (descriptor && hasOwn.call(descriptor, "value"))
+        message = String(descriptor.value);
+      return new C(message);
+    }
+
+    return undefined;
+  }
+
+  function cloneTransferReasonValue(value, memory) {
+    if (typeof value === "function" || typeof value === "symbol")
+      throw makeDataCloneError();
+    if (!isObject(value))
+      return value;
+    if (isUncloneableStreamChunk(value))
+      throw makeDataCloneError();
+
+    memory = memory || new WeakMap();
+    if (memory.has(value))
+      return memory.get(value);
+
+    if (typeof global.DOMException === "function") {
+      try {
+        if (value instanceof global.DOMException) {
+          return new global.DOMException(String(value.message),
+                                         String(value.name));
+        }
+      } catch (e) {}
+    }
+
+    var errorClone = cloneTransferReasonError(value);
+    if (errorClone !== undefined)
+      return errorClone;
+
+    if (typeof global.ArrayBuffer === "function") {
+      try {
+        if (value instanceof global.ArrayBuffer) {
+          var bufferClone = value.slice(0);
+          memory.set(value, bufferClone);
+          return bufferClone;
+        }
+      } catch (e) {}
+    }
+
+    if (global.ArrayBuffer && global.ArrayBuffer.isView &&
+        global.ArrayBuffer.isView(value)) {
+      var clonedBuffer = cloneTransferReasonValue(value.buffer, memory);
+      var viewClone;
+      if (objectToString.call(value) === "[object DataView]") {
+        viewClone = new global.DataView(clonedBuffer, value.byteOffset,
+                                        value.byteLength);
+      } else {
+        viewClone = new value.constructor(clonedBuffer, value.byteOffset,
+                                          value.length);
+      }
+      memory.set(value, viewClone);
+      return viewClone;
+    }
+
+    if (typeof global.Date === "function") {
+      try {
+        if (value instanceof global.Date) {
+          var dateClone = new global.Date(value.getTime());
+          memory.set(value, dateClone);
+          return dateClone;
+        }
+      } catch (e) {}
+    }
+
+    if (typeof global.RegExp === "function") {
+      try {
+        if (value instanceof global.RegExp) {
+          var flags = "";
+          flags += value.global ? "g" : "";
+          flags += value.ignoreCase ? "i" : "";
+          flags += value.multiline ? "m" : "";
+          flags += value.unicode ? "u" : "";
+          flags += value.sticky ? "y" : "";
+          var regexpClone = new global.RegExp(value.source, flags);
+          regexpClone.lastIndex = value.lastIndex;
+          memory.set(value, regexpClone);
+          return regexpClone;
+        }
+      } catch (e) {}
+    }
+
+    if (typeof global.Map === "function") {
+      try {
+        if (value instanceof global.Map) {
+          var mapClone = new global.Map();
+          memory.set(value, mapClone);
+          value.forEach(function(v, k) {
+            mapClone.set(cloneTransferReasonValue(k, memory),
+                         cloneTransferReasonValue(v, memory));
+          });
+          return mapClone;
+        }
+      } catch (e) {
+        throw e;
+      }
+    }
+
+    if (typeof global.Set === "function") {
+      try {
+        if (value instanceof global.Set) {
+          var setClone = new global.Set();
+          memory.set(value, setClone);
+          value.forEach(function(v) {
+            setClone.add(cloneTransferReasonValue(v, memory));
+          });
+          return setClone;
+        }
+      } catch (e) {
+        throw e;
+      }
+    }
+
+    var clone = Array.isArray(value) ? [] : {};
+    memory.set(value, clone);
+
+    var keys = Object.keys(value);
+    for (var i = 0; i < keys.length; ++i) {
+      var key = keys[i];
+      clone[key] = cloneTransferReasonValue(value[key], memory);
+    }
+
+    return clone;
+  }
+
+  function abortTransferredWritable(record, reason) {
+    try {
+      return record.writer.abort(reason);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }
+
+  function rejectTransferredWritableWrite(record, error) {
+    var abortPromise = abortTransferredWritable(record, error);
+    silenceRejection(abortPromise);
+    return Promise.reject(error);
+  }
+
+  function forwardTransferredWritableWrite(record, chunk) {
+    if (isUncloneableStreamChunk(chunk))
+      return rejectTransferredWritableWrite(record, makeDataCloneError());
+
+    var prior = record.tail || Promise.resolve(undefined);
+    var firstWrite = !record.started;
+    record.started = true;
+
+    var forwarding = prior.then(function() {
+      var writePromise;
+      try {
+        writePromise = Promise.resolve(record.writer.write(chunk));
+      } catch (e) {
+        writePromise = Promise.reject(e);
+      }
+      record.inFlight = writePromise;
+      silenceRejection(writePromise);
+      return writePromise;
+    });
+
+    record.tail = forwarding;
+    silenceRejection(forwarding);
+
+    if (firstWrite)
+      return undefined;
+
+    return prior.then(function() { return undefined; });
+  }
+
+  function closeTransferredWritable(record) {
+    var tail = record.tail || Promise.resolve(undefined);
+    var closePromise = tail.then(function() {
+      return record.writer.close();
+    });
+    record.tail = closePromise;
+    silenceRejection(closePromise);
+    return closePromise;
+  }
+
+)JS"
+R"JS(
+
+  function __uxpTransferWritableStream(stream) {
+    if (!isWritableStream(stream))
+      return undefined;
+    if (stream.locked)
+      return null;
+    try {
+      return {
+        writer: stream.getWriter(),
+        started: false,
+        inFlight: undefined,
+        tail: undefined
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function __uxpReceiveWritableStreamTransfer(record) {
+    return new WritableStream({
+      write: function(chunk) {
+        return forwardTransferredWritableWrite(record, chunk);
+      },
+      close: function() {
+        return closeTransferredWritable(record);
+      },
+      abort: function(reason) {
+        return abortTransferredWritable(record, reason);
+      }
+    });
+  }
+
+  function __uxpTransferReadableStream(stream) {
+    if (!isReadableStreamObject(stream))
+      return undefined;
+    if (stream.locked)
+      return null;
+    try {
+      var record = {
+        reader: stream.getReader(),
+        pendingRead: undefined,
+        pumping: undefined,
+        closed: false,
+        errored: false,
+        canceled: false
+      };
+      ensureReadableTransferRead(record);
+      return record;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function ensureReadableTransferRead(record) {
+    if (!record.pendingRead && !record.closed && !record.errored &&
+        !record.canceled) {
+      try {
+        record.pendingRead = Promise.resolve(record.reader.read());
+      } catch (e) {
+        record.pendingRead = Promise.reject(e);
+      }
+      silenceRejection(record.pendingRead);
+    }
+    return record.pendingRead;
+  }
+
+  function errorReadableTransfer(record, controller, error) {
+    if (record.canceled || record.closed || record.errored)
+      return;
+    record.errored = true;
+    try { controller.error(error); } catch (e) {}
+  }
+
+  function pumpReadableTransfer(record, controller) {
+    if (record.pumping || record.closed || record.errored || record.canceled)
+      return;
+
+    var pendingRead = ensureReadableTransferRead(record);
+    if (!pendingRead)
+      return;
+
+    record.pumping = pendingRead.then(function(result) {
+      record.pendingRead = undefined;
+      record.pumping = undefined;
+
+      if (record.canceled || record.errored || record.closed)
+        return;
+
+      if (result.done) {
+        record.closed = true;
+        try { controller.close(); } catch (e) {}
+        return;
+      }
+
+      if (isUncloneableStreamChunk(result.value)) {
+        var cloneError = makeDataCloneError();
+        silenceRejection(record.reader.cancel(cloneError));
+        errorReadableTransfer(record, controller, cloneError);
+        return;
+      }
+
+      try {
+        controller.enqueue(result.value);
+      } catch (e) {
+        silenceRejection(record.reader.cancel(e));
+        errorReadableTransfer(record, controller, e);
+        return;
+      }
+
+      if (controller.desiredSize > 0)
+        pumpReadableTransfer(record, controller);
+    }, function(error) {
+      record.pendingRead = undefined;
+      record.pumping = undefined;
+      errorReadableTransfer(record, controller, error);
+    });
+    silenceRejection(record.pumping);
+  }
+
+  function cancelReadableTransfer(record, reason) {
+    record.canceled = true;
+    var clonedReason;
+    try {
+      clonedReason = cloneTransferReasonValue(reason);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+
+    Promise.resolve().then(function() {
+      try {
+        silenceRejection(record.reader.cancel(clonedReason));
+      } catch (e) {}
+    });
+    return undefined;
+  }
+
+  function closeReadableTransferPort(port) {
+    try { port.close(); } catch (e) {}
+  }
+
+  function startReadableTransferPort(port) {
+    try {
+      if (port.start)
+        port.start();
+    } catch (e) {}
+  }
+
+  function tryPostReadableTransferPort(port, message) {
+    try {
+      port.postMessage(message);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+)JS"
+R"JS(
+
+  function postReadableTransferPortError(record, error) {
+    var posted = tryPostReadableTransferPort(record.port,
+                                             { type: "error", value: error });
+    if (!posted) {
+      posted = tryPostReadableTransferPort(record.port, {
+        type: "error",
+        name: error && error.name,
+        message: error && error.message
+      });
+    }
+    record.closed = true;
+    if (!posted)
+      closeReadableTransferPort(record.port);
+  }
+
+)JS"
+R"JS(
+
+  function requestReadableTransferPortChunk(state) {
+    if (state.closed || state.errored || state.canceled)
+      return;
+    if (!tryPostReadableTransferPort(state.port, { type: "pull" })) {
+      state.errored = true;
+      if (state.controller)
+        try { state.controller.error(makeDataCloneError()); } catch (e) {}
+      closeReadableTransferPort(state.port);
+    }
+  }
+
+  function errorReadableTransferPortState(state, error) {
+    if (state.errored)
+      return;
+    state.errored = true;
+    try {
+      if (state.controller)
+        state.controller.error(error);
+    } catch (e) {}
+    closeReadableTransferPort(state.port);
+  }
+
+  function pumpReadableTransferPort(record) {
+    if (record.reading || record.closed || record.canceled ||
+        record.credits <= 0)
+      return;
+
+    --record.credits;
+    record.reading = true;
+
+    var readPromise;
+    try {
+      readPromise = Promise.resolve(record.reader.read());
+    } catch (e) {
+      readPromise = Promise.reject(e);
+    }
+    silenceRejection(readPromise);
+
+    readPromise.then(function(result) {
+      record.reading = false;
+
+      if (record.canceled || record.closed)
+        return;
+
+      if (result.done) {
+        record.closed = true;
+        if (!tryPostReadableTransferPort(record.port, { type: "close" }))
+          closeReadableTransferPort(record.port);
+        return;
+      }
+
+      if (isUncloneableStreamChunk(result.value)) {
+        var cloneError = makeDataCloneError();
+        silenceRejection(record.reader.cancel(cloneError));
+        postReadableTransferPortError(record, cloneError);
+        return;
+      }
+
+      if (!tryPostReadableTransferPort(record.port,
+                                       { type: "chunk", value: result.value })) {
+        record.closed = true;
+        closeReadableTransferPort(record.port);
+        return;
+      }
+
+      pumpReadableTransferPort(record);
+    }, function(error) {
+      record.reading = false;
+      if (record.canceled || record.closed)
+        return;
+      postReadableTransferPortError(record, error);
+    });
+  }
+
+  function __uxpTransferReadableStreamPort(stream) {
+
+)JS"
+R"JS(
+    if (!isReadableStreamObject(stream))
+      return undefined;
+    if (stream.locked || typeof global.MessageChannel !== "function")
+      return null;
+
+    var channel;
+    try {
+      channel = new global.MessageChannel();
+      var record = {
+        reader: stream.getReader(),
+        port: channel.port1,
+        reading: false,
+        credits: 1,
+        closed: false,
+        canceled: false
+      };
+
+      record.port.onmessage = function(event) {
+        var message = event.data;
+        if (!message || record.canceled)
+          return;
+
+        if (message.type === "closed") {
+          record.closed = true;
+          closeReadableTransferPort(record.port);
+          return;
+        }
+
+        if (record.closed)
+          return;
+
+        if (message.type === "pull") {
+          ++record.credits;
+          pumpReadableTransferPort(record);
+          return;
+        }
+
+        if (message.type === "cancel") {
+          record.canceled = true;
+          Promise.resolve().then(function() {
+            try {
+              silenceRejection(record.reader.cancel(message.reason));
+            } catch (e) {}
+          });
+          closeReadableTransferPort(record.port);
+        }
+      };
+
+      startReadableTransferPort(record.port);
+      pumpReadableTransferPort(record);
+      return channel.port2;
+    } catch (e) {
+      if (channel) {
+        closeReadableTransferPort(channel.port1);
+        closeReadableTransferPort(channel.port2);
+      }
+      return null;
+    }
+  }
+
+  function errorFromReadableTransferPortMessage(message) {
+    if ("value" in message)
+      return message.value;
+    return makeDOMException(message.message || "ReadableStream transfer failed",
+                            message.name || "DataCloneError");
+  }
+
+  function __uxpReceiveReadableStreamTransferFromPort(port) {
+    var state = {
+      port: port,
+      controller: undefined,
+      closed: false,
+      errored: false,
+      canceled: false
+    };
+
+    port.onmessage = function(event) {
+      var message = event.data;
+      if (!message || state.closed || state.errored || state.canceled)
+        return;
+
+      if (message.type === "chunk") {
+        if (isUncloneableStreamChunk(message.value)) {
+          errorReadableTransferPortState(state, makeDataCloneError());
+          return;
+        }
+
+        try {
+          state.controller.enqueue(message.value);
+        } catch (e) {
+          errorReadableTransferPortState(state, e);
+          return;
+        }
+
+        if (state.controller.desiredSize > 0)
+          requestReadableTransferPortChunk(state);
+        return;
+      }
+
+      if (message.type === "close") {
+        state.closed = true;
+        try { state.controller.close(); } catch (e) {}
+        tryPostReadableTransferPort(port, { type: "closed" });
+        closeReadableTransferPort(port);
+        return;
+      }
+
+      if (message.type === "error") {
+        if (!state.errored) {
+          state.errored = true;
+          try {
+            if (state.controller)
+              state.controller.error(
+                errorFromReadableTransferPortMessage(message));
+          } catch (e) {}
+        }
+        tryPostReadableTransferPort(port, { type: "closed" });
+        closeReadableTransferPort(port);
+      }
+    };
+
+    return new ReadableStream({
+      start: function(controller) {
+        state.controller = controller;
+        startReadableTransferPort(port);
+        requestReadableTransferPortChunk(state);
+      },
+      pull: function() {
+        requestReadableTransferPortChunk(state);
+      },
+      cancel: function(reason) {
+        state.canceled = true;
+        try {
+          port.postMessage({ type: "cancel", reason: reason });
+        } catch (e) {
+          closeReadableTransferPort(port);
+          return Promise.reject(e);
+        }
+        closeReadableTransferPort(port);
+        return undefined;
+      }
+    });
+  }
+
+  function __uxpTransferTransformStream(stream) {
+    if (!isObject(stream) || !transformState.has(stream))
+      return undefined;
+
+    var state = transformState.get(stream);
+    if (state.readable.locked || state.writable.locked)
+      return null;
+
+    var readableRecord = __uxpTransferReadableStream(state.readable);
+    if (!readableRecord)
+      return null;
+
+    var writableRecord = __uxpTransferWritableStream(state.writable);
+    if (!writableRecord)
+      return null;
+
+    return {
+      readable: readableRecord,
+      writable: writableRecord
+    };
+  }
+
+  function __uxpReceiveTransformStreamTransfer(record) {
+    var stream = Object.create(global.TransformStream.prototype);
+    transformState.set(stream, {
+      readable: __uxpReceiveReadableStreamTransfer(record.readable),
+      writable: __uxpReceiveWritableStreamTransfer(record.writable),
+      controller: undefined
+    });
+    return stream;
+  }
+
+  function __uxpReceiveReadableStreamTransfer(record) {
+    return new ReadableStream({
+      start: function(controller) {
+        pumpReadableTransfer(record, controller);
+      },
+      pull: function(controller) {
+        pumpReadableTransfer(record, controller);
+      },
+      cancel: function(reason) {
+        return cancelReadableTransfer(record, reason);
+      }
+    });
+  }
+
+  function pipeTo(readable, destination, options) {
+    options = options === undefined ? {} : requiredObject(options, "options");
+    var signal = options.signal;
+    var preventClose = Boolean(options.preventClose);
+    var preventAbort = Boolean(options.preventAbort);
+    var preventCancel = Boolean(options.preventCancel);
+    var reader;
+    var writer;
+
+    try {
+      destination = requiredObject(destination, "destination");
+      reader = readable.getReader();
+      writer = destination.getWriter();
+    } catch (e) {
+      return rejectPromise(e);
+    }
+
+    var closed = false;
+    function cleanup() {
+      if (closed)
+        return;
+      closed = true;
+      releaseReaderLock(reader);
+      releaseWriterLock(writer);
+      if (signal && signal.removeEventListener)
+        signal.removeEventListener("abort", onAbort);
+    }
+
+    function abortReason() {
+      return signal && "reason" in signal
+             ? signal.reason
+             : makeDOMException("The operation was aborted.", "AbortError");
+    }
+
+    function shutdownWithAction(action, originalError) {
+      return action().then(function() {
+        cleanup();
+        throw originalError;
+      }, function(actionError) {
+        cleanup();
+        throw actionError;
+      });
+    }
+
+    function onAbort() {}
+
+    var pipePromise = new Promise(function(resolve, reject) {
+      onAbort = function() {
+        var reason = abortReason();
+        var actions = [];
+        if (!preventAbort)
+          actions.push(writer.abort(reason));
+        if (!preventCancel)
+          actions.push(reader.cancel(reason));
+        Promise.all(actions).then(function() {
+          cleanup();
+          reject(reason);
+        }, function(error) {
+          cleanup();
+          reject(error);
+        });
+      };
+
+      if (signal && signal.aborted) {
+        onAbort();
+        return;
+      }
+      if (signal && signal.addEventListener)
+        signal.addEventListener("abort", onAbort);
+
+      function pump() {
+        if (closed)
+          return;
+        reader.read().then(function(result) {
+          if (closed)
+            return;
+          if (result.done) {
+            var closePromise = preventClose ? Promise.resolve(undefined)
+                                           : writer.close();
+            closePromise.then(function() {
+              cleanup();
+              resolve(undefined);
+            }, function(error) {
+              cleanup();
+              reject(error);
+            });
+            return;
+          }
+
+          writer.write(result.value).then(pump, function(error) {
+            if (closed)
+              return;
+            var cancel = preventCancel
+              ? Promise.resolve(undefined)
+              : reader.cancel(error);
+            cancel.then(function() {
+              cleanup();
+              reject(error);
+            }, function(cancelError) {
+              cleanup();
+              reject(cancelError);
+            });
+          });
+        }, function(error) {
+          if (closed)
+            return;
+          var abort = preventAbort
+            ? Promise.resolve(undefined)
+            : writer.abort(error);
+          abort.then(function() {
+            cleanup();
+            reject(error);
+          }, function(abortError) {
+            cleanup();
+            reject(abortError);
+          });
+        });
+      }
+
+      pump();
+    });
+
+    return pipePromise;
+  }
+
+  function pipeThrough(readable, pair, options) {
+    pair = requiredObject(pair, "transform");
+    var writable = pair.writable;
+    var output = pair.readable;
+    if (readable.locked)
+      throw new TypeError("ReadableStream is locked");
+    if (!isWritableStream(writable))
+      throw new TypeError("transform.writable must be a WritableStream");
+    if (!(output instanceof global.ReadableStream))
+      throw new TypeError("transform.readable must be a ReadableStream");
+    if (writable.locked)
+      throw new TypeError("WritableStream is locked");
+    readable.pipeTo(writable, options).catch(function() {});
+    return output;
+  }
+
+  Object.defineProperty(global, "__uxpStreamsPipeTo",
+                        { value: pipeTo, configurable: true });
+  Object.defineProperty(global, "__uxpStreamsPipeThrough",
+                        { value: pipeThrough, configurable: true });
+  Object.defineProperty(global, "__uxpTransferWritableStream",
+                        { value: __uxpTransferWritableStream,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpReceiveWritableStreamTransfer",
+                        { value: __uxpReceiveWritableStreamTransfer,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpTransferReadableStream",
+                        { value: __uxpTransferReadableStream,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpReceiveReadableStreamTransfer",
+                        { value: __uxpReceiveReadableStreamTransfer,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpTransferReadableStreamPort",
+                        { value: __uxpTransferReadableStreamPort,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpReceiveReadableStreamTransferFromPort",
+                        { value: __uxpReceiveReadableStreamTransferFromPort,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpTransferTransformStream",
+                        { value: __uxpTransferTransformStream,
+                          configurable: true });
+  Object.defineProperty(global, "__uxpReceiveTransformStreamTransfer",
+                        { value: __uxpReceiveTransformStreamTransfer,
+                          configurable: true });
+
+  if (global.ReadableStream && !global.ReadableStream.from) {
+    Object.defineProperty(global.ReadableStream, "from", {
+      value: function from(asyncIterable) {
+        if (asyncIterable == null)
+          throw new TypeError("ReadableStream.from requires an iterable");
+        var method = asyncIterable[Symbol.asyncIterator] ||
+                     asyncIterable[Symbol.iterator];
+        if (typeof method !== "function")
+          throw new TypeError("ReadableStream.from requires an iterable");
+        var iterator = method.call(asyncIterable);
+        return new ReadableStream({
+          pull: function(controller) {
+            return Promise.resolve(iterator.next()).then(function(result) {
+              if (!isObject(result))
+                throw new TypeError("Iterator result is not an object");
+              if (result.done) {
+                controller.close();
+              } else {
+                controller.enqueue(result.value);
+              }
+            });
+          },
+          cancel: function(reason) {
+            var returnMethod = iterator.return;
+            if (returnMethod)
+              return returnMethod.call(iterator, reason);
+            return undefined;
+          }
+        });
+      },
+      writable: true,
+      configurable: true
+    });
+  }
+
+  if (global.ReadableStream && typeof Symbol === "function" &&
+      Symbol.asyncIterator && !global.ReadableStream.prototype.values) {
+    function ReadableStreamAsyncIterator(stream, preventCancel) {
+      this._reader = stream.getReader();
+      this._preventCancel = preventCancel;
+      this._done = false;
+    }
+
+    ReadableStreamAsyncIterator.prototype.next = function() {
+      if (this._done)
+        return Promise.resolve({ value: undefined, done: true });
+      var self = this;
+      return this._reader.read().then(function(result) {
+        if (result.done) {
+          self._done = true;
+          releaseReaderLock(self._reader);
+        }
+        return result;
+      }, function(error) {
+        self._done = true;
+        releaseReaderLock(self._reader);
+        throw error;
+      });
+    };
+
+    ReadableStreamAsyncIterator.prototype.return = function(value) {
+      if (this._done)
+        return Promise.resolve({ value: value, done: true });
+      this._done = true;
+      var reader = this._reader;
+      if (this._preventCancel) {
+        releaseReaderLock(reader);
+        return Promise.resolve({ value: value, done: true });
+      }
+      return reader.cancel(value).then(function() {
+        releaseReaderLock(reader);
+        return { value: value, done: true };
+      }, function(error) {
+        releaseReaderLock(reader);
+        throw error;
+      });
+    };
+
+    ReadableStreamAsyncIterator.prototype[Symbol.asyncIterator] = function() {
+      return this;
+    };
+
+    Object.defineProperty(global.ReadableStream.prototype, "values", {
+      value: function values(options) {
+        var preventCancel = Boolean(options && options.preventCancel);
+        return new ReadableStreamAsyncIterator(this, preventCancel);
+      },
+      writable: true,
+      configurable: true
+    });
+
+    Object.defineProperty(global.ReadableStream.prototype, Symbol.asyncIterator, {
+      value: global.ReadableStream.prototype.values,
+      writable: true,
+      configurable: true
+    });
+  }
+
+  )JS"
+  R"JS(
+
+  var textEncoderStreamState = new WeakMap();
+  var textDecoderStreamState = new WeakMap();
+
+  function enqueueEncoded(controller, encoder, string) {
+    if (string.length === 0)
+      return;
+    var chunk = encoder.encode(string);
+    if (chunk.byteLength)
+      controller.enqueue(chunk);
+  }
+
+  function TextEncoderStream() {
+    if (!(this instanceof TextEncoderStream))
+      throw new TypeError("TextEncoderStream must be constructed with new");
+
+    var encoder = new TextEncoder();
+    var leadingSurrogate = null;
+    var transform = new TransformStream({
+      transform: function(chunk, controller) {
+        var input = String(chunk);
+        var output = "";
+        var i = 0;
+
+        if (leadingSurrogate !== null) {
+          if (input.length > 0) {
+            var first = input.charCodeAt(0);
+            if (first >= 0xDC00 && first <= 0xDFFF) {
+              output += String.fromCharCode(leadingSurrogate) + input.charAt(0);
+              i = 1;
+            } else {
+              output += "\uFFFD";
+            }
+          } else {
+            return;
+          }
+          leadingSurrogate = null;
+        }
+
+        for (; i < input.length; ++i) {
+          var code = input.charCodeAt(i);
+          if (code >= 0xD800 && code <= 0xDBFF) {
+            if (i + 1 < input.length) {
+              var next = input.charCodeAt(i + 1);
+              if (next >= 0xDC00 && next <= 0xDFFF) {
+                output += input.charAt(i) + input.charAt(i + 1);
+                ++i;
+              } else {
+                output += "\uFFFD";
+              }
+            } else {
+              leadingSurrogate = code;
+              break;
+            }
+          } else if (code >= 0xDC00 && code <= 0xDFFF) {
+            output += "\uFFFD";
+          } else {
+            output += input.charAt(i);
+          }
+        }
+
+        enqueueEncoded(controller, encoder, output);
+      },
+      flush: function(controller) {
+        if (leadingSurrogate !== null) {
+          leadingSurrogate = null;
+          enqueueEncoded(controller, encoder, "\uFFFD");
+        }
+      }
+    });
+
+    textEncoderStreamState.set(this, { transform: transform });
+  }
+
+  Object.defineProperty(TextEncoderStream.prototype, "encoding", {
+    configurable: true,
+    get: function() {
+      if (!textEncoderStreamState.has(this))
+        throw new TypeError("TextEncoderStream expected");
+      return "utf-8";
+    }
+  });
+
+  Object.defineProperty(TextEncoderStream.prototype, "readable", {
+    configurable: true,
+    get: function() {
+      var state = textEncoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextEncoderStream expected");
+      return state.transform.readable;
+    }
+  });
+
+  Object.defineProperty(TextEncoderStream.prototype, "writable", {
+    configurable: true,
+    get: function() {
+      var state = textEncoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextEncoderStream expected");
+      return state.transform.writable;
+    }
+  });
+
+  Object.defineProperty(TextEncoderStream.prototype, Symbol.toStringTag,
+                        { value: "TextEncoderStream", configurable: true });
+
+  function TextDecoderStream(label, options) {
+    if (!(this instanceof TextDecoderStream))
+      throw new TypeError("TextDecoderStream must be constructed with new");
+    label = label === undefined ? "utf-8" : label;
+    options = options === undefined ? {} : options;
+
+    var decoder = new TextDecoder(label, options);
+    var transform = new TransformStream({
+      transform: function(chunk, controller) {
+        var output = decoder.decode(chunk, { stream: true });
+        if (output.length)
+          controller.enqueue(output);
+      },
+      flush: function(controller) {
+        var output = decoder.decode();
+        if (output.length)
+          controller.enqueue(output);
+      }
+    });
+
+    textDecoderStreamState.set(this, {
+      transform: transform,
+      encoding: decoder.encoding,
+      fatal: decoder.fatal,
+      ignoreBOM: Boolean(options && options.ignoreBOM)
+    });
+  }
+
+  Object.defineProperty(TextDecoderStream.prototype, "encoding", {
+    configurable: true,
+    get: function() {
+      var state = textDecoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextDecoderStream expected");
+      return state.encoding;
+    }
+  });
+
+  Object.defineProperty(TextDecoderStream.prototype, "fatal", {
+    configurable: true,
+    get: function() {
+      var state = textDecoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextDecoderStream expected");
+      return state.fatal;
+    }
+  });
+
+  Object.defineProperty(TextDecoderStream.prototype, "ignoreBOM", {
+    configurable: true,
+    get: function() {
+      var state = textDecoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextDecoderStream expected");
+      return state.ignoreBOM;
+    }
+  });
+
+  Object.defineProperty(TextDecoderStream.prototype, "readable", {
+    configurable: true,
+    get: function() {
+      var state = textDecoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextDecoderStream expected");
+      return state.transform.readable;
+    }
+  });
+
+  Object.defineProperty(TextDecoderStream.prototype, "writable", {
+    configurable: true,
+    get: function() {
+      var state = textDecoderStreamState.get(this);
+      if (!state)
+        throw new TypeError("TextDecoderStream expected");
+      return state.transform.writable;
+    }
+  });
+
+  Object.defineProperty(TextDecoderStream.prototype, Symbol.toStringTag,
+                        { value: "TextDecoderStream", configurable: true });
+
+  var compressionStreamState = new WeakMap();
+  var decompressionStreamState = new WeakMap();
+
+  function enqueueCompressionChunks(nativeContext, chunk, finish, controller) {
+    var chunks = global.__uxpCompressionProcess(nativeContext, chunk, finish);
+    for (var i = 0; i < chunks.length; ++i)
+      controller.enqueue(chunks[i]);
+  }
+
+  function CompressionStream(format) {
+    if (!(this instanceof CompressionStream))
+      throw new TypeError("CompressionStream must be constructed with new");
+    var nativeContext = global.__uxpCreateCompressionContext(format, true);
+    var transform = new TransformStream({
+      transform: function(chunk, controller) {
+        enqueueCompressionChunks(nativeContext, chunk, false, controller);
+      },
+      flush: function(controller) {
+        enqueueCompressionChunks(nativeContext, undefined, true, controller);
+      }
+    });
+    compressionStreamState.set(this, { transform: transform });
+  }
+
+  Object.defineProperty(CompressionStream.prototype, "readable", {
+    configurable: true,
+    get: function() {
+      var state = compressionStreamState.get(this);
+      if (!state)
+        throw new TypeError("CompressionStream expected");
+      return state.transform.readable;
+    }
+  });
+
+  Object.defineProperty(CompressionStream.prototype, "writable", {
+    configurable: true,
+    get: function() {
+      var state = compressionStreamState.get(this);
+      if (!state)
+        throw new TypeError("CompressionStream expected");
+      return state.transform.writable;
+    }
+  });
+
+  Object.defineProperty(CompressionStream.prototype, Symbol.toStringTag,
+                        { value: "CompressionStream", configurable: true });
+
+  function DecompressionStream(format) {
+    if (!(this instanceof DecompressionStream))
+      throw new TypeError("DecompressionStream must be constructed with new");
+    var nativeContext = global.__uxpCreateCompressionContext(format, false);
+    var transform = new TransformStream({
+      transform: function(chunk, controller) {
+        enqueueCompressionChunks(nativeContext, chunk, false, controller);
+      },
+      flush: function(controller) {
+        enqueueCompressionChunks(nativeContext, undefined, true, controller);
+      }
+    });
+    decompressionStreamState.set(this, { transform: transform });
+  }
+
+  Object.defineProperty(DecompressionStream.prototype, "readable", {
+    configurable: true,
+    get: function() {
+      var state = decompressionStreamState.get(this);
+      if (!state)
+        throw new TypeError("DecompressionStream expected");
+      return state.transform.readable;
+    }
+  });
+
+  Object.defineProperty(DecompressionStream.prototype, "writable", {
+    configurable: true,
+    get: function() {
+      var state = decompressionStreamState.get(this);
+      if (!state)
+        throw new TypeError("DecompressionStream expected");
+      return state.transform.writable;
+    }
+  });
+
+  Object.defineProperty(DecompressionStream.prototype, Symbol.toStringTag,
+                        { value: "DecompressionStream", configurable: true });
+
+  define("WritableStream", WritableStream);
+  define("WritableStreamDefaultWriter", WritableStreamDefaultWriter);
+  define("WritableStreamDefaultController", WritableStreamDefaultController);
+  define("TransformStream", TransformStream);
+  define("TransformStreamDefaultController", TransformStreamDefaultController);
+  define("TextEncoderStream", TextEncoderStream);
+  define("TextDecoderStream", TextDecoderStream);
+  define("CompressionStream", CompressionStream);
+  define("DecompressionStream", DecompressionStream);
+})(this);
+)JS";
+
+    RootedValue rval(cx);
+    JS::CompileOptions options(cx);
+    options.setFileAndLine("builtin/StreamExtras.js", 1);
+    options.setNoScriptRval(true);
+    return JS::Evaluate(cx, options, source, strlen(source), &rval);
 }

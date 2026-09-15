@@ -18,8 +18,19 @@ import tempfile
 from datetime import datetime
 from mozbuild.base import MozbuildObject
 from buildconfig import substs
+from llvm_pgo import LLVMProfile
 
 PORT = 8888
+
+
+def wait_for_training(runner, timeout):
+  result = runner.wait(timeout=timeout)
+  if result is None:
+    runner.stop()
+    raise RuntimeError("PGO training browser timed out after %s seconds" % timeout)
+  if result != 0:
+    raise RuntimeError("PGO training browser exited unsuccessfully")
+
 
 if __name__ == '__main__':
   cli = CLI()
@@ -54,6 +65,15 @@ if __name__ == '__main__':
 
     env = os.environ.copy()
     env["XPCOM_DEBUG_BREAK"] = "warn"
+    # Keep the training workload in the parent process. In particular, the
+    # initialization javascript: URL must work without a content subprocess.
+    # This environment belongs only to the temporary training browser.
+    env["MOZ_FORCE_DISABLE_E10S"] = "1"
+
+    llvm_profile = None
+    if substs.get("CLANG_CL") and substs.get("MOZ_PGO"):
+      llvm_profile = LLVMProfile(build.topobjdir, substs.get("LLVM_PROFDATA"))
+      llvm_profile.prepare(env)
 
     # For VC12+, make sure we can find the right bitness of pgort1x0.dll
     if not substs.get('HAVE_64BIT_BUILD'):
@@ -72,7 +92,7 @@ if __name__ == '__main__':
                            cmdargs=['javascript:Quitter.quit()'],
                            env=env)
     runner.start()
-    runner.wait()
+    wait_for_training(runner, 180)
 
     jarlog = os.getenv("JARLOG_FILE")
     if jarlog:
@@ -85,7 +105,9 @@ if __name__ == '__main__':
                            cmdargs=cmdargs,
                            env=env)
     runner.start(debug_args=debug_args, interactive=interactive)
-    runner.wait()
-    httpd.stop()
+    wait_for_training(runner, 600)
+    if llvm_profile:
+      llvm_profile.merge()
   finally:
+    httpd.stop()
     shutil.rmtree(profilePath)

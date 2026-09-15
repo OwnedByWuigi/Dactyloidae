@@ -1,0 +1,191 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+browser[remote="true"] {
+  -moz-binding: url("chrome://global/content/bindings/remote-browser.xml#remote-browser");
+}
+
+#picture-in-picture {
+  min-width: 300px;
+  min-height: 170px;
+  background: black;
+  color: white;
+  overflow: hidden;
+}
+
+#player-stack {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow: hidden;
+  -moz-user-select: none;
+}
+
+#player-container,
+#player-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+#player-container {
+  background: black;
+}
+
+#player-container > browser {
+  display: -moz-box;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+}
+
+#player-overlay {
+  display: flex;
+  flex-direction: column;
+  -moz-window-dragging: no-drag;
+}
+
+#drag-area {
+  flex: 1;
+  min-height: 0;
+  cursor: move;
+}
+
+.pip-controls {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+#player-overlay:hover .pip-controls,
+#player-overlay[keyboard] .pip-controls,
+#player-overlay[seeking] .pip-controls,
+#player-stack[dragging] .pip-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#top-controls {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: flex-end;
+  padding: 8px;
+  background: linear-gradient(rgba(0, 0, 0, .55), transparent);
+}
+
+#playback-controls {
+  flex-shrink: 0;
+  padding: 12px 10px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .85));
+  -moz-window-dragging: no-drag;
+}
+
+#button-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.pip-controls button {
+  -moz-appearance: none;
+  -moz-window-dragging: no-drag;
+  min-width: 0;
+  margin: 2px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: rgba(30, 30, 30, .8);
+  color: white;
+  text-shadow: none;
+}
+
+.pip-controls button:hover,
+.pip-controls button:focus {
+  border-color: white;
+  background: #444;
+}
+
+#close {
+  font-size: 22px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+#seek {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  margin: 0 0 6px;
+  cursor: pointer;
+  -moz-window-dragging: no-drag;
+}
+
+#seek:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+#time {
+  flex: 1;
+  min-width: 0;
+  margin: 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.resize-edge,
+.resize-corner {
+  position: absolute;
+  z-index: 2;
+  -moz-window-dragging: no-drag;
+}
+
+.resize-edge[data-resize="n"],
+.resize-edge[data-resize="s"] {
+  left: 14px;
+  right: 14px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.resize-edge[data-resize="e"],
+.resize-edge[data-resize="w"] {
+  top: 14px;
+  bottom: 14px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.resize-corner {
+  width: 14px;
+  height: 14px;
+}
+
+[data-resize*="n"] { top: 0; }
+[data-resize*="s"] { bottom: 0; }
+[data-resize*="e"] { right: 0; }
+[data-resize*="w"] { left: 0; }
+[data-resize="nw"], [data-resize="se"] { cursor: nwse-resize; }
+[data-resize="ne"], [data-resize="sw"] { cursor: nesw-resize; }
+
+@media (min-width: 700px) {
+  #playback-controls {
+    padding: 20px 20px 14px;
+  }
+  .pip-controls button {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  #time {
+    font-size: 14px;
+  }
+}

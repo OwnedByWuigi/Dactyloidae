@@ -31,6 +31,15 @@ if CONFIG['INTEL_ARCHITECTURE']:
         'inflate_simd.c',
         'x86.c',
     ]
+    # Clang (including clang-cl) and GCC require explicit ISA flags for
+    # intrinsics. MSVC accepts these intrinsics without additional flags.
+    # Keep advanced instructions confined to the runtime-dispatched sources.
+    if CONFIG['GNU_CC'] or CONFIG['CLANG_CL']:
+        SOURCES['adler32_simd.c'].flags += ['-mssse3']
+        for source in ['crc32_simd.c', 'crc_folding.c']:
+            SOURCES[source].flags += ['-msse4.2', '-mpclmul']
+        for source in ['fill_window_sse.c', 'inffast_chunk.c', 'inflate_simd.c']:
+            SOURCES[source].flags += ['-msse2']
 else:
     SOURCES += [
         'simd_stub.c',

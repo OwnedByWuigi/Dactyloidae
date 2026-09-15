@@ -1,0 +1,97 @@
+#!/bin/bash
+set -e
+
+win_to_msys() {
+  echo "$1" | sed 's|\\|/|g; s|^\([A-Za-z]\):/|/\1/|' | tr 'A-Z' 'a-z' | sed 's|^/\([a-z]\)/|\1:/|; s|^\([a-z]\):/|/\1/|'
+}
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+case "$BUILD_ARCH" in
+  x64) MOZCONFIG_NAME="uxp-win64-msvc" ; REDIST_ARCH="x64" ;;
+  x86) MOZCONFIG_NAME="uxp-win32-msvc" ; REDIST_ARCH="x86" ;;
+  *)
+    echo "[build] BUILD_ARCH is not set or not x64/x86, Make sure you run the dactyl msvc shell first."
+    exit 1
+    ;;
+esac
+
+MOZCONFIG_SRC="$SCRIPT_DIR/mozconfigs/windows/$MOZCONFIG_NAME"
+MOZCONFIG_DST="$SCRIPT_DIR/.mozconfig"
+if [ ! -f "$MOZCONFIG_SRC" ]; then
+  echo "[build] ERROR: Mozconfig not found: $MOZCONFIG_SRC"
+  exit 1
+fi
+echo "[build] Architecture : $BUILD_ARCH"
+echo "[build] Mozconfig    : mozconfigs/windows/$MOZCONFIG_NAME"
+cp "$MOZCONFIG_SRC" "$MOZCONFIG_DST"
+echo "[build] Copied to    : .mozconfig"
+
+
+if [ -z "$VCINSTALLDIR" ]; then
+  echo "[build] ERROR: VCINSTALLDIR is not set. Make sure you run the dactyl msvc shell first."
+  exit 1
+fi
+
+REDIST_BASE="$(win_to_msys "$VCINSTALLDIR")/Redist/MSVC"
+echo "[build] VC install   : $VCINSTALLDIR"
+
+if [ ! -d "$REDIST_BASE" ]; then
+  echo "[build] ERROR: VC redist not found at $REDIST_BASE"
+  exit 1
+fi
+
+REDIST_VER=""
+for DIR in "$REDIST_BASE"/14.16.*; do
+  [ -d "$DIR" ] && REDIST_VER="$DIR" && break
+done
+
+if [ -z "$REDIST_VER" ]; then
+  echo "[build] ERROR: No VS2017 redist found under $REDIST_BASE"
+  exit 1
+fi
+
+STAGING_DIR="$SCRIPT_DIR/.redist-stage-$REDIST_ARCH"
+mkdir -p "$STAGING_DIR"
+
+for SUBDIR in Microsoft.VC141.CRT Microsoft.VC141.OPENMP; do
+  SRC="$REDIST_VER/$REDIST_ARCH/$SUBDIR"
+  if [ -d "$SRC" ]; then
+    echo "[build]   <- $SUBDIR"
+    cp -u "$SRC"/*.dll "$STAGING_DIR/"
+  else
+    echo "[build] WARNING: Redist Dlls not found, skipping."
+  fi
+done
+
+if [ -z "$UNIVERSALCRTSDKDIR" ]; then
+  echo "[build] ERROR: CRT SDK Dir ENV is not set. Make sure you run the dactyl msvc shell first."
+  exit 1
+fi
+
+UCRT_DIR="$(win_to_msys "$UNIVERSALCRTSDKDIR")/Redist/ucrt/DLLs/$REDIST_ARCH"
+if [ -d "$UCRT_DIR" ]; then
+  echo "[build]   <- ucrt ($UCRT_DIR)"
+  cp -u "$UCRT_DIR"/*.dll "$STAGING_DIR/"
+else
+  echo "[build] WARNING: UCRT redist not found at $UCRT_DIR"
+fi
+
+# workaround: Default ucrtbase doesnt work on Windows 2000 for some reason but newer does.
+UCRT19041_FILE="$(win_to_msys "$UNIVERSALCRTSDKDIR")/Redist/10.0.19041.0/ucrt/DLLs/$REDIST_ARCH/ucrtbase.dll"
+if [ -f "$UCRT19041_FILE" ]; then
+  echo "[build] 19041 ucrtbase applied"
+  cp -u "$UCRT19041_FILE" "$STAGING_DIR/"
+else
+  echo "[build] WARNING: 19041 ucrtbase not found for Windows 2000 Compat"
+fi
+
+export WIN32_REDIST_DIR="$STAGING_DIR"
+export WIN_UCRT_REDIST_DIR="$STAGING_DIR"
+
+echo "[build] Starting build..."
+./mach build
+case "$BUILD_ARCH" in
+  x64) OBJ_DIR="obj-x86_64-pc-mingw32" ;;
+  x86) OBJ_DIR="obj-i686-pc-mingw32" ;;
+esac
+cp "$STAGING_DIR/concrt140.dll" "$SCRIPT_DIR/$OBJ_DIR/dist/bin/"

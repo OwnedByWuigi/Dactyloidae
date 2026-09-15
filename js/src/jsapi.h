@@ -999,7 +999,9 @@ class JS_PUBLIC_API(ContextOptions) {
         werror_(false),
         strictMode_(false),
         extraWarnings_(false),
-        arrayProtoValues_(true)
+        arrayProtoValues_(true),
+        streams_(true),
+        weakRefs_(false)
     {
     }
 
@@ -1139,6 +1141,16 @@ class JS_PUBLIC_API(ContextOptions) {
         return *this;
     }
 
+    bool weakRefs() const { return weakRefs_; }
+    ContextOptions& setWeakRefs(bool flag) {
+        weakRefs_ = flag;
+        return *this;
+    }
+    ContextOptions& toggleWeakRefs() {
+        weakRefs_ = !weakRefs_;
+        return *this;
+    }
+
   private:
     bool baseline_ : 1;
     bool ion_ : 1;
@@ -1156,6 +1168,7 @@ class JS_PUBLIC_API(ContextOptions) {
     bool extraWarnings_ : 1;
     bool arrayProtoValues_ : 1;
     bool streams_ : 1;
+    bool weakRefs_ : 1;
 };
 
 JS_PUBLIC_API(ContextOptions&)

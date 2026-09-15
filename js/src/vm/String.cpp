@@ -17,6 +17,7 @@
 #include "gc/Marking.h"
 #include "gc/Nursery.h"
 #include "js/UbiNode.h"
+#include "vm/CharacterOperations.h"
 #include "vm/SPSProfiler.h"
 
 #include "jscntxtinlines.h"
@@ -1213,12 +1214,8 @@ js::NewDependentString(JSContext* cx, JSString* baseArg, size_t start, size_t le
 static bool
 CanStoreCharsAsLatin1(const char16_t* s, size_t length)
 {
-    for (const char16_t* end = s + length; s < end; ++s) {
-        if (*s > JSString::MAX_LATIN1_CHAR)
-            return false;
-    }
-
-    return true;
+    static_assert(JSString::MAX_LATIN1_CHAR == 0xff, "Latin1 character range");
+    return CharactersFitInLatin1(s, length);
 }
 
 static bool

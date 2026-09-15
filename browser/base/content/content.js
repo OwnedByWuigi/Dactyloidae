@@ -442,7 +442,9 @@ var ClickEventHandler = {
       }
     }
 
-    let json = { button: event.button, shiftKey: event.shiftKey,
+    let json = { frameOuterWindowID: ownerDoc.defaultView.QueryInterface(Ci.nsIInterfaceRequestor)
+                                      .getInterface(Ci.nsIDOMWindowUtils).outerWindowID,
+                 button: event.button, shiftKey: event.shiftKey,
                  ctrlKey: event.ctrlKey, metaKey: event.metaKey,
                  altKey: event.altKey, href: null, title: null,
                  bookmark: false, referrerPolicy: referrerPolicy,
@@ -681,6 +683,17 @@ addMessageListener("ContextMenu:MediaCommand", (message) => {
     () => {
       let media = message.objects.element;
       switch (message.data.command) {
+        case "pictureinpicture": {
+          let {PictureInPicture} = Cu.import("resource:///modules/PictureInPicture.jsm", {});
+          let data;
+          try {
+            data = PictureInPicture.register(media, message.data.data);
+          } catch (error) {
+            data = {id: message.data.data, error: error.message};
+          }
+          sendAsyncMessage("PictureInPicture:Prepared", data);
+          break;
+        }
         case "play":
           media.play();
           break;
