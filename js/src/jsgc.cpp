@@ -6171,8 +6171,8 @@ class SweepActionForEach final : public SweepAction<Args...>
     typename IncrIter::State iterState;
 
   public:
-    SweepActionForEach(const Init& init, UniquePtr<Action> action)
-      : iterInit(init), action(Move(action))
+    SweepActionForEach(Init init, UniquePtr<Action> action)
+      : iterInit(Move(init)), action(Move(action))
     {}
 
     IncrementalProgress run(Args... args) override {
@@ -6292,14 +6292,14 @@ ForEachZoneInSweepGroup(JSRuntime* rt, UniquePtr<SweepAction<Args...>> action)
 
 template <typename KindContainer, typename... Args>
 static UniquePtr<typename RemoveLastTemplateParameter<SweepAction<Args...>>::Type>
-ForEachAllocKind(const KindContainer& kinds, UniquePtr<SweepAction<Args...>> action)
+ForEachAllocKind(KindContainer kinds, UniquePtr<SweepAction<Args...>> action)
 {
     if (!action)
         return nullptr;
 
     using Action = typename RemoveLastTemplateParameter<
         SweepActionForEach<ContainerIter<KindContainer>, KindContainer, Args...>>::Type;
-    return js::MakeUnique<Action>(kinds, Move(action));
+    return js::MakeUnique<Action>(Move(kinds), Move(action));
 }
 
 } // namespace sweepaction
@@ -6350,7 +6350,7 @@ GCRuntime::initSweepActions()
         return false;
 
     auto actFinalizeKind = ForEachZoneInSweepGroup(rt,
-        ForEachAllocKind(fgKinds,
+        ForEachAllocKind(Move(fgKinds),
             sweepaction::Call<FreeOp*, SliceBudget&, Zone*, AllocKind>(&GCRuntime::finalizeAllocKind)));
     if (!actFinalizeKind)
         return false;
