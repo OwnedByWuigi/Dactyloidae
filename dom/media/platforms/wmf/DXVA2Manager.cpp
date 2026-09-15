@@ -89,7 +89,7 @@ public:
   virtual ~D3D9DXVA2Manager();
 
   HRESULT Init(layers::KnowsCompositor* aKnowsCompositor,
-               nsACString& aFailureReason);
+               nsACString& aFailureReason, const GUID* aDecoderGUID);
 
   IUnknown* GetDXVADeviceManager() override;
 
@@ -99,6 +99,8 @@ public:
                       const nsIntRect& aRegion,
                       Image** aOutImage) override;
 
+  HRESULT CopySurfaceToImage(IDirect3DSurface9* aSurface,
+                             const nsIntRect& aRegion, Image** aOutImage) override;
   bool SupportsConfig(IMFMediaType* aType, float aFramerate) override;
 
 private:
@@ -185,10 +187,6 @@ static const GUID DXVA2_Intel_ModeH264_E = {
   0x604F8E68, 0x4951, 0x4c54, { 0x88, 0xFE, 0xAB, 0xD2, 0x5C, 0x15, 0xB3, 0xD6 }
 };
 
-static const GUID DXVA2_ModeVP9_VLD_Profile0 = {
-  0x463707f8, 0xa1d0, 0x4585, { 0x87, 0x6d, 0x83, 0xaa, 0x6d, 0x60, 0xb8, 0x9e }
-};
-
 // This tests if a DXVA video decoder can be created for the given media type/resolution.
 // It uses the same decoder device (DXVA2_ModeH264_E - DXVA2_ModeH264_VLD_NoFGT) as the H264
 // decoder MFT provided by windows (CLSID_CMSH264DecoderMFT) uses, so we can use it to determine
@@ -267,7 +265,7 @@ D3D9DXVA2Manager::GetDXVADeviceManager()
 
 HRESULT
 D3D9DXVA2Manager::Init(layers::KnowsCompositor* aKnowsCompositor,
-                       nsACString& aFailureReason)
+                        nsACString& aFailureReason, const GUID* aDecoderGUID)
 {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -388,11 +386,12 @@ D3D9DXVA2Manager::Init(layers::KnowsCompositor* aKnowsCompositor,
 
   bool found = false;
   for (UINT i = 0; i < deviceCount; i++) {
-    if (decoderDevices[i] == DXVA2_ModeH264_E ||
-        decoderDevices[i] == DXVA2_Intel_ModeH264_E ||
-		decoderDevices[i] == DXVA2_ModeVP9_VLD_Profile0) {
+    if (aDecoderGUID ? decoderDevices[i] == *aDecoderGUID :
+        (decoderDevices[i] == DXVA2_ModeH264_E ||
+         decoderDevices[i] == DXVA2_Intel_ModeH264_E)) {
       mDecoderGUID = decoderDevices[i];
       found = true;
+      break;
     }
   }
   CoTaskMemFree(decoderDevices);
@@ -462,8 +461,15 @@ D3D9DXVA2Manager::CopyToImage(IMFSample* aSample,
                          getter_AddRefs(surface));
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
+  return CopySurfaceToImage(surface, aRegion, aOutImage);
+}
+
+HRESULT
+D3D9DXVA2Manager::CopySurfaceToImage(IDirect3DSurface9* surface,
+                                    const nsIntRect& aRegion, Image** aOutImage)
+{
   RefPtr<D3D9SurfaceImage> image = new D3D9SurfaceImage();
-  hr = image->AllocateAndCopy(mTextureClientAllocator, surface, aRegion);
+  HRESULT hr = image->AllocateAndCopy(mTextureClientAllocator, surface, aRegion);
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
   RefPtr<IDirect3DSurface9> sourceSurf = image->GetD3D9Surface();
@@ -492,7 +498,7 @@ static uint32_t sDXVAVideosCount = 0;
 /* static */
 DXVA2Manager*
 DXVA2Manager::CreateD3D9DXVA(layers::KnowsCompositor* aKnowsCompositor,
-                             nsACString& aFailureReason)
+                             nsACString& aFailureReason, const GUID* aDecoderGUID)
 {
   MOZ_ASSERT(NS_IsMainThread());
   HRESULT hr;
@@ -507,7 +513,7 @@ DXVA2Manager::CreateD3D9DXVA(layers::KnowsCompositor* aKnowsCompositor,
   }
 
   nsAutoPtr<D3D9DXVA2Manager> d3d9Manager(new D3D9DXVA2Manager());
-  hr = d3d9Manager->Init(aKnowsCompositor, aFailureReason);
+  hr = d3d9Manager->Init(aKnowsCompositor, aFailureReason, aDecoderGUID);
   if (SUCCEEDED(hr)) {
     return d3d9Manager.forget();
   }
@@ -694,11 +700,10 @@ D3D11DXVA2Manager::Init(layers::KnowsCompositor* aKnowsCompositor,
   for (UINT i = 0; i < profileCount; i++) {
     GUID id;
     hr = videoDevice->GetVideoDecoderProfile(i, &id);
-    if (SUCCEEDED(hr)) {
-      if (id == DXVA2_ModeH264_E || id == DXVA2_Intel_ModeH264_E || id == DXVA2_ModeVP9_VLD_Profile0) {
-        mDecoderGUID = id;
-        found = true;
-      }
+    if (SUCCEEDED(hr) && (id == DXVA2_ModeH264_E || id == DXVA2_Intel_ModeH264_E)) {
+      mDecoderGUID = id;
+      found = true;
+      break;
     }
   }
   if (!found) {
