@@ -3,3 +3,6 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 pref("browser.internal-userscripts.enabled", true);
+pref("browser.video.youtube.hide-unaccelerated", true);
+pref("browser.video.youtube.force-h264", false);
+pref("browser.video.youtube.disable-60fps", false);

@@ -68,7 +68,27 @@
     </rows>
   </grid>
 </groupbox>
+
 #endif
+
+<!-- YouTube video codecs -->
+<groupbox id="videoGroup" data-category="paneContent" hidden="true">
+  <caption><label>&videoContent.label;</label></caption>
+  <vbox>
+    <checkbox id="youtubeHideUnaccelerated"
+              preference="browser.video.youtube.hide-unaccelerated"
+              label="&youtubeHideUnaccelerated.label;"
+              accesskey="&youtubeHideUnaccelerated.accesskey;" />
+    <checkbox id="youtubeForceH264"
+              preference="browser.video.youtube.force-h264"
+              label="&youtubeForceH264.label;"
+              accesskey="&youtubeForceH264.accesskey;" />
+    <checkbox id="youtubeDisable60fps"
+              preference="browser.video.youtube.disable-60fps"
+              label="&youtubeDisable60fps.label;"
+              accesskey="&youtubeDisable60fps.accesskey;" />
+  </vbox>
+</groupbox>
 
 <groupbox id="notificationsGroup" data-category="paneContent" hidden="true">
   <caption><label>&notificationsPolicy.label;</label></caption>
