@@ -333,7 +333,7 @@ template <typename CharT>
 MOZ_ALWAYS_INLINE
 static JSAtom*
 AtomizeAndCopyCharsInner(JSContext* cx, const CharT* tbchars, size_t length, PinningBehavior pin,
-                          const AtomHasher::Lookup& lookup)
+                         const AtomHasher::Lookup& lookup)
 {
     AutoLockForExclusiveAccess lock(cx);
 
@@ -348,26 +348,25 @@ AtomizeAndCopyCharsInner(JSContext* cx, const CharT* tbchars, size_t length, Pin
         return atom;
     }
 
+    AutoCompartment ac(cx, cx->ExclusiveContext::atomsCompartment(lock), &lock);
+
     JSAtom* atom;
     {
-    JSFlatString* flat = NewStringCopyN<NoGC>(cx, tbchars, length);
-    if (!flat) {
-        // Grudgingly forgo last-ditch GC. The alternative would be to release
-        // the lock, manually GC here, and retry from the top. If you fix this,
-        // please also fix or comment the similar case in Symbol::new_.
-        ReportOutOfMemory(cx);
-        return nullptr;
-    }
+        JSFlatString* flat = NewStringCopyN<NoGC>(cx, tbchars, length);
+        if (!flat) {
+            // Grudgingly forgo last-ditch GC. The alternative would be to release
+            // the lock, manually GC here, and retry from the top. If you fix this,
+            // please also fix or comment the similar case in Symbol::new_.
+            ReportOutOfMemory(cx);
+            return nullptr;
+        }
 
-    JSAtom* atom = flat->morphAtomizedStringIntoAtom(lookup.hash);
-    MOZ_ASSERT(atom->hash() == lookup.hash);
+        atom = flat->morphAtomizedStringIntoAtom(lookup.hash);
+        MOZ_ASSERT(atom->hash() == lookup.hash);
 
         if (pin)
             atom->setPinned();
 
-        // We have held the lock since looking up p, and the operations we've done
-        // since then can't GC; therefore the atoms table has not been modified and
-        // p is still valid.
         AtomSet* addSet = cx->runtime()->atomsAddedWhileSweeping();
         if (!addSet)
             addSet = &atoms;

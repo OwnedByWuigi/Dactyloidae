@@ -14,6 +14,7 @@
 #include "mozilla/Move.h"
 #include "mozilla/TypeTraits.h"
 
+#include "gc/GCEnum.h"
 #include "js/GCAPI.h"
 #include "js/SliceBudget.h"
 #include "js/Vector.h"
@@ -42,11 +43,6 @@ struct FinalizePhase;
     D(Finalize) \
     D(Compact) \
     D(Decommit)
-enum class State {
-#define MAKE_STATE(name) name,
-    GCSTATES(MAKE_STATE)
-#undef MAKE_STATE
-};
 
 // Reasons we reset an ongoing incremental GC or perform a non-incremental GC.
 #define GC_ABORT_REASONS(D) \
@@ -60,11 +56,6 @@ enum class State {
     D(GCBytesTrigger) \
     D(ZoneChange) \
     D(CompartmentRevived)
-enum class AbortReason {
-#define MAKE_REASON(name) name,
-    GC_ABORT_REASONS(MAKE_REASON)
-#undef MAKE_REASON
-};
 
 /*
  * Map from C++ type to alloc kind for non-object types. JSObject does not have

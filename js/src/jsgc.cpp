@@ -3048,7 +3048,19 @@ ArenaLists::ArenaLists(JSRuntime* rt, ZoneGroup* group)
     gcObjectGroupArenasToUpdate(group),
     savedObjectArenas_(group),
     savedEmptyObjectArenas(group)
-{}
+{
+    for (auto i : AllAllocKinds()) {
+        freeLists(i) = &placeholder;
+        backgroundFinalizeState(i) = BFS_DONE;
+        arenaListsToSweep(i) = nullptr;
+    }
+    incrementalSweptArenaKind = AllocKind::LIMIT;
+    gcShapeArenasToUpdate = nullptr;
+    gcAccessorShapeArenasToUpdate = nullptr;
+    gcScriptArenasToUpdate = nullptr;
+    gcObjectGroupArenasToUpdate = nullptr;
+    savedEmptyObjectArenas = nullptr;
+}
 
 ArenaLists::~ArenaLists() = default;
 
@@ -6289,15 +6301,93 @@ ForEachAllocKind(const KindContainer& kinds, UniquePtr<SweepAction<Args...>> act
 bool
 GCRuntime::initSweepActions()
 {
-    // Sweep actions are driven directly by the incremental GC state machine.
-    return true;
+    using namespace sweepaction;
+
+    // Build a Vector of the foreground-finalized AllocKinds.
+    // These match what queueForegroundThingsForSweep() sets up:
+    // SHAPE, ACCESSOR_SHAPE, OBJECT_GROUP, SCRIPT (all swept incrementally
+    // per zone via finalizeAllocKind).
+    Vector<AllocKind, 4, SystemAllocPolicy> fgKinds;
+    if (!fgKinds.append(AllocKind::SHAPE) ||
+        !fgKinds.append(AllocKind::ACCESSOR_SHAPE) ||
+        !fgKinds.append(AllocKind::BASE_SHAPE) ||
+        !fgKinds.append(AllocKind::OBJECT_GROUP))
+    {
+        return false;
+    }
+
+    // Build the sweep action tree bottom-up.
+    //
+    // ForEachZoneInSweepGroup(rt, action) strips the trailing Zone* parameter
+    // from the action's type, so per-zone actions end up at the same signature
+    // as per-group actions: SweepAction<GCRuntime*, FreeOp*, SliceBudget&>.
+    //
+    // ForEachAllocKind(kinds, action) similarly strips the trailing AllocKind.
+    //
+    // MSVC cannot deduce Args... for sweepaction::Call from the method pointer
+    // alone when js::Call is also in scope, so we spell out the template args
+    // explicitly on every Call<> site.
+
+    // Shorthand typedefs for the three signatures we use.
+    using PerGroup = SweepAction<GCRuntime*, FreeOp*, SliceBudget&>;
+    using PerZone  = SweepAction<GCRuntime*, FreeOp*, SliceBudget&, Zone*>;
+    using PerKind  = SweepAction<GCRuntime*, FreeOp*, SliceBudget&, Zone*, AllocKind>;
+
+    auto actTypeInfo = ForEachZoneInSweepGroup(rt,
+        sweepaction::Call<FreeOp*, SliceBudget&, Zone*>(&GCRuntime::sweepTypeInformation));
+    if (!actTypeInfo)
+        return false;
+
+    auto actMergeArenas = ForEachZoneInSweepGroup(rt,
+        sweepaction::Call<FreeOp*, SliceBudget&, Zone*>(&GCRuntime::mergeSweptObjectArenas));
+    if (!actMergeArenas)
+        return false;
+
+    auto actFinalizeKind = ForEachZoneInSweepGroup(rt,
+        ForEachAllocKind(fgKinds,
+            sweepaction::Call<FreeOp*, SliceBudget&, Zone*, AllocKind>(&GCRuntime::finalizeAllocKind)));
+    if (!actFinalizeKind)
+        return false;
+
+    auto actShapeTree = ForEachZoneInSweepGroup(rt,
+        sweepaction::Call<FreeOp*, SliceBudget&, Zone*>(&GCRuntime::sweepShapeTree));
+    if (!actShapeTree)
+        return false;
+
+    // Assemble the per-sweep-group sequence. All entries are UniquePtr<PerGroup>.
+    UniquePtr<PerGroup> seq[] = {
+        sweepaction::Call<FreeOp*, SliceBudget&>(&GCRuntime::endMarkingSweepGroup),
+        sweepaction::Call<FreeOp*, SliceBudget&>(&GCRuntime::beginSweepingSweepGroup),
+        sweepaction::Call<FreeOp*, SliceBudget&>(&GCRuntime::sweepAtomsTable),
+        sweepaction::Call<FreeOp*, SliceBudget&>(&GCRuntime::sweepWeakCaches),
+        Move(actTypeInfo),
+        Move(actMergeArenas),
+        Move(actFinalizeKind),
+        Move(actShapeTree),
+        sweepaction::Call<FreeOp*, SliceBudget&>(&GCRuntime::endSweepingSweepGroup),
+    };
+
+    auto perGroupSeq = MakeUnique<SweepActionSequence<GCRuntime*, FreeOp*, SliceBudget&>>();
+    if (!perGroupSeq)
+        return false;
+    if (!perGroupSeq->init(seq, mozilla::ArrayLength(seq)))
+        return false;
+
+    // RepeatForSweepGroup expects UniquePtr<SweepAction<Args...>> (the base type),
+    // but perGroupSeq is UniquePtr<SweepActionSequence<...>> (the derived type).
+    // Upcast explicitly before passing.
+    UniquePtr<PerGroup> perGroupAction(Move(perGroupSeq));
+    sweepActions = Move(RepeatForSweepGroup(rt, Move(perGroupAction)));
+    return sweepActions != nullptr;
 }
 
 IncrementalProgress
 GCRuntime::performSweepActions(SliceBudget& budget)
 {
-    (void)budget;
-    return Finished;
+    AutoSetThreadIsSweeping threadIsSweeping;
+    gcstats::AutoPhase ap(stats(), gcstats::PHASE_SWEEP);
+    FreeOp fop(rt);
+    return sweepActions->run(this, &fop, budget);
 }
 
 void
@@ -6494,17 +6584,16 @@ HeapStateToLabel(JS::HeapState heapState)
 /* Start a new heap session. */
 AutoTraceSession::AutoTraceSession(JSRuntime* rt, JS::HeapState heapState)
   : runtime(rt),
-    prevState(TlsContext.get()->runtime()->heapState()),
+    prevState(rt->heapState()),
     pseudoFrame(rt, HeapStateToLabel(heapState), ProfileEntry::Category::GC)
 {
     MOZ_ASSERT(prevState == JS::HeapState::Idle);
     MOZ_ASSERT(heapState != JS::HeapState::Idle);
     MOZ_ASSERT_IF(heapState == JS::HeapState::MajorCollecting, AllNurseriesAreEmpty(rt));
 
-    // Session always begins with lock held, see comment in class definition.
     maybeLock.emplace(rt);
 
-    TlsContext.get()->runtime()->setHeapState(heapState);
+    rt->setHeapState(heapState);
 }
 
 AutoTraceSession::~AutoTraceSession()
@@ -7105,7 +7194,7 @@ GCRuntime::gcCycle(bool nonincrementalByAPI, SliceBudget& budget, JS::gcreason::
         // the caller expects this GC to collect certain objects, and we need
         // to make sure to collect everything possible.
         if (reason != JS::gcreason::ALLOC_TRIGGER)
-            resetIncrementalGC(gc::AbortReason::NonIncrementalRequested, session.lock);
+            resetIncrementalGC(gc::AbortReason::NonIncrementalRequested, session);
     }
 
     auto result = budgetIncrementalGC(nonincrementalByAPI, reason, budget, session);

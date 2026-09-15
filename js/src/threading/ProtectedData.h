@@ -134,7 +134,7 @@ class ProtectedDataNoCheckArgs : public ProtectedData<Check, T>
     {}
 
     template <typename U>
-    ThisType& operator=(const U& p) { this->ref() = p; return *this; }
+    ThisType& operator=(U&& p) { this->ref() = mozilla::Move(p); return *this; }
 };
 
 class ZoneGroup;

@@ -105,6 +105,11 @@ JSContext::init(uint32_t maxBytes, uint32_t maxNurseryBytes)
     if (!JSRuntime::init(maxBytes, maxNurseryBytes))
         return false;
 
+    if (!TlsContext.init())
+        return false;
+    MOZ_ASSERT(!TlsContext.get());
+    TlsContext.set(this);
+
     if (!caches.init())
         return false;
 
@@ -1082,9 +1087,8 @@ JSContext::JSContext(JSRuntime* parentRuntime)
 JSContext::~JSContext()
 {
     destroyRuntime();
-
-    /* Free the stuff hanging off of cx. */
     MOZ_ASSERT(!resolvingList);
+    TlsContext.set(nullptr);
 }
 
 

@@ -1,0 +1,203 @@
+diff --git a/js/src/jsatom.cpp b/js/src/jsatom.cpp
+index 039d8b4f43..b4cb03e5e0 100644
+--- a/js/src/jsatom.cpp
++++ b/js/src/jsatom.cpp
+@@ -333,7 +333,7 @@ template <typename CharT>
+ MOZ_ALWAYS_INLINE
+ static JSAtom*
+ AtomizeAndCopyCharsInner(JSContext* cx, const CharT* tbchars, size_t length, PinningBehavior pin,
+-                          const AtomHasher::Lookup& lookup)
++                         const AtomHasher::Lookup& lookup)
+ {
+     AutoLockForExclusiveAccess lock(cx);
+ 
+@@ -348,26 +348,25 @@ AtomizeAndCopyCharsInner(JSContext* cx, const CharT* tbchars, size_t length, Pin
+         return atom;
+     }
+ 
++    AutoCompartment ac(cx, cx->ExclusiveContext::atomsCompartment(lock), &lock);
++
+     JSAtom* atom;
+     {
+-    JSFlatString* flat = NewStringCopyN<NoGC>(cx, tbchars, length);
+-    if (!flat) {
+-        // Grudgingly forgo last-ditch GC. The alternative would be to release
+-        // the lock, manually GC here, and retry from the top. If you fix this,
+-        // please also fix or comment the similar case in Symbol::new_.
+-        ReportOutOfMemory(cx);
+-        return nullptr;
+-    }
++        JSFlatString* flat = NewStringCopyN<NoGC>(cx, tbchars, length);
++        if (!flat) {
++            // Grudgingly forgo last-ditch GC. The alternative would be to release
++            // the lock, manually GC here, and retry from the top. If you fix this,
++            // please also fix or comment the similar case in Symbol::new_.
++            ReportOutOfMemory(cx);
++            return nullptr;
++        }
+ 
+-    JSAtom* atom = flat->morphAtomizedStringIntoAtom(lookup.hash);
+-    MOZ_ASSERT(atom->hash() == lookup.hash);
++        atom = flat->morphAtomizedStringIntoAtom(lookup.hash);
++        MOZ_ASSERT(atom->hash() == lookup.hash);
+ 
+         if (pin)
+             atom->setPinned();
+ 
+-        // We have held the lock since looking up p, and the operations we've done
+-        // since then can't GC; therefore the atoms table has not been modified and
+-        // p is still valid.
+         AtomSet* addSet = cx->runtime()->atomsAddedWhileSweeping();
+         if (!addSet)
+             addSet = &atoms;
+diff --git a/js/src/jscntxt.cpp b/js/src/jscntxt.cpp
+index 6d1b8616ab..2abd2b98b0 100644
+--- a/js/src/jscntxt.cpp
++++ b/js/src/jscntxt.cpp
+@@ -105,6 +105,11 @@ JSContext::init(uint32_t maxBytes, uint32_t maxNurseryBytes)
+     if (!JSRuntime::init(maxBytes, maxNurseryBytes))
+         return false;
+ 
++    if (!TlsContext.init())
++        return false;
++    MOZ_ASSERT(!TlsContext.get());
++    TlsContext.set(this);
++
+     if (!caches.init())
+         return false;
+ 
+@@ -1082,9 +1087,8 @@ JSContext::JSContext(JSRuntime* parentRuntime)
+ JSContext::~JSContext()
+ {
+     destroyRuntime();
+-
+-    /* Free the stuff hanging off of cx. */
+     MOZ_ASSERT(!resolvingList);
++    TlsContext.set(nullptr);
+ }
+ 
+ 
+diff --git a/js/src/jsgc.cpp b/js/src/jsgc.cpp
+index eacf56c2c0..aae022023b 100644
+--- a/js/src/jsgc.cpp
++++ b/js/src/jsgc.cpp
+@@ -3048,7 +3048,19 @@ ArenaLists::ArenaLists(JSRuntime* rt, ZoneGroup* group)
+     gcObjectGroupArenasToUpdate(group),
+     savedObjectArenas_(group),
+     savedEmptyObjectArenas(group)
+-{}
++{
++    for (auto i : AllAllocKinds()) {
++        freeLists(i) = &placeholder;
++        backgroundFinalizeState(i) = BFS_DONE;
++        arenaListsToSweep(i) = nullptr;
++    }
++    incrementalSweptArenaKind = AllocKind::LIMIT;
++    gcShapeArenasToUpdate = nullptr;
++    gcAccessorShapeArenasToUpdate = nullptr;
++    gcScriptArenasToUpdate = nullptr;
++    gcObjectGroupArenasToUpdate = nullptr;
++    savedEmptyObjectArenas = nullptr;
++}
+ 
+ ArenaLists::~ArenaLists() = default;
+ 
+@@ -6494,17 +6506,16 @@ HeapStateToLabel(JS::HeapState heapState)
+ /* Start a new heap session. */
+ AutoTraceSession::AutoTraceSession(JSRuntime* rt, JS::HeapState heapState)
+   : runtime(rt),
+-    prevState(TlsContext.get()->runtime()->heapState()),
++    prevState(rt->heapState()),
+     pseudoFrame(rt, HeapStateToLabel(heapState), ProfileEntry::Category::GC)
+ {
+     MOZ_ASSERT(prevState == JS::HeapState::Idle);
+     MOZ_ASSERT(heapState != JS::HeapState::Idle);
+     MOZ_ASSERT_IF(heapState == JS::HeapState::MajorCollecting, AllNurseriesAreEmpty(rt));
+ 
+-    // Session always begins with lock held, see comment in class definition.
+     maybeLock.emplace(rt);
+ 
+-    TlsContext.get()->runtime()->setHeapState(heapState);
++    rt->setHeapState(heapState);
+ }
+ 
+ AutoTraceSession::~AutoTraceSession()
+@@ -7105,7 +7116,7 @@ GCRuntime::gcCycle(bool nonincrementalByAPI, SliceBudget& budget, JS::gcreason::
+         // the caller expects this GC to collect certain objects, and we need
+         // to make sure to collect everything possible.
+         if (reason != JS::gcreason::ALLOC_TRIGGER)
+-            resetIncrementalGC(gc::AbortReason::NonIncrementalRequested, session.lock);
++            resetIncrementalGC(gc::AbortReason::NonIncrementalRequested, session);
+     }
+ 
+     auto result = budgetIncrementalGC(nonincrementalByAPI, reason, budget, session);
+diff --git a/js/src/jsgc.h b/js/src/jsgc.h
+index a70f84dee0..033036aa1d 100644
+--- a/js/src/jsgc.h
++++ b/js/src/jsgc.h
+@@ -14,6 +14,7 @@
+ #include "mozilla/Move.h"
+ #include "mozilla/TypeTraits.h"
+ 
++#include "gc/GCEnum.h"
+ #include "js/GCAPI.h"
+ #include "js/SliceBudget.h"
+ #include "js/Vector.h"
+@@ -42,11 +43,6 @@ struct FinalizePhase;
+     D(Finalize) \
+     D(Compact) \
+     D(Decommit)
+-enum class State {
+-#define MAKE_STATE(name) name,
+-    GCSTATES(MAKE_STATE)
+-#undef MAKE_STATE
+-};
+ 
+ // Reasons we reset an ongoing incremental GC or perform a non-incremental GC.
+ #define GC_ABORT_REASONS(D) \
+@@ -60,11 +56,6 @@ enum class State {
+     D(GCBytesTrigger) \
+     D(ZoneChange) \
+     D(CompartmentRevived)
+-enum class AbortReason {
+-#define MAKE_REASON(name) name,
+-    GC_ABORT_REASONS(MAKE_REASON)
+-#undef MAKE_REASON
+-};
+ 
+ /*
+  * Map from C++ type to alloc kind for non-object types. JSObject does not have
+diff --git a/mozconfigs/windows/uxp-win64-msvc b/mozconfigs/windows/uxp-win64-msvc
+index 4dd6d6cfcb..97e5277159 100644
+--- a/mozconfigs/windows/uxp-win64-msvc
++++ b/mozconfigs/windows/uxp-win64-msvc
+@@ -18,7 +18,7 @@ ac_add_options --disable-updater
+ ac_add_options --disable-accessibility
+ ac_add_options --disable-debug
+ ac_add_options --disable-debug-js-modules
+-ac_add_options --disable-debug-symbols
++#ac_add_options --disable-debug-symbols
+ ac_add_options --disable-tests
+ ac_add_options --enable-devtools
+ #ac_add_options --enable-install-strip
+@@ -27,7 +27,7 @@ ac_add_options --enable-js-lto
+ ac_add_options --enable-phoenix-extensions
+ ac_add_options --enable-release
+ ac_add_options --enable-shared-js
+-ac_add_options --enable-strip
++#ac_add_options --enable-strip
+ MOZ_OPTIMIZE=1
+ export MOZ_OPTIMIZE=1
+ mk_add_options MOZ_OPTIMIZE=1
+@@ -62,8 +62,8 @@ ac_add_options OPT_LEVEL="3"
+ export CFLAGS="-O2"
+ export CPPFLAGS="-O2"
+ export CXXFLAGS="-O2"
+-ac_add_options --enable-optimize="-O2 -Ob2ity -GS- -Qpar -Qfast_transcendentals -openmp -Oi -Gy -Gw -GF -GT -fp:precise -Zc:inline -Zc:throwingNew -Zc:__cplusplus -arch:SSE2 -std:c++17 -D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS"
+-mk_add_options "LDFLAGS=-OPT:REF,ICF,WIN64,LBR -OPT:ICF=3 -INCREMENTAL:NO -LTCG:NO -DYNAMICBASE -NXCOMPAT -MACHINE:X64 -SUBSYSTEM:WINDOWS,5.2 -Brepro -FUNCTIONPADMIN -ALIGN:4096 -RELEASE"
++ac_add_options --enable-optimize="-O2 -Ob2ity -GS- -Qpar -Qfast_transcendentals -openmp -Oi -Gy -Gw -GF -GT -fp:precise -Zc:inline -Zc:throwingNew -Zc:__cplusplus -arch:SSE2 -std:c++17 -D_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS -Zi"
++mk_add_options "LDFLAGS=-OPT:REF,ICF,WIN64,LBR -OPT:ICF=3 -INCREMENTAL:NO -LTCG:NO -DYNAMICBASE -NXCOMPAT -MACHINE:X64 -SUBSYSTEM:WINDOWS,5.2 -Brepro -FUNCTIONPADMIN -ALIGN:4096 -RELEASE -DEBUG"
+ export POLLY="-mllvm -polly -mllvm -polly-2nd-level-tiling -mllvm -polly-loopfusion-greedy -mllvm -polly-pattern-matching-based-opts -mllvm -polly-position=before-vectorizer -mllvm -polly-vectorizer=stripmine"
+-export STRIP_FLAGS="--strip-all --remove-section=.comment --remove-section=.note --remove-section=.eh_frame"
++#export STRIP_FLAGS="--strip-all --remove-section=.comment --remove-section=.note --remove-section=.eh_frame"
+ export VERBOSE=1
