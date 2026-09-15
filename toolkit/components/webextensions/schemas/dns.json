@@ -1,4 +1,0 @@
-[
-  {"namespace":"manifest","types":[{"$extend":"Permission","choices":[{"type":"string","enum":["dns"]}]}]},
-  {"namespace":"dns","permissions":["dns"],"types":[{"id":"DNSRecord","type":"object","properties":{"addresses":{"type":"array","items":{"type":"string"}},"canonicalName":{"type":"string","optional":true},"isTRR":{"type":"boolean"}}}],"functions":[{"name":"resolve","type":"function","async":"promise","parameters":[{"name":"hostname","type":"string"},{"name":"flags","type":"array","items":{"type":"string"},"optional":true}],"returns":{"$ref":"DNSRecord"}}]}
-]
