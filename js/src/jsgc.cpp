@@ -6156,7 +6156,13 @@ class SweepActionSequence final : public SweepAction<Args...>
 template <typename Iter, typename Init, typename... Args>
 class SweepActionForEach final : public SweepAction<Args...>
 {
-    using Elem = decltype(mozilla::DeclVal<Iter>().get());
+    // ContainerIter::get() may return a const reference (for example when
+    // iterating over a const Vector).  The element passed to the sweep action
+    // is a value, so do not let reference or const qualifiers become part of
+    // the nested SweepAction signature.
+    using Elem = typename mozilla::RemoveCV<
+        typename mozilla::RemoveReference<
+            decltype(mozilla::DeclVal<Iter>().get())>::Type>::Type;
     using Action = SweepAction<Args..., Elem>;
     using IncrIter = IncrementalIter<Iter>;
 
