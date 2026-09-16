@@ -391,11 +391,7 @@ pref("browser.tabs.loadDivertedInBackground", false);
 pref("browser.tabs.loadBookmarksInBackground", false);
 pref("browser.tabs.tabClipWidth", 140);
 pref("browser.tabs.animate", true);
-#ifdef UNIX_BUT_NOT_MAC
 pref("browser.tabs.drawInTitlebar", false);
-#else
-pref("browser.tabs.drawInTitlebar", true);
-#endif
 
 // When tabs opened by links in other tabs via a combination of
 // browser.link.open_newwindow being set to 3 and target="_blank" etc are
