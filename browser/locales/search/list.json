@@ -1,7 +1,7 @@
 {
   "default": {
     "visibleDefaultEngines": [
-      "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+      "startpage", "google-2018", "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
     ]
   },
   "regionOverrides": {
@@ -10,7 +10,7 @@
     "en-US": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "startpage", "google-2018", "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
         ]
       }
     },
