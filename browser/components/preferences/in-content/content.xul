@@ -32,6 +32,17 @@
               name="media.peerconnection.enabled"
               type="bool"/>
 #endif
+
+  <!-- YouTube video codecs -->
+  <preference id="browser.video.youtube.hide-unaccelerated"
+              name="browser.video.youtube.hide-unaccelerated"
+              type="bool"/>
+  <preference id="browser.video.youtube.force-h264"
+              name="browser.video.youtube.force-h264"
+              type="bool"/>
+  <preference id="browser.video.youtube.disable-60fps"
+              name="browser.video.youtube.disable-60fps"
+              type="bool"/>
 </preferences>
 
 <script type="application/javascript"
