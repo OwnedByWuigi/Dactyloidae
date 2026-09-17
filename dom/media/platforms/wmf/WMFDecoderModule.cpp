@@ -6,7 +6,7 @@
 #include "WMF.h"
 #include "WMFDecoderModule.h"
 #include "WMFVideoMFTManager.h"
-#include "WMFVP9MFTManager.h"
+#include "WMFVP9DXVA2Manager.h"
 #include "WMFAudioMFTManager.h"
 #include "MFTDecoder.h"
 #include "mozilla/DebugOnly.h"
@@ -108,8 +108,8 @@ WMFDecoderModule::CreateVP9Decoder(const CreateDecoderParams& aParams)
   }
 
   if (dxva2Allowed) {
-    nsAutoPtr<WMFVP9MFTManager> vp9(
-      new WMFVP9MFTManager(aParams.VideoConfig(),
+    nsAutoPtr<WMFVP9DXVA2Manager> vp9(
+      new WMFVP9DXVA2Manager(aParams.VideoConfig(),
                            aParams.mKnowsCompositor,
                            aParams.mImageContainer));
     if (vp9->Init()) {

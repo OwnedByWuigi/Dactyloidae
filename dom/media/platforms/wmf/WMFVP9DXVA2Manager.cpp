@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "WMFVP9MFTManager.h"
+#include "WMFVP9DXVA2Manager.h"
 #include "WMFVideoMFTManager.h"
 #include "ImageContainer.h"
 #include "Layers.h"
@@ -22,12 +22,12 @@ struct VP9ShownFrame {
   bool mKeyframe;
 };
 
-WMFVP9MFTManager::WMFVP9MFTManager(const VideoInfo& aConfig,
+WMFVP9DXVA2Manager::WMFVP9DXVA2Manager(const VideoInfo& aConfig,
     layers::KnowsCompositor* aCompositor, layers::ImageContainer* aContainer)
   : mVideoInfo(aConfig), mKnowsCompositor(aCompositor), mImageContainer(aContainer), mIsValid(false)
 {}
-WMFVP9MFTManager::~WMFVP9MFTManager() { Shutdown(); }
-bool WMFVP9MFTManager::Init()
+WMFVP9DXVA2Manager::~WMFVP9DXVA2Manager() { Shutdown(); }
+bool WMFVP9DXVA2Manager::Init()
 {
   if (!IsVistaOrLater()) {
     mFailureReason.AssignLiteral("VP9 DXVA2 requires Windows Vista or later");
@@ -79,7 +79,7 @@ bool WMFVP9MFTManager::Init()
   mFailureReason.AssignLiteral("Using VP9 DXVA2 profile 0");
   return true;
 }
-HRESULT WMFVP9MFTManager::Input(MediaRawData* aSample)
+HRESULT WMFVP9DXVA2Manager::Input(MediaRawData* aSample)
 {
   if (!mIsValid) { return E_UNEXPECTED; }
   if (!aSample || aSample->Size() > UINT32_MAX) { return E_INVALIDARG; }
@@ -129,7 +129,7 @@ HRESULT WMFVP9MFTManager::Input(MediaRawData* aSample)
   }
   return S_OK;
 }
-HRESULT WMFVP9MFTManager::Output(int64_t, RefPtr<MediaData>& aOutput)
+HRESULT WMFVP9DXVA2Manager::Output(int64_t, RefPtr<MediaData>& aOutput)
 {
   aOutput = nullptr;
   if (mPendingFrames.IsEmpty()) { return MF_E_TRANSFORM_NEED_MORE_INPUT; }
@@ -137,20 +137,20 @@ HRESULT WMFVP9MFTManager::Output(int64_t, RefPtr<MediaData>& aOutput)
   mPendingFrames.RemoveElementAt(0);
   return S_OK;
 }
-void WMFVP9MFTManager::Flush()
+void WMFVP9DXVA2Manager::Flush()
 {
   mPendingFrames.Clear();
   mSeekTargetThreshold.reset();
   if (mVP9Decoder) { mVP9Decoder->Flush(); }
 }
-void WMFVP9MFTManager::Shutdown()
+void WMFVP9DXVA2Manager::Shutdown()
 {
   mPendingFrames.Clear();
   mVP9Decoder = nullptr;
   if (mDXVA2Manager) { DeleteOnMainThread(mDXVA2Manager); }
   mIsValid = false;
 }
-bool WMFVP9MFTManager::IsHardwareAccelerated(nsACString& aReason) const
+bool WMFVP9DXVA2Manager::IsHardwareAccelerated(nsACString& aReason) const
 {
   aReason = mFailureReason;
   return mIsValid;
