@@ -14,7 +14,7 @@ Some advantages over upstream, roytam1's Serpent, Eclipse Hydra and Firefox are:
 - Support for extensions in the Chrome and Edge Web Store (soon)
 - Support for extensions released for both Pale Moon, Basilisk and Firefox
 - WebExtensions support comparable to Firefox ESR 78
-- Literally being the fastest XUL browser (48.7 in Speedometer 2.1 compared to 22.4 in Pale Moon 34.2 AVX2)
+- Literally being the fastest XUL browser (53.7 in Speedometer 2.1 compared to 22.4 in Pale Moon 34.2 AVX2)
 - Re-add support for iOS, Android, Windows 2000 and later, NetBSD (soon OpenBSD)
 
 ## Interested in running Dactyloidae in Win9x?
@@ -34,8 +34,9 @@ If I've forgotten to put your name here, please let me know and I'll add it.
 Major core browser engine contributions:
 - [Stossy11](https://www.github.com/stossy11) - Helping to develop and fix the macOS build.
 - [Eclipse Community](https://www.github.com/Eclipse-Community/UXP) - For creating Hydra and Lun3r, the bases of this fork.
+- [EAZYBLACK](t.me/eazy_black) - VP9 hardware acceleration for WinVista+, Win2000 support code.
 - [Loongson Hobbists' community](https://loongfans.cn/en/) - Providing a LoongArch VM and general assistance in porting to LoongArch64
-- [Basilisk-Dev](https://repo.palemoon.org/Basilisk-Dev) - For supporting and maintaining Basilisk, aswell as general advice for developing this browser.
+- [Basilisk-Dev](https://repo.palemoon.org/Basilisk-Dev) - For supporting and maintaining Basilisk, aswell as general advice for developing this browser. A lot of recent web compatibility stuff is made by him too.
 - [roytam1](https://github.com/roytam1) - Windows XP support code, e10s, WebExtensions, and more for UXP.
 - [Moonchild Productions](https://repo.palemoon.org/MoonchildProductions) - For creating the Unified XUL Platform and Basilisk, the core of this project.
-- [Mozilla Developers](https://github.com/mozilla-firefox) - Firefox ESR 52 browser base.
+- [Mozilla Developers](https://github.com/mozilla-firefox) - Firefox ESR 52 and ESR 60 browser base.
