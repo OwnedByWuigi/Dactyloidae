@@ -487,10 +487,15 @@ CopyAndInflateChars(char16_t* dst, const char* src, size_t srclen)
     size_t i = 0;
     const __m128i zero = _mm_setzero_si128();
     for (; i + 32 <= srclen; i += 32) {
-        const __m128i bytes0 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
-        const __m128i bytes1 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 8));
-        const __m128i bytes2 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 16));
-        const __m128i bytes3 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 24));
+        uint64_t value0, value1, value2, value3;
+        js_memcpy(&value0, src + i, sizeof(value0));
+        js_memcpy(&value1, src + i + 8, sizeof(value1));
+        js_memcpy(&value2, src + i + 16, sizeof(value2));
+        js_memcpy(&value3, src + i + 24, sizeof(value3));
+        const __m128i bytes0 = _mm_cvtsi64_si128(static_cast<int64_t>(value0));
+        const __m128i bytes1 = _mm_cvtsi64_si128(static_cast<int64_t>(value1));
+        const __m128i bytes2 = _mm_cvtsi64_si128(static_cast<int64_t>(value2));
+        const __m128i bytes3 = _mm_cvtsi64_si128(static_cast<int64_t>(value3));
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i),
                          _mm_unpacklo_epi8(bytes0, zero));
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 8),
@@ -501,7 +506,9 @@ CopyAndInflateChars(char16_t* dst, const char* src, size_t srclen)
                          _mm_unpacklo_epi8(bytes3, zero));
     }
     for (; i + 8 <= srclen; i += 8) {
-        const __m128i bytes8 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
+        uint64_t value;
+        js_memcpy(&value, src + i, sizeof(value));
+        const __m128i bytes8 = _mm_cvtsi64_si128(static_cast<int64_t>(value));
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i),
                          _mm_unpacklo_epi8(bytes8, zero));
     }
@@ -520,10 +527,15 @@ CopyAndInflateChars(char16_t* dst, const JS::Latin1Char* src, size_t srclen)
     size_t i = 0;
     const __m128i zero = _mm_setzero_si128();
     for (; i + 32 <= srclen; i += 32) {
-        const __m128i bytes0 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
-        const __m128i bytes1 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 8));
-        const __m128i bytes2 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 16));
-        const __m128i bytes3 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 24));
+        uint64_t value0, value1, value2, value3;
+        js_memcpy(&value0, src + i, sizeof(value0));
+        js_memcpy(&value1, src + i + 8, sizeof(value1));
+        js_memcpy(&value2, src + i + 16, sizeof(value2));
+        js_memcpy(&value3, src + i + 24, sizeof(value3));
+        const __m128i bytes0 = _mm_cvtsi64_si128(static_cast<int64_t>(value0));
+        const __m128i bytes1 = _mm_cvtsi64_si128(static_cast<int64_t>(value1));
+        const __m128i bytes2 = _mm_cvtsi64_si128(static_cast<int64_t>(value2));
+        const __m128i bytes3 = _mm_cvtsi64_si128(static_cast<int64_t>(value3));
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i),
                          _mm_unpacklo_epi8(bytes0, zero));
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 8),
@@ -534,7 +546,9 @@ CopyAndInflateChars(char16_t* dst, const JS::Latin1Char* src, size_t srclen)
                          _mm_unpacklo_epi8(bytes3, zero));
     }
     for (; i + 8 <= srclen; i += 8) {
-        const __m128i bytes8 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
+        uint64_t value;
+        js_memcpy(&value, src + i, sizeof(value));
+        const __m128i bytes8 = _mm_cvtsi64_si128(static_cast<int64_t>(value));
         _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i),
                          _mm_unpacklo_epi8(bytes8, zero));
     }
