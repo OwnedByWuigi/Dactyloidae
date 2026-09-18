@@ -1002,6 +1002,34 @@ CompositorOGL::DrawQuad(const Rect& aRect,
   PROFILER_LABEL("CompositorOGL", "DrawQuad",
     js::ProfileEntry::Category::GRAPHICS);
 
+  // Give the C WebRender scene first refusal for the primitive types it can
+  // represent.  Layer hosts use the same entry points directly, but this
+  // covers compositor callers that submit through the generic DrawQuad path.
+  if (gfxPrefs::WebRenderEnabled() && aEffectChain.mPrimaryEffect &&
+      aTransform.Is2D() &&
+      !aEffectChain.mSecondaryEffects[EffectTypes::MASK] &&
+      !aEffectChain.mSecondaryEffects[EffectTypes::BLEND_MODE] &&
+      !aEffectChain.mSecondaryEffects[EffectTypes::COLOR_MATRIX]) {
+    if (aEffectChain.mPrimaryEffect->mType == EffectTypes::SOLID_COLOR) {
+      EffectSolidColor* effect =
+        static_cast<EffectSolidColor*>(aEffectChain.mPrimaryEffect.get());
+      if (DrawWebRenderRect(aRect, effect->mColor, aOpacity, aTransform,
+                            aClipRect)) {
+        return;
+      }
+    } else if (aEffectChain.mPrimaryEffect->mType == EffectTypes::RGB ||
+               aEffectChain.mPrimaryEffect->mType == EffectTypes::RENDER_TARGET) {
+      TexturedEffect* effect =
+        static_cast<TexturedEffect*>(aEffectChain.mPrimaryEffect.get());
+      if (effect->mTexture &&
+          DrawWebRenderImage(effect->mTexture, aRect, effect->mTextureCoords,
+                             aOpacity, aTransform, aClipRect,
+                             effect->mPremultiplied)) {
+        return;
+      }
+    }
+  }
+
   DrawGeometry(aRect, aClipRect, aEffectChain,
                aOpacity, aTransform, aVisibleRect);
 }
