@@ -14,6 +14,7 @@
 #include "mozilla/layers/CompositorTypes.h"  // for DiagnosticFlags::COLOR
 #include "mozilla/layers/Effects.h"     // for Effect, EffectChain, etc
 #include "mozilla/mozalloc.h"           // for operator delete, etc
+#include "gfxPrefs.h"                   // for gfxPrefs::WebRenderEnabled
 
 namespace mozilla {
 namespace layers {
@@ -34,7 +35,7 @@ ColorLayerComposite::RenderLayer(const IntRect& aClipRect)
     // Masked or 3D layers continue through the established effect path until
     // equivalent WebRender primitives are available for those cases.
     CompositorOGL* compositorOGL = mCompositor->AsCompositorOGL();
-    if (compositorOGL &&
+    if (gfxPrefs::WebRenderEnabled() && compositorOGL &&
         !effectChain.mSecondaryEffects[EffectTypes::MASK] &&
         GetEffectiveMixBlendMode() == CompositionOp::OP_OVER &&
         transform.Is2D() && !clipRect.IsEmpty()) {

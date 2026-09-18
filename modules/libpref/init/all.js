@@ -727,6 +727,9 @@ pref("layout.scroll.root-frame-containers", false);
 pref("gfx.layerscope.enabled", false);
 pref("gfx.layerscope.port", 23456);
 
+// Enable the incremental C WebRender path for supported compositor primitives.
+pref("gfx.webrender.enabled", false);
+
 // Log severe performance warnings to the error console and profiles.
 // This should be use to quickly find which slow paths are used by test cases.
 pref("gfx.perf-warnings.enabled", false);
