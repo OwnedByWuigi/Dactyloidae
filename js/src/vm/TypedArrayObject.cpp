@@ -3413,6 +3413,22 @@ js::StringIsTypedArrayIndex(const CharT* s, size_t length, uint64_t* indexp)
 
     index = digit;
 
+    // Most typed-array accesses use one- or two-digit indices.  Once the
+    // digits have been validated, these forms cannot overflow uint64_t and
+    // need no general-purpose accumulation loop.
+    if (s == end) {
+        *indexp = negative ? UINT64_MAX : index;
+        return true;
+    }
+
+    if (end - s == 1) {
+        if (!JS7_ISDEC(*s))
+            return false;
+        digit = JS7_UNDEC(*s);
+        *indexp = negative ? UINT64_MAX : index * 10 + digit;
+        return true;
+    }
+
     for (; s < end; s++) {
         if (!JS7_ISDEC(*s))
             return false;

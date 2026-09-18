@@ -13,6 +13,7 @@
 
 #include "jsfriendapi.h"
 #include "jsobj.h"
+#include "jsutil.h"
 #include "NamespaceImports.h"
 
 #include "gc/Barrier.h"
@@ -1122,8 +1123,8 @@ class NativeObject : public ShapedObject
             for (uint32_t i = 0; i < count; ++i)
                 elements_[dstStart + i].set(this, HeapSlot::Element, dstStart + i, src[i]);
         } else {
-            memcpy(reinterpret_cast<Value*>(&elements_[dstStart]), src,
-                   count * sizeof(Value));
+            js_memcpy(reinterpret_cast<Value*>(&elements_[dstStart]), src,
+                      count * sizeof(Value));
             elementsRangeWriteBarrierPost(dstStart, count);
         }
     }
@@ -1132,7 +1133,7 @@ class NativeObject : public ShapedObject
         MOZ_ASSERT(dstStart + count <= getDenseCapacity());
         MOZ_ASSERT(!denseElementsAreCopyOnWrite());
         MOZ_ASSERT(!denseElementsAreFrozen());
-        memcpy(reinterpret_cast<Value*>(&elements_[dstStart]), src, count * sizeof(Value));
+        js_memcpy(reinterpret_cast<Value*>(&elements_[dstStart]), src, count * sizeof(Value));
         elementsRangeWriteBarrierPost(dstStart, count);
     }
 
@@ -1167,7 +1168,7 @@ class NativeObject : public ShapedObject
                     dst->set(this, HeapSlot::Element, dst - elements_, *src);
             }
         } else {
-            memmove(elements_ + dstStart, elements_ + srcStart, count * sizeof(HeapSlot));
+            js_memmove(elements_ + dstStart, elements_ + srcStart, count * sizeof(HeapSlot));
             elementsRangeWriteBarrierPost(dstStart, count);
         }
     }
@@ -1180,7 +1181,7 @@ class NativeObject : public ShapedObject
         MOZ_ASSERT(!denseElementsAreCopyOnWrite());
         MOZ_ASSERT(!denseElementsAreFrozen());
 
-        memmove(elements_ + dstStart, elements_ + srcStart, count * sizeof(HeapSlot));
+        js_memmove(elements_ + dstStart, elements_ + srcStart, count * sizeof(HeapSlot));
         elementsRangeWriteBarrierPost(dstStart, count);
     }
 

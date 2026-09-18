@@ -2040,7 +2040,7 @@ InlineTypedObject::createCopy(JSContext* cx, Handle<InlineTypedObject*> template
     if (!res)
         return nullptr;
 
-    memcpy(res->inlineTypedMem(), templateObject->inlineTypedMem(), templateObject->size());
+    js_memcpy(res->inlineTypedMem(), templateObject->inlineTypedMem(), templateObject->size());
     return res;
 }
 
@@ -2767,7 +2767,7 @@ TypeDescr::initInstances(const JSRuntime* rt, uint8_t* mem, size_t length)
     MemoryInitVisitor visitor(rt);
 
     // Initialize the 0th instance
-    memset(mem, 0, size());
+    js_memset(mem, 0, size());
     if (opaque())
         visitReferences(*this, mem, visitor);
 
@@ -2775,7 +2775,7 @@ TypeDescr::initInstances(const JSRuntime* rt, uint8_t* mem, size_t length)
     uint8_t* target = mem;
     for (size_t i = 1; i < length; i++) {
         target += size();
-        memcpy(target, mem, size());
+        js_memcpy(target, mem, size());
     }
 }
 

@@ -230,8 +230,17 @@ uint32_t
 HashKnownLength(const T* aStr, size_t aLength)
 {
   uint32_t hash = 0;
-  for (size_t i = 0; i < aLength; i++) {
-    hash = AddToHash(hash, aStr[i]);
+  while (aLength >= 4) {
+    hash = AddToHash(hash, aStr[0]);
+    hash = AddToHash(hash, aStr[1]);
+    hash = AddToHash(hash, aStr[2]);
+    hash = AddToHash(hash, aStr[3]);
+    aStr += 4;
+    aLength -= 4;
+  }
+  while (aLength) {
+    hash = AddToHash(hash, *aStr++);
+    --aLength;
   }
   return hash;
 }

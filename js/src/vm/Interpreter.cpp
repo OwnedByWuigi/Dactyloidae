@@ -31,6 +31,7 @@
 #include "jsprf.h"
 #include "jsscript.h"
 #include "jsstr.h"
+#include "jsutil.h"
 
 #include "builtin/Eval.h"
 #include "builtin/ModuleObject.h"
@@ -2147,7 +2148,7 @@ CASE(JSOP_PICK)
     unsigned i = GET_UINT8(REGS.pc);
     MOZ_ASSERT(REGS.stackDepth() >= i + 1);
     Value lval = REGS.sp[-int(i + 1)];
-    memmove(REGS.sp - (i + 1), REGS.sp - i, sizeof(Value) * i);
+    js_memmove(REGS.sp - (i + 1), REGS.sp - i, sizeof(Value) * i);
     REGS.sp[-1] = lval;
 }
 END_CASE(JSOP_PICK)
@@ -2157,7 +2158,7 @@ CASE(JSOP_UNPICK)
     int i = GET_UINT8(REGS.pc);
     MOZ_ASSERT(REGS.stackDepth() >= unsigned(i) + 1);
     Value lval = REGS.sp[-1];
-    memmove(REGS.sp - i, REGS.sp - (i + 1), sizeof(Value) * i);
+    js_memmove(REGS.sp - i, REGS.sp - (i + 1), sizeof(Value) * i);
     REGS.sp[-(i + 1)] = lval;
 }
 END_CASE(JSOP_UNPICK)

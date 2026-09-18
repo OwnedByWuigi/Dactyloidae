@@ -18,6 +18,7 @@
 #include "vm/Interpreter.h"
 #include "vm/TraceLogging.h"
 #include "wasm/WasmInstance.h"
+#include "jsutil.h"
 
 #include "jsobjinlines.h"
 #include "jsopcodeinlines.h"
@@ -812,7 +813,7 @@ BaselineScript::copyPCMappingEntries(const CompactBufferWriter& entries)
     MOZ_ASSERT(entries.length() > 0);
     MOZ_ASSERT(entries.length() == pcMappingSize_);
 
-    memcpy(pcMappingData(), entries.buffer(), entries.length());
+    js_memcpy(pcMappingData(), entries.buffer(), entries.length());
 }
 
 void

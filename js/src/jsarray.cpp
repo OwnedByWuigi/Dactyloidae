@@ -153,6 +153,21 @@ StringIsArrayIndex(const CharT* s, uint32_t length, uint32_t* indexp)
     if (length == 0 || length > (sizeof("4294967294") - 1) || !JS7_ISDEC(*s))
         return false;
 
+    // Small indices are by far the most common property keys.  Handle them
+    // without entering the general overflow-checking loop below.
+    if (length == 1) {
+        *indexp = JS7_UNDEC(*s);
+        return true;
+    }
+
+    if (length == 2) {
+        uint32_t first = JS7_UNDEC(s[0]);
+        if (first == 0 || !JS7_ISDEC(s[1]))
+            return false;
+        *indexp = first * 10 + JS7_UNDEC(s[1]);
+        return true;
+    }
+
     uint32_t c = 0, previous = 0;
     uint32_t index = JS7_UNDEC(*s++);
 
@@ -2197,7 +2212,7 @@ ShiftMoveBoxedOrUnboxedDenseElements(JSObject* obj)
     } else {
         uint8_t* data = obj->as<UnboxedArrayObject>().elements();
         size_t elementSize = UnboxedTypeSize(Type);
-        memmove(data, data + elementSize, initlen * elementSize);
+        js_memmove(data, data + elementSize, initlen * elementSize);
     }
 
     return DenseElementResult::Success;

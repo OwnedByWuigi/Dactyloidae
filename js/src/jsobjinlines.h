@@ -12,6 +12,7 @@
 
 #include "jsfriendapi.h"
 #include "jsfun.h"
+#include "jsutil.h"
 
 #include "builtin/MapObject.h"
 #include "builtin/TypedObject.h"
@@ -401,7 +402,7 @@ JSObject::create(js::ExclusiveContext* cx, js::gc::AllocKind kind, js::gc::Initi
                    kind == js::gc::AllocKind::FUNCTION_EXTENDED);
         size_t size =
             kind == js::gc::AllocKind::FUNCTION ? sizeof(JSFunction) : sizeof(js::FunctionExtended);
-        memset(obj->as<JSFunction>().fixedSlots(), 0, size - sizeof(js::NativeObject));
+        js_memset(obj->as<JSFunction>().fixedSlots(), 0, size - sizeof(js::NativeObject));
         if (kind == js::gc::AllocKind::FUNCTION_EXTENDED) {
             // SetNewObjectMetadata may gc, which will be unhappy if flags &
             // EXTENDED doesn't match the arena's AllocKind.

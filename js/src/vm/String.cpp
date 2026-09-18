@@ -7,7 +7,6 @@
 
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/PodOperations.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/SizePrintfMacros.h"
 #include "mozilla/TypeTraits.h"
@@ -20,11 +19,11 @@
 
 #include "jscntxtinlines.h"
 #include "jscompartmentinlines.h"
+#include "jsutil.h"
 
 using namespace js;
 
 using mozilla::IsSame;
-using mozilla::PodCopy;
 using mozilla::RangedPtr;
 using mozilla::RoundUpPow2;
 
@@ -346,7 +345,7 @@ CopyChars(char16_t* dest, const JSLinearString& str)
 {
     AutoCheckCannotGC nogc;
     if (str.hasTwoByteChars())
-        PodCopy(dest, str.twoByteChars(nogc), str.length());
+        js_memcpy(dest, str.twoByteChars(nogc), str.length() * sizeof(char16_t));
     else
         CopyAndInflateChars(dest, str.latin1Chars(nogc), str.length());
 }
@@ -357,7 +356,7 @@ CopyChars(Latin1Char* dest, const JSLinearString& str)
 {
     AutoCheckCannotGC nogc;
     if (str.hasLatin1Chars()) {
-        PodCopy(dest, str.latin1Chars(nogc), str.length());
+        js_memcpy(dest, str.latin1Chars(nogc), str.length());
     } else {
         /*
          * When we flatten a TwoByte rope, we turn child ropes (including Latin1
@@ -369,10 +368,24 @@ CopyChars(Latin1Char* dest, const JSLinearString& str)
          */
         size_t len = str.length();
         const char16_t* chars = str.twoByteChars(nogc);
+#if defined(JS_HAS_SSE2_CHARACTER_OPERATIONS)
+        size_t i = 0;
+        const __m128i zero = _mm_setzero_si128();
+        for (; i + 8 <= len; i += 8) {
+            const __m128i wide = _mm_loadu_si128(reinterpret_cast<const __m128i*>(chars + i));
+            const __m128i packed = _mm_packus_epi16(wide, zero);
+            _mm_storel_epi64(reinterpret_cast<__m128i*>(dest + i), packed);
+        }
+        for (; i < len; i++) {
+            MOZ_ASSERT(chars[i] <= JSString::MAX_LATIN1_CHAR);
+            dest[i] = chars[i];
+        }
+#else
         for (size_t i = 0; i < len; i++) {
             MOZ_ASSERT(chars[i] <= JSString::MAX_LATIN1_CHAR);
             dest[i] = chars[i];
         }
+#endif
     }
 }
 
@@ -639,16 +652,17 @@ js::ConcatStrings(ExclusiveContext* cx,
             return nullptr;
 
         if (isLatin1) {
-            PodCopy(latin1Buf, leftLinear->latin1Chars(nogc), leftLen);
-            PodCopy(latin1Buf + leftLen, rightLinear->latin1Chars(nogc), rightLen);
+            js_memcpy(latin1Buf, leftLinear->latin1Chars(nogc), leftLen);
+            js_memcpy(latin1Buf + leftLen, rightLinear->latin1Chars(nogc), rightLen);
             latin1Buf[wholeLength] = 0;
         } else {
             if (leftLinear->hasTwoByteChars())
-                PodCopy(twoByteBuf, leftLinear->twoByteChars(nogc), leftLen);
+                js_memcpy(twoByteBuf, leftLinear->twoByteChars(nogc), leftLen * sizeof(char16_t));
             else
                 CopyAndInflateChars(twoByteBuf, leftLinear->latin1Chars(nogc), leftLen);
             if (rightLinear->hasTwoByteChars())
-                PodCopy(twoByteBuf + leftLen, rightLinear->twoByteChars(nogc), rightLen);
+                js_memcpy(twoByteBuf + leftLen, rightLinear->twoByteChars(nogc),
+                          rightLen * sizeof(char16_t));
             else
                 CopyAndInflateChars(twoByteBuf + leftLen, rightLinear->latin1Chars(nogc), rightLen);
             twoByteBuf[wholeLength] = 0;
@@ -676,7 +690,7 @@ JSDependentString::undependInternal(JSContext* cx)
         return nullptr;
 
     AutoCheckCannotGC nogc;
-    PodCopy(s, nonInlineChars<CharT>(nogc), n);
+    js_memcpy(s, nonInlineChars<CharT>(nogc), n * sizeof(CharT));
     s[n] = '\0';
     setNonInlineChars<CharT>(s);
 
@@ -1026,7 +1040,7 @@ AutoStableStringChars::copyLatin1Chars(JSContext* cx, HandleLinearString linearS
     if (!chars)
         return false;
 
-    PodCopy(chars, linearString->rawLatin1Chars(), length);
+    js_memcpy(chars, linearString->rawLatin1Chars(), length);
     chars[length] = 0;
 
     state_ = Latin1;
@@ -1043,7 +1057,7 @@ AutoStableStringChars::copyTwoByteChars(JSContext* cx, HandleLinearString linear
     if (!chars)
         return false;
 
-    PodCopy(chars, linearString->rawTwoByteChars(), length);
+    js_memcpy(chars, linearString->rawTwoByteChars(), length * sizeof(char16_t));
     chars[length] = 0;
 
     state_ = TwoByte;
@@ -1077,7 +1091,7 @@ JSExternalString::ensureFlat(JSContext* cx)
     // Copy the chars before finalizing the string.
     {
         AutoCheckCannotGC nogc;
-        PodCopy(s, nonInlineChars<char16_t>(nogc), n);
+        js_memcpy(s, nonInlineChars<char16_t>(nogc), n * sizeof(char16_t));
         s[n] = '\0';
     }
 
@@ -1158,6 +1172,41 @@ CanStoreCharsAsLatin1(const Latin1Char* s, size_t length)
     MOZ_CRASH("Shouldn't be called for Latin1 chars");
 }
 
+static MOZ_ALWAYS_INLINE void
+CopyAndDeflateLatin1Chars(Latin1Char* dest, const char16_t* src, size_t length)
+{
+#if defined(JS_HAS_SSE2_CHARACTER_OPERATIONS)
+    size_t i = 0;
+    const __m128i lowByteMask = _mm_set1_epi16(0xff);
+    const __m128i zero = _mm_setzero_si128();
+    for (; i + 32 <= length; i += 32) {
+        const __m128i wide0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
+        const __m128i wide1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i + 8));
+        const __m128i wide2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i + 16));
+        const __m128i wide3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i + 24));
+        _mm_storel_epi64(reinterpret_cast<__m128i*>(dest + i),
+                         _mm_packus_epi16(_mm_and_si128(wide0, lowByteMask), zero));
+        _mm_storel_epi64(reinterpret_cast<__m128i*>(dest + i + 8),
+                         _mm_packus_epi16(_mm_and_si128(wide1, lowByteMask), zero));
+        _mm_storel_epi64(reinterpret_cast<__m128i*>(dest + i + 16),
+                         _mm_packus_epi16(_mm_and_si128(wide2, lowByteMask), zero));
+        _mm_storel_epi64(reinterpret_cast<__m128i*>(dest + i + 24),
+                         _mm_packus_epi16(_mm_and_si128(wide3, lowByteMask), zero));
+    }
+    for (; i + 8 <= length; i += 8) {
+        const __m128i wide = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
+        const __m128i lowBytes = _mm_and_si128(wide, lowByteMask);
+        _mm_storel_epi64(reinterpret_cast<__m128i*>(dest + i),
+                         _mm_packus_epi16(lowBytes, zero));
+    }
+    for (; i < length; i++)
+        dest[i] = Latin1Char(src[i]);
+#else
+    for (size_t i = 0; i < length; i++)
+        dest[i] = Latin1Char(src[i]);
+#endif
+}
+
 template <AllowGC allowGC>
 static MOZ_ALWAYS_INLINE JSInlineString*
 NewInlineStringDeflated(ExclusiveContext* cx, mozilla::Range<const char16_t> chars)
@@ -1170,8 +1219,8 @@ NewInlineStringDeflated(ExclusiveContext* cx, mozilla::Range<const char16_t> cha
 
     for (size_t i = 0; i < len; i++) {
         MOZ_ASSERT(chars[i] <= JSString::MAX_LATIN1_CHAR);
-        storage[i] = Latin1Char(chars[i]);
     }
+    CopyAndDeflateLatin1Chars(storage, chars.begin().get(), len);
     storage[len] = '\0';
     return str;
 }
@@ -1210,8 +1259,8 @@ NewStringDeflated(ExclusiveContext* cx, const char16_t* s, size_t n)
 
     for (size_t i = 0; i < n; i++) {
         MOZ_ASSERT(s[i] <= JSString::MAX_LATIN1_CHAR);
-        news.get()[i] = Latin1Char(s[i]);
     }
+    CopyAndDeflateLatin1Chars(news.get(), s, n);
     news[n] = '\0';
 
     JSFlatString* str = JSFlatString::new_<allowGC>(cx, news.get(), n);
@@ -1313,7 +1362,7 @@ NewStringCopyNDontDeflate(ExclusiveContext* cx, const CharT* s, size_t n)
         return nullptr;
     }
 
-    PodCopy(news.get(), s, n);
+    js_memcpy(news.get(), s, n * sizeof(CharT));
     news[n] = 0;
 
     JSFlatString* str = JSFlatString::new_<allowGC>(cx, news.get(), n);

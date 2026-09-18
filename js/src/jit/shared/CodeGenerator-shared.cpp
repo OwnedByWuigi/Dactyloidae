@@ -16,6 +16,7 @@
 #include "jit/MIR.h"
 #include "jit/MIRGenerator.h"
 #include "jit/OptimizationTracking.h"
+#include "jsutil.h"
 #include "js/Conversions.h"
 #include "vm/TraceLogging.h"
 
@@ -754,7 +755,7 @@ CodeGeneratorShared::generateCompactNativeToBytecodeMap(JSContext* cx, JitCode* 
         return false;
     }
 
-    memcpy(data, writer.buffer(), writer.length());
+    js_memcpy(data, writer.buffer(), writer.length());
     nativeToBytecodeMap_ = data;
     nativeToBytecodeMapSize_ = writer.length();
     nativeToBytecodeTableOffset_ = tableOffset;
@@ -908,7 +909,7 @@ CodeGeneratorShared::generateCompactTrackedOptimizationsMap(JSContext* cx, JitCo
     if (!data)
         return false;
 
-    memcpy(data, writer.buffer(), writer.length());
+    js_memcpy(data, writer.buffer(), writer.length());
     trackedOptimizationsMap_ = data;
     trackedOptimizationsMapSize_ = writer.length();
     trackedOptimizationsRegionTableOffset_ = regionTableOffset;

@@ -11,6 +11,7 @@
 #include "vm/AsyncFunction.h"
 #include "vm/GlobalObject.h"
 #include "vm/Stack.h"
+#include "jsutil.h"
 
 #include "jsobjinlines.h"
 
@@ -36,7 +37,7 @@ RareArgumentsData::create(JSContext* cx, ArgumentsObject* obj)
     if (!data)
         return nullptr;
 
-    mozilla::PodZero(data, bytes);
+    js_memset(data, 0, bytes);
 
     return new(data) RareArgumentsData();
 }
@@ -299,7 +300,7 @@ ArgumentsObject::create(JSContext* cx, HandleFunction callee, unsigned numActual
 
         // Zero the argument Values. This sets each value to DoubleValue(0), which
         // is safe for GC tracing.
-        memset(data->args, 0, numArgs * sizeof(Value));
+        js_memset(data->args, 0, numArgs * sizeof(Value));
         MOZ_ASSERT(DoubleValue(0).asRawBits() == 0x0);
         MOZ_ASSERT_IF(numArgs > 0, data->args[0].asRawBits() == 0x0);
 
@@ -815,7 +816,7 @@ ArgumentsObject::objectMovedDuringMinorGC(JSTracer* trc, JSObject* dst, JSObject
             oomUnsafe.crash("Failed to allocate ArgumentsObject data while tenuring.");
         ndst->initFixedSlot(DATA_SLOT, PrivateValue(data));
 
-        mozilla::PodCopy(data, reinterpret_cast<uint8_t*>(nsrc->data()), nbytes);
+        js_memcpy(data, reinterpret_cast<uint8_t*>(nsrc->data()), nbytes);
         nbytesTotal += nbytes;
     }
 
@@ -830,7 +831,7 @@ ArgumentsObject::objectMovedDuringMinorGC(JSTracer* trc, JSObject* dst, JSObject
                 oomUnsafe.crash("Failed to allocate RareArgumentsData data while tenuring.");
             ndst->data()->rareData = (RareArgumentsData*)dstRareData;
 
-            mozilla::PodCopy(dstRareData, reinterpret_cast<uint8_t*>(srcRareData), nbytes);
+            js_memcpy(dstRareData, reinterpret_cast<uint8_t*>(srcRareData), nbytes);
             nbytesTotal += nbytes;
         }
     }

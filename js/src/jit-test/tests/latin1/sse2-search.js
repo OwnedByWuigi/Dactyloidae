@@ -19,3 +19,21 @@ for (var length of [0, 1, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65]) {
     assertEq(wide.indexOf("\xff"), length + 1);
     assertEq(wide.indexOf(latin1), 1);
 }
+
+// Mixed-encoding searches should use the same SIMD first-character scan, and
+// an impossible UTF-16 character should reject a Latin-1 haystack immediately.
+var latin1Haystack = "x".repeat(4096);
+assertEq(latin1Haystack.indexOf("x\u0100x"), -1);
+var wideHaystack = "\u0100" + "x".repeat(4096) + "needle";
+assertEq(wideHaystack.indexOf("needle"), 4097);
+
+// Exercise the mixed-width EqualChars fast path through string equality.
+var wideLatin1 = ("\u0100" + latin1Haystack).slice(1);
+assertEq(wideLatin1, latin1Haystack);
+assertEq(wideLatin1 + "y", latin1Haystack + "z");
+assertEq(wideLatin1 + "\u0100" > latin1Haystack + "z", true);
+assertEq(latin1Haystack + "z" < wideLatin1 + "\u0100", true);
+
+assertEq(latin1Haystack.lastIndexOf("x\u0100x"), -1);
+assertEq(wideHaystack.lastIndexOf("needle"), 4097);
+assertEq(wideHaystack.lastIndexOf("x"), 4096);
