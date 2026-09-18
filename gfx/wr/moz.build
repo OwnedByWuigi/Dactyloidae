@@ -1,0 +1,13 @@
+# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
+
+# The retained display-list core is deliberately C-only.  GPU backends can
+# consume the emitted instanced-quad stream through a stable C ABI.
+EXPORTS.mozilla.gfx += [
+    'webrender.h',
+]
+
+SOURCES += [
+    'webrender.c',
+]
+
+FINAL_LIBRARY = 'xul'

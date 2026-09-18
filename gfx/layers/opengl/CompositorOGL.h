@@ -22,6 +22,7 @@
 #include "mozilla/gfx/Rect.h"           // for Rect, IntRect
 #include "mozilla/gfx/Triangle.h"       // for Triangle
 #include "mozilla/gfx/Types.h"          // for Float, SurfaceFormat, etc
+#include "mozilla/gfx/webrender.h"      // for wr_frame
 #include "mozilla/layers/Compositor.h"  // for SurfaceInitMode, Compositor, etc
 #include "mozilla/layers/CompositorTypes.h"  // for MaskType::MaskType::NumMaskTypes, etc
 #include "mozilla/layers/LayersTypes.h"
@@ -211,6 +212,17 @@ public:
                             const gfx::Matrix4x4& aTransform,
                             const gfx::Rect& aVisibleRect) override;
 
+  // Consume solid retained-display-list quads through the existing GPU path.
+  bool DrawWebRenderContext(wr_context* aContext,
+                            const gfx::IntRect& aClipRect);
+  bool DrawWebRenderRect(const gfx::Rect& aRect,
+                         const gfx::Color& aColor,
+                         gfx::Float aOpacity,
+                         const gfx::Matrix4x4& aTransform,
+                         const gfx::IntRect& aClipRect);
+  void DrawWebRenderFrame(const wr_frame& aFrame,
+                          const gfx::IntRect& aClipRect);
+
   virtual void EndFrame() override;
   virtual void EndFrameForExternalComposition(const gfx::Matrix& aTransform) override;
 
@@ -327,6 +339,7 @@ private:
 
   /** Currently bound render target */
   RefPtr<CompositingRenderTargetOGL> mCurrentRenderTarget;
+  wr_context* mWebRenderContext;
 #ifdef DEBUG
   CompositingRenderTargetOGL* mWindowRenderTarget;
 #endif

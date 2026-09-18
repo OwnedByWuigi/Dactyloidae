@@ -10,6 +10,7 @@
 #include "mozilla/gfx/Rect.h"           // for Rect
 #include "mozilla/gfx/Types.h"          // for Color
 #include "mozilla/layers/Compositor.h"  // for Compositor
+#include "mozilla/layers/CompositorOGL.h"  // for CompositorOGL
 #include "mozilla/layers/CompositorTypes.h"  // for DiagnosticFlags::COLOR
 #include "mozilla/layers/Effects.h"     // for Effect, EffectChain, etc
 #include "mozilla/mozalloc.h"           // for operator delete, etc
@@ -28,6 +29,22 @@ ColorLayerComposite::RenderLayer(const IntRect& aClipRect)
   RenderWithAllMasks(this, mCompositor, aClipRect,
                      [&](EffectChain& effectChain, const IntRect& clipRect) {
     GenEffectChain(effectChain);
+
+    // Route simple 2D color primitives through the retained C display list.
+    // Masked or 3D layers continue through the established effect path until
+    // equivalent WebRender primitives are available for those cases.
+    CompositorOGL* compositorOGL = mCompositor->AsCompositorOGL();
+    if (compositorOGL &&
+        !effectChain.mSecondaryEffects[EffectTypes::MASK] &&
+        GetEffectiveMixBlendMode() == CompositionOp::OP_OVER &&
+        transform.Is2D() && !clipRect.IsEmpty()) {
+      if (compositorOGL->DrawWebRenderRect(rect, GetColor(),
+                                           GetEffectiveOpacity(), transform,
+                                           clipRect)) {
+        return;
+      }
+    }
+
     mCompositor->DrawQuad(rect, clipRect, effectChain, GetEffectiveOpacity(),
                           transform);
   });

@@ -86,6 +86,7 @@ CompositorOGL::CompositorOGL(CompositorBridgeParent* aParent,
   : Compositor(aWidget, aParent)
   , mWidgetSize(-1, -1)
   , mSurfaceSize(aSurfaceWidth, aSurfaceHeight)
+  , mWebRenderContext(nullptr)
   , mHasBGRA(0)
   , mUseExternalSurfaceSize(aUseExternalSurfaceSize)
   , mFrameInProgress(false)
@@ -165,6 +166,11 @@ CompositorOGL::Destroy()
 void
 CompositorOGL::CleanupResources()
 {
+  if (mWebRenderContext) {
+    wr_context_destroy(mWebRenderContext);
+    mWebRenderContext = nullptr;
+  }
+
   if (!mGLContext)
     return;
 
@@ -992,6 +998,146 @@ CompositorOGL::DrawTriangle(const gfx::TexturedTriangle& aTriangle,
 
   DrawGeometry(aTriangle, aClipRect, aEffectChain,
                aOpacity, aTransform, aVisibleRect);
+}
+
+bool
+CompositorOGL::DrawWebRenderContext(wr_context* aContext,
+                                    const IntRect& aClipRect)
+{
+  if (!aContext) {
+    return false;
+  }
+
+  const wr_frame* frame = wr_context_build_frame(aContext);
+  if (frame) {
+    DrawWebRenderFrame(*frame, aClipRect);
+    return true;
+  }
+  return false;
+}
+
+bool
+CompositorOGL::DrawWebRenderRect(const Rect& aRect,
+                                 const Color& aColor,
+                                 Float aOpacity,
+                                 const Matrix4x4& aTransform,
+                                 const IntRect& aClipRect)
+{
+  if (!mFrameInProgress || aClipRect.IsEmpty() || !aTransform.Is2D()) {
+    return false;
+  }
+  if (!mWebRenderContext) {
+    mWebRenderContext = wr_context_create(8);
+  }
+  if (!mWebRenderContext) {
+    return false;
+  }
+
+  wr_context_clear(mWebRenderContext);
+  wr_context_set_viewport(mWebRenderContext,
+                          wr_rect{ Float(aClipRect.x), Float(aClipRect.y),
+                                   Float(aClipRect.width), Float(aClipRect.height) });
+  Matrix transform = aTransform.As2D();
+  wr_context_set_transform(mWebRenderContext,
+                           wr_transform{ transform._11, transform._12,
+                                         transform._21, transform._22,
+                                         transform._31, transform._32 });
+  wr_context_set_opacity(mWebRenderContext, aOpacity);
+  if (!wr_display_list_push_rect(mWebRenderContext,
+                                 wr_rect{ aRect.x, aRect.y,
+                                          aRect.width, aRect.height },
+                                 wr_color{ aColor.r, aColor.g,
+                                           aColor.b, aColor.a })) {
+    return false;
+  }
+
+  bool drawn = DrawWebRenderContext(mWebRenderContext, aClipRect);
+  wr_context_clear(mWebRenderContext);
+  return drawn;
+}
+
+void
+CompositorOGL::DrawWebRenderFrame(const wr_frame& aFrame,
+                                  const IntRect& aClipRect)
+{
+  MOZ_ASSERT(mFrameInProgress, "frame not started");
+  MOZ_ASSERT(mCurrentRenderTarget, "No destination");
+
+  if (!aFrame.quads || !aFrame.batches ||
+      aFrame.quad_count == 0 || aFrame.batch_count == 0) {
+    return;
+  }
+
+  MakeCurrent();
+
+  // This first adapter handles solid rectangles. It deliberately reuses the
+  // compositor's existing four-rect uniform and triangle VBO path, so the
+  // retained C display list is submitted to the GPU without a CPU raster pass.
+  EffectSolidColor effect(Color(0, 0, 0, 0));
+  ShaderConfigOGL config = GetShaderConfigFor(&effect);
+  ShaderProgramOGL* program = GetShaderProgramFor(config);
+  if (!program) {
+    return;
+  }
+
+  IntPoint offset = mCurrentRenderTarget->GetOrigin();
+  ActivateProgram(program);
+  program->SetProjectionMatrix(mProjMatrix);
+  program->SetLayerTransform(Matrix4x4());
+  program->SetRenderOffset(offset.x, offset.y);
+
+  ScopedGLState scopedScissorTestState(mGLContext, LOCAL_GL_SCISSOR_TEST, true);
+  ScopedScissorRect autoScissorRect(mGLContext,
+                                    aClipRect.x,
+                                    FlipY(aClipRect.y + aClipRect.height),
+                                    aClipRect.width,
+                                    aClipRect.height);
+
+  for (size_t batchIndex = 0; batchIndex < aFrame.batch_count; ++batchIndex) {
+    const wr_gpu_batch& batch = aFrame.batches[batchIndex];
+    if (batch.first_quad > aFrame.quad_count ||
+        batch.quad_count > aFrame.quad_count - batch.first_quad) {
+      continue;
+    }
+
+    IntRect batchClip = aClipRect;
+    if (batch.has_clip) {
+      IntRect primitiveClip(int32_t(batch.clip_rect.x),
+                            int32_t(batch.clip_rect.y),
+                            int32_t(batch.clip_rect.width),
+                            int32_t(batch.clip_rect.height));
+      batchClip.IntersectRect(batchClip, primitiveClip);
+      if (batchClip.IsEmpty()) {
+        continue;
+      }
+    }
+    ScopedScissorRect batchScissor(
+      mGLContext, batchClip.x, FlipY(batchClip.y + batchClip.height),
+      batchClip.width, batchClip.height);
+
+    program->SetLayerTransform(Matrix4x4::From2D(
+      Matrix(batch.transform.m11, batch.transform.m12,
+             batch.transform.m21, batch.transform.m22,
+             batch.transform.m31, batch.transform.m32)));
+
+    uint32_t remaining = batch.quad_count;
+    uint32_t quadIndex = batch.first_quad;
+    program->SetRenderColor(Color(batch.color.r, batch.color.g,
+                                  batch.color.b, batch.color.a));
+
+    while (remaining) {
+      Rect rects[4] = {};
+      int count = remaining > 4 ? 4 : int(remaining);
+      for (int i = 0; i < count; ++i) {
+        const wr_gpu_quad& quad = aFrame.quads[quadIndex + i];
+        rects[i] = Rect(quad.rect.x, quad.rect.y,
+                        quad.rect.width, quad.rect.height);
+      }
+      BindAndDrawQuads(program, count, rects, nullptr);
+      quadIndex += count;
+      remaining -= count;
+    }
+  }
 }
 
 template<typename Geometry>
