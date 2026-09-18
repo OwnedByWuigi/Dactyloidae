@@ -42,7 +42,8 @@ enum ShaderFeatures {
   ENABLE_MASK=0x800,
   ENABLE_NO_PREMUL_ALPHA=0x1000,
   ENABLE_DEAA=0x2000,
-  ENABLE_DYNAMIC_GEOMETRY=0x4000
+  ENABLE_DYNAMIC_GEOMETRY=0x4000,
+  ENABLE_TEXTURE_TINT=0x8000
 };
 
 class KnownUniform {
@@ -83,6 +84,7 @@ public:
     ViewportSize,
     VisibleCenter,
     YuvColorMatrix,
+    TextureTint,
 
     KnownUniformCount
   };
@@ -218,6 +220,7 @@ public:
   {}
 
   void SetRenderColor(bool aEnabled);
+  void SetTextureTint(bool aEnabled);
   void SetTextureTarget(GLenum aTarget);
   void SetRBSwap(bool aEnabled);
   void SetNoAlpha(bool aEnabled);
@@ -461,6 +464,10 @@ public:
 
   void SetRenderColor(const gfx::Color& aColor) {
     SetUniform(KnownUniform::RenderColor, aColor);
+  }
+
+  void SetTextureTint(const gfx::Color& aColor) {
+    SetUniform(KnownUniform::TextureTint, aColor);
   }
 
   void SetColorMatrix(const gfx::Matrix5x4& aColorMatrix)

@@ -60,6 +60,7 @@ AddUniforms(ProgramProfileOGL& aProfile)
         "uViewportSize",
         "uVisibleCenter",
         "uYuvColorMatrix",
+        "uTextureTint",
         nullptr
     };
 
@@ -73,6 +74,12 @@ void
 ShaderConfigOGL::SetRenderColor(bool aEnabled)
 {
   SetFeature(ENABLE_RENDER_COLOR, aEnabled);
+}
+
+void
+ShaderConfigOGL::SetTextureTint(bool aEnabled)
+{
+  SetFeature(ENABLE_TEXTURE_TINT, aEnabled);
 }
 
 void
@@ -351,6 +358,9 @@ ProgramProfileOGL::GetProfileFor(ShaderConfigOGL aConfig)
     if (aConfig.mFeatures & ENABLE_OPACITY) {
       fs << "uniform COLOR_PRECISION float uLayerOpacity;" << endl;
     }
+    if (aConfig.mFeatures & ENABLE_TEXTURE_TINT) {
+      fs << "uniform COLOR_PRECISION vec4 uTextureTint;" << endl;
+    }
   }
   if (BlendOpIsMixBlendMode(blendOp)) {
     fs << "varying vec2 vBackdropCoord;" << endl;
@@ -505,6 +515,9 @@ ProgramProfileOGL::GetProfileFor(ShaderConfigOGL aConfig)
     }
     if (aConfig.mFeatures & ENABLE_OPACITY) {
       fs << "  color *= uLayerOpacity;" << endl;
+    }
+    if (aConfig.mFeatures & ENABLE_TEXTURE_TINT) {
+      fs << "  color *= uTextureTint;" << endl;
     }
   }
   if (aConfig.mFeatures & ENABLE_DEAA) {

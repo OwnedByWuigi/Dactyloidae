@@ -90,8 +90,10 @@ def get_sdk_dirs(sdk, subdir):
             return int(parts[2]) if len(parts) >= 3 else 0
         except ValueError:
             return 0
+    # Keep compatibility with the current Windows 11 SDK while retaining an
+    # upper bound for SDK layouts this older tree has not been audited against.
     valid_versions = sorted((v for v in set(include_dirs) & set(lib_dirs)
-                             if build_num(v) <= 19041), reverse=True)
+                             if build_num(v) <= 26100), reverse=True)
     if valid_versions:
         return namespace(
             path=sdk,
@@ -149,7 +151,7 @@ def valid_windows_sdk_dir(compiler, windows_sdk_dir, target_version,
             return int(parts[2]) if len(parts) >= 3 else 0
         except ValueError:
             return 0
-    sdks = {k: v for k, v in sdks.items() if sdk_build(k) <= 19041}
+    sdks = {k: v for k, v in sdks.items() if sdk_build(k) <= 26100}
     valid_sdks = sorted(sdks, key=lambda x: sdks[x][0], reverse=True)
     if valid_sdks:
         biggest_version, sdk = sdks[valid_sdks[0]]
@@ -240,7 +242,8 @@ def valid_ucrt_sdk_dir(windows_sdk_dir, windows_sdk_dir_env):
                 'The SDK in WINDOWSSDKDIR (%s) does not contain the Universal '
                 'CRT.' % windows_sdk_dir_env)
 
-    sdks = {k: v for k, v in sdks.items() if int(str(v[0]).split('.')[2]) <= 19041}
+    sdks = {k: v for k, v in sdks.items()
+            if int(str(v[0]).split('.')[2]) <= 26100}
     valid_sdks = sorted(sdks, key=lambda x: sdks[x][0], reverse=True)
     if not valid_sdks:
         raise FatalCheckError('Cannot find the Universal CRT SDK. '

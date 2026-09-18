@@ -7,7 +7,14 @@ EXPORTS.mozilla.gfx += [
 ]
 
 SOURCES += [
-    'webrender.c',
+    'wr_context.c',
+    'wr_display_list.c',
+    'wr_frame.c',
+    'wr_frame_packet.c',
+    'wr_retained.c',
+    'wr_util.c',
 ]
 
 FINAL_LIBRARY = 'xul'
+
+TEST_DIRS += ['tests']

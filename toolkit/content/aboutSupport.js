@@ -303,6 +303,17 @@ var snapshotFormatters = {
                      ? data.windowLayerManagerType
                      : "BasicLayers (" + strings.GetStringFromName("mainThreadNoOMTC") + ")";
     addRow("features", "compositing", compositor);
+
+    let webRenderEnabled = false;
+    try {
+      webRenderEnabled = Services.prefs.getBoolPref("gfx.webrender.enabled");
+    } catch (e) {
+      // Keep about:support usable if the preference is unavailable in a build.
+    }
+    addRow("features", "webRender",
+           strings.GetStringFromName(webRenderEnabled
+                                     ? "webRenderEnabled"
+                                     : "webRenderDisabled"));
     
     let acceleratedWindows = data.numAcceleratedWindows + "/" + data.numTotalWindows;
     if (data.windowLayerManagerType) {

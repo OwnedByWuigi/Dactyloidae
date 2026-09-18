@@ -10,12 +10,14 @@
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
 #include "mozilla/gfx/BaseRect.h"       // for BaseRect
 #include "mozilla/layers/Compositor.h"  // for Compositor
+#include "mozilla/layers/CompositorOGL.h"  // for CompositorOGL
 #include "mozilla/layers/Effects.h"     // for TexturedEffect, Effect, etc
 #include "mozilla/layers/LayersMessages.h"  // for ThebesBufferData
 #include "nsAString.h"
 #include "nsPrintfCString.h"            // for nsPrintfCString
 #include "nsString.h"                   // for nsAutoCString
 #include "mozilla/layers/TextureHostOGL.h"  // for TextureHostOGL
+#include "gfxPrefs.h"                   // for gfxPrefs::WebRenderEnabled
 
 namespace mozilla {
 using namespace gfx;
@@ -68,6 +70,15 @@ ContentHostTexture::Composite(LayerComposite* aLayer,
   }
 
   aEffectChain.mPrimaryEffect = effect;
+
+  CompositorOGL* compositorOGL = GetCompositor()->AsCompositorOGL();
+  bool canUseWebRender =
+    gfxPrefs::WebRenderEnabled() && compositorOGL &&
+    effect->mType == EffectTypes::RGB && !mTextureSourceOnWhite &&
+    !mTextureSource->AsBigImageIterator() && aTransform.Is2D() &&
+    !aEffectChain.mSecondaryEffects[EffectTypes::MASK] &&
+    !aEffectChain.mSecondaryEffects[EffectTypes::BLEND_MODE] &&
+    aSamplingFilter == SamplingFilter::LINEAR;
 
   nsIntRegion tmpRegion;
   const nsIntRegion* renderRegion;
@@ -176,7 +187,13 @@ ContentHostTexture::Composite(LayerComposite* aLayer,
                                         Float(tileRegionRect.y) / texRect.height,
                                         Float(tileRegionRect.width) / texRect.width,
                                         Float(tileRegionRect.height) / texRect.height);
-          GetCompositor()->DrawQuad(rect, aClipRect, aEffectChain, aOpacity, aTransform);
+          if (!canUseWebRender ||
+              !compositorOGL->DrawWebRenderImage(
+                effect->mTexture, rect, effect->mTextureCoords, aOpacity,
+                aTransform, aClipRect, effect->mPremultiplied)) {
+            GetCompositor()->DrawQuad(rect, aClipRect, aEffectChain,
+                                      aOpacity, aTransform);
+          }
           if (usingTiles) {
             DiagnosticFlags diagnostics = DiagnosticFlags::CONTENT | DiagnosticFlags::BIGIMAGE;
             if (iterOnWhite) {
