@@ -247,6 +247,7 @@
               "menus",
               "notifications",
               "privacy",
+              "proxy",
               "storage"
               ,"unlimitedStorage"
             ]
