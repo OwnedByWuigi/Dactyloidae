@@ -778,14 +778,28 @@ class ExtensionPageContextChild extends BaseContext {
     // native, but make the probe harmless in extension pages.
     if (typeof contentWindow.createImageBitmap == "function") {
       let nativeCreateImageBitmap = contentWindow.createImageBitmap;
+      let extensionCreateImageBitmap = function(...args) {
+        if (args.length == 0) {
+          return contentWindow.Promise.resolve(null);
+        }
+        return nativeCreateImageBitmap.apply(this, args);
+      };
       try {
-        contentWindow.createImageBitmap = function(...args) {
-          if (args.length == 0) {
-            return contentWindow.Promise.resolve(null);
-          }
-          return nativeCreateImageBitmap.apply(this, args);
-        };
-      } catch (e) {}
+        // Window.createImageBitmap is inherited from a WebIDL prototype in
+        // older UXP builds.  Assignment can therefore leave the native
+        // method in place; define an own property so extension feature probes
+        // actually reach the compatibility wrapper.
+        Object.defineProperty(contentWindow, "createImageBitmap", {
+          configurable: true,
+          enumerable: true,
+          writable: true,
+          value: extensionCreateImageBitmap,
+        });
+      } catch (e) {
+        try {
+          contentWindow.createImageBitmap = extensionCreateImageBitmap;
+        } catch (e2) {}
+      }
     }
 
     Schemas.exportLazyGetter(contentWindow, "browser", () => {
