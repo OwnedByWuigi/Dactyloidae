@@ -7,6 +7,7 @@
 
 #include "nsCOMPtr.h"
 #include "nsIForm.h"
+#include "nsILinkHandler.h"
 #include "nsIDocument.h"
 #include "nsGkAtoms.h"
 #include "nsIFormControl.h"

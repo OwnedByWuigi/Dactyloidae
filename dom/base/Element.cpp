@@ -27,6 +27,7 @@
 #include "nsIContentIterator.h"
 #include "nsFocusManager.h"
 #include "nsFrameManager.h"
+#include "nsILinkHandler.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIURL.h"
 #include "nsContainerFrame.h"

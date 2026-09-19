@@ -34,6 +34,7 @@
 #include "nsIDOMHTMLAnchorElement.h"
 #include "nsISelectionController.h"
 #include "nsIDOMHTMLDocument.h"
+#include "nsILinkHandler.h"
 #include "nsIInlineSpellChecker.h"
 
 #include "mozilla/css/Loader.h"

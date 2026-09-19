@@ -52,6 +52,7 @@ class nsITheme;
 class nsIContent;
 class nsIFrame;
 class nsFrameManager;
+class nsILinkHandler;
 class nsIAtom;
 class nsIRunnable;
 class gfxUserFontEntry;
