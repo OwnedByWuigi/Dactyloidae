@@ -278,6 +278,61 @@ class FilteringMessageManagerMap extends Map {
 const MESSAGE_MESSAGE = "MessageChannel:Message";
 const MESSAGE_RESPONSE = "MessageChannel:Response";
 
+function makeMessageCloneable(value, seen = new Set()) {
+  if (value === null || value === undefined ||
+      typeof value == "string" || typeof value == "number" ||
+      typeof value == "boolean") {
+    return value;
+  }
+  if (typeof value != "object") {
+    return undefined;
+  }
+
+  try {
+    if (value instanceof Ci.nsIURI) {
+      return value.spec;
+    }
+    if (value instanceof Ci.nsIFile) {
+      return value.path;
+    }
+  } catch (e) {}
+
+  if (seen.has(value)) {
+    return undefined;
+  }
+  seen.add(value);
+
+  let className = Cu.getClassName(value, true);
+  if (className == "Array") {
+    return value.map(item => makeMessageCloneable(item, seen));
+  }
+  if (className != "Object") {
+    return undefined;
+  }
+
+  let result = {};
+  for (let key of Object.keys(value)) {
+    let item = makeMessageCloneable(value[key], seen);
+    if (item !== undefined) {
+      result[key] = item;
+    }
+  }
+  return result;
+}
+
+function sendMessageWithCloneFallback(target, name, data) {
+  try {
+    target.sendAsyncMessage(name, data);
+  } catch (e) {
+    let message = String(e && e.message || e);
+    if (!e || (e.result != Cr.NS_ERROR_DOM_DATA_CLONE_ERR &&
+               message.indexOf("clone") == -1)) {
+      throw e;
+    }
+    target.sendAsyncMessage(name, makeMessageCloneable(data));
+  }
+}
+
 this.MessageChannel = {
   init() {
     Services.obs.addObserver(this, "message-manager-close", false);
@@ -517,7 +572,7 @@ this.MessageChannel = {
 
     if (responseType == this.RESPONSE_NONE) {
       try {
-        target.sendAsyncMessage(MESSAGE_MESSAGE, message);
+        sendMessageWithCloneFallback(target, MESSAGE_MESSAGE, message);
       } catch (e) {
         // Caller is not expecting a reply, so dump the error to the console.
         Cu.reportError(e);
@@ -544,7 +599,7 @@ this.MessageChannel = {
     deferred.promise.then(cleanup, cleanup);
 
     try {
-      target.sendAsyncMessage(MESSAGE_MESSAGE, message);
+      sendMessageWithCloneFallback(target, MESSAGE_MESSAGE, message);
     } catch (e) {
       deferred.reject(e);
     }
@@ -644,7 +699,7 @@ this.MessageChannel = {
           value,
         };
 
-        target.sendAsyncMessage(MESSAGE_RESPONSE, response);
+        sendMessageWithCloneFallback(target, MESSAGE_RESPONSE, response);
       },
       error => {
         let response = {
@@ -668,7 +723,7 @@ this.MessageChannel = {
           }
         }
 
-        target.sendAsyncMessage(MESSAGE_RESPONSE, response);
+        sendMessageWithCloneFallback(target, MESSAGE_RESPONSE, response);
       }).catch(e => {
         Cu.reportError(e);
       }).then(() => {

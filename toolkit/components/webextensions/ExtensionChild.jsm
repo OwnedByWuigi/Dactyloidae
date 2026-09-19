@@ -773,6 +773,21 @@ class ExtensionPageContextChild extends BaseContext {
     }
     this.sender = sender;
 
+    // Older UXP WebIDL bindings throw synchronously when extensions use
+    // createImageBitmap() as a zero-argument feature probe. Keep valid calls
+    // native, but make the probe harmless in extension pages.
+    if (typeof contentWindow.createImageBitmap == "function") {
+      let nativeCreateImageBitmap = contentWindow.createImageBitmap;
+      try {
+        contentWindow.createImageBitmap = function(...args) {
+          if (args.length == 0) {
+            return contentWindow.Promise.resolve(null);
+          }
+          return nativeCreateImageBitmap.apply(this, args);
+        };
+      } catch (e) {}
+    }
+
     Schemas.exportLazyGetter(contentWindow, "browser", () => {
       let browserObj = Cu.createObjectIn(contentWindow);
       Schemas.inject(browserObj, this.childManager);
@@ -1055,4 +1070,3 @@ Object.assign(ExtensionChild, {
   Messenger,
   Port,
 });
-
