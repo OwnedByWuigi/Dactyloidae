@@ -32,6 +32,87 @@ FindCharacter(const CharT* chars, size_t length, CharT match)
                               ? _mm_set1_epi8(static_cast<char>(match))
                               : _mm_set1_epi16(static_cast<short>(match));
         while (length >= 4 * lanes) {
+            end -= 4 * lanes;
+            length -= 4 * lanes;
+
+            const __m128i block3 = _mm_loadu_si128(
+                reinterpret_cast<const __m128i*>(end + 3 * lanes));
+            const uint32_t mask3 = static_cast<uint32_t>(
+                _mm_movemask_epi8(sizeof(CharT) == 1
+                                  ? _mm_cmpeq_epi8(block3, needle)
+                                  : _mm_cmpeq_epi16(block3, needle)));
+            if (mask3) {
+                const uint32_t highest = 31 - mozilla::CountLeadingZeroes32(mask3);
+                return end + 3 * lanes + highest / sizeof(CharT);
+            }
+
+            const __m128i block2 = _mm_loadu_si128(
+                reinterpret_cast<const __m128i*>(end + 2 * lanes));
+            const uint32_t mask2 = static_cast<uint32_t>(
+                _mm_movemask_epi8(sizeof(CharT) == 1
+                                  ? _mm_cmpeq_epi8(block2, needle)
+                                  : _mm_cmpeq_epi16(block2, needle)));
+            if (mask2) {
+                const uint32_t highest = 31 - mozilla::CountLeadingZeroes32(mask2);
+                return end + 2 * lanes + highest / sizeof(CharT);
+            }
+
+            const __m128i block1 = _mm_loadu_si128(
+                reinterpret_cast<const __m128i*>(end + lanes));
+            const uint32_t mask1 = static_cast<uint32_t>(
+                _mm_movemask_epi8(sizeof(CharT) == 1
+                                  ? _mm_cmpeq_epi8(block1, needle)
+                                  : _mm_cmpeq_epi16(block1, needle)));
+            if (mask1) {
+                const uint32_t highest = 31 - mozilla::CountLeadingZeroes32(mask1);
+                return end + lanes + highest / sizeof(CharT);
+            }
+
+            const __m128i block0 = _mm_loadu_si128(
+                reinterpret_cast<const __m128i*>(end));
+            const uint32_t mask0 = static_cast<uint32_t>(
+                _mm_movemask_epi8(sizeof(CharT) == 1
+                                  ? _mm_cmpeq_epi8(block0, needle)
+                                  : _mm_cmpeq_epi16(block0, needle)));
+            if (mask0) {
+                const uint32_t highest = 31 - mozilla::CountLeadingZeroes32(mask0);
+                return end + highest / sizeof(CharT);
+            }
+        }
+        do {
+            // Never read beyond the supplied span, even at a page boundary.
+            const __m128i block = _mm_loadu_si128(reinterpret_cast<const __m128i*>(chars));
+            const __m128i equal = sizeof(CharT) == 1
+                                 ? _mm_cmpeq_epi8(block, needle)
+                                 : _mm_cmpeq_epi16(block, needle);
+            const uint32_t mask = static_cast<uint32_t>(_mm_movemask_epi8(equal));
+            if (mask)
+                return chars + mozilla::CountTrailingZeroes32(mask) / sizeof(CharT);
+            chars += lanes;
+            length -= lanes;
+        } while (length >= lanes);
+    }
+#endif
+    for (; length; --length, ++chars) {
+        if (*chars == match)
+            return chars;
+    }
+    return nullptr;
+}
+
+template <typename CharT>
+inline const CharT*
+FindCharacterReverse(const CharT* chars, size_t length, CharT match)
+{
+    static_assert(sizeof(CharT) == 1 || sizeof(CharT) == 2, "character width");
+#ifdef JS_HAS_SSE2_CHARACTER_OPERATIONS
+    const size_t lanes = 16 / sizeof(CharT);
+    const CharT* end = chars + length;
+    if (length >= lanes) {
+        const __m128i needle = sizeof(CharT) == 1
+                              ? _mm_set1_epi8(static_cast<char>(match))
+                              : _mm_set1_epi16(static_cast<short>(match));
+        while (length >= 4 * lanes) {
             const __m128i block0 = _mm_loadu_si128(
                 reinterpret_cast<const __m128i*>(chars));
             const uint32_t mask0 = static_cast<uint32_t>(
@@ -71,83 +152,7 @@ FindCharacter(const CharT* chars, size_t length, CharT match)
             chars += 4 * lanes;
             length -= 4 * lanes;
         }
-        while (length >= lanes) {
-            // Never read beyond the supplied span, even at a page boundary.
-            const __m128i block = _mm_loadu_si128(reinterpret_cast<const __m128i*>(chars));
-            const __m128i equal = sizeof(CharT) == 1
-                                 ? _mm_cmpeq_epi8(block, needle)
-                                 : _mm_cmpeq_epi16(block, needle);
-            const uint32_t mask = static_cast<uint32_t>(_mm_movemask_epi8(equal));
-            if (mask)
-                return chars + mozilla::CountTrailingZeroes32(mask) / sizeof(CharT);
-            chars += lanes;
-            length -= lanes;
-        }
-    }
-#endif
-    for (; length; --length, ++chars) {
-        if (*chars == match)
-            return chars;
-    }
-    return nullptr;
-}
-
-template <typename CharT>
-inline const CharT*
-FindCharacterReverse(const CharT* chars, size_t length, CharT match)
-{
-    static_assert(sizeof(CharT) == 1 || sizeof(CharT) == 2, "character width");
-#ifdef JS_HAS_SSE2_CHARACTER_OPERATIONS
-    const size_t lanes = 16 / sizeof(CharT);
-    const CharT* end = chars + length;
-    if (length >= lanes) {
-        const __m128i needle = sizeof(CharT) == 1
-                              ? _mm_set1_epi8(static_cast<char>(match))
-                              : _mm_set1_epi16(static_cast<short>(match));
-        while (length >= 4 * lanes) {
-            end -= 4 * lanes;
-            length -= 4 * lanes;
-
-            const __m128i block3 = _mm_loadu_si128(
-                reinterpret_cast<const __m128i*>(end + 3 * lanes));
-            const uint32_t mask3 = static_cast<uint32_t>(
-                _mm_movemask_epi8(sizeof(CharT) == 1
-                                  ? _mm_cmpeq_epi8(block3, needle)
-                                  : _mm_cmpeq_epi16(block3, needle)));
-            if (mask3)
-                return end + 3 * lanes +
-                       (31 - mozilla::CountLeadingZeroes32(mask3)) / sizeof(CharT);
-
-            const __m128i block2 = _mm_loadu_si128(
-                reinterpret_cast<const __m128i*>(end + 2 * lanes));
-            const uint32_t mask2 = static_cast<uint32_t>(
-                _mm_movemask_epi8(sizeof(CharT) == 1
-                                  ? _mm_cmpeq_epi8(block2, needle)
-                                  : _mm_cmpeq_epi16(block2, needle)));
-            if (mask2)
-                return end + 2 * lanes +
-                       (31 - mozilla::CountLeadingZeroes32(mask2)) / sizeof(CharT);
-
-            const __m128i block1 = _mm_loadu_si128(
-                reinterpret_cast<const __m128i*>(end + lanes));
-            const uint32_t mask1 = static_cast<uint32_t>(
-                _mm_movemask_epi8(sizeof(CharT) == 1
-                                  ? _mm_cmpeq_epi8(block1, needle)
-                                  : _mm_cmpeq_epi16(block1, needle)));
-            if (mask1)
-                return end + lanes +
-                       (31 - mozilla::CountLeadingZeroes32(mask1)) / sizeof(CharT);
-
-            const __m128i block0 = _mm_loadu_si128(
-                reinterpret_cast<const __m128i*>(end));
-            const uint32_t mask0 = static_cast<uint32_t>(
-                _mm_movemask_epi8(sizeof(CharT) == 1
-                                  ? _mm_cmpeq_epi8(block0, needle)
-                                  : _mm_cmpeq_epi16(block0, needle)));
-            if (mask0)
-                return end + (31 - mozilla::CountLeadingZeroes32(mask0)) / sizeof(CharT);
-        }
-        while (length >= lanes) {
+        do {
             end -= lanes;
             length -= lanes;
             const __m128i block = _mm_loadu_si128(reinterpret_cast<const __m128i*>(end));
@@ -155,9 +160,11 @@ FindCharacterReverse(const CharT* chars, size_t length, CharT match)
                                  ? _mm_cmpeq_epi8(block, needle)
                                  : _mm_cmpeq_epi16(block, needle);
             const uint32_t mask = static_cast<uint32_t>(_mm_movemask_epi8(equal));
-            if (mask)
-                return end + (31 - mozilla::CountLeadingZeroes32(mask)) / sizeof(CharT);
-        }
+            if (mask) {
+                const uint32_t highest = 31 - mozilla::CountLeadingZeroes32(mask);
+                return end + highest / sizeof(CharT);
+            }
+        } while (length >= lanes);
     }
 #else
     const CharT* end = chars + length;
