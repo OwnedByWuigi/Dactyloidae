@@ -518,7 +518,8 @@ class ProxyAPIImplementation extends SchemaAPIInterface {
     map.ids.set(id, listener);
     map.listeners.set(listener, id);
 
-    this.childApiManager.messageManager.sendAsyncMessage("API:AddListener", {
+    MessageChannel.sendAsyncMessage(this.childApiManager.messageManager,
+                                    "API:AddListener", {
       childId: this.childApiManager.id,
       listenerId: id,
       path: this.path,
@@ -537,7 +538,8 @@ class ProxyAPIImplementation extends SchemaAPIInterface {
     map.listeners.delete(listener);
     map.ids.delete(id);
 
-    this.childApiManager.messageManager.sendAsyncMessage("API:RemoveListener", {
+    MessageChannel.sendAsyncMessage(this.childApiManager.messageManager,
+                                    "API:RemoveListener", {
       childId: this.childApiManager.id,
       listenerId: id,
       path: this.path,
@@ -587,7 +589,8 @@ class ChildAPIManager {
     };
     Object.assign(params, contextData);
 
-    this.messageManager.sendAsyncMessage("API:CreateProxyContext", params);
+    MessageChannel.sendAsyncMessage(this.messageManager,
+                                    "API:CreateProxyContext", params);
   }
 
   receiveMessage({name, messageName, data}) {
@@ -626,7 +629,7 @@ class ChildAPIManager {
    * @param {Array} args The parameters for the function.
    */
   callParentFunctionNoReturn(path, args) {
-    this.messageManager.sendAsyncMessage("API:Call", {
+    MessageChannel.sendAsyncMessage(this.messageManager, "API:Call", {
       childId: this.id,
       path,
       args,
@@ -649,7 +652,7 @@ class ChildAPIManager {
     let deferred = PromiseUtils.defer();
     this.callPromises.set(callId, deferred);
 
-    this.messageManager.sendAsyncMessage("API:Call", {
+    MessageChannel.sendAsyncMessage(this.messageManager, "API:Call", {
       childId: this.id,
       callId,
       path,
@@ -684,7 +687,8 @@ class ChildAPIManager {
   }
 
   close() {
-    this.messageManager.sendAsyncMessage("API:CloseProxyContext", {childId: this.id});
+    MessageChannel.sendAsyncMessage(this.messageManager,
+                                    "API:CloseProxyContext", {childId: this.id});
   }
 
   get cloneScope() {
@@ -785,10 +789,9 @@ class ExtensionPageContextChild extends BaseContext {
         return nativeCreateImageBitmap.apply(this, args);
       };
       try {
-        // Window.createImageBitmap is inherited from a WebIDL prototype in
-        // older UXP builds.  Assignment can therefore leave the native
-        // method in place; define an own property so extension feature probes
-        // actually reach the compatibility wrapper.
+        // Some older bindings reject assignment to the WebIDL method. Define
+        // an own property on this extension window so no other window is
+        // affected.
         Object.defineProperty(contentWindow, "createImageBitmap", {
           configurable: true,
           enumerable: true,
@@ -797,8 +800,15 @@ class ExtensionPageContextChild extends BaseContext {
         });
       } catch (e) {
         try {
-          contentWindow.createImageBitmap = extensionCreateImageBitmap;
-        } catch (e2) {}
+          // This also works through the Window Xray wrapper used by older
+          // UXP extension globals.
+          Cu.exportFunction(extensionCreateImageBitmap, contentWindow,
+                            {defineAs: "createImageBitmap"});
+        } catch (e2) {
+          try {
+            contentWindow.createImageBitmap = extensionCreateImageBitmap;
+          } catch (e3) {}
+        }
       }
     }
 

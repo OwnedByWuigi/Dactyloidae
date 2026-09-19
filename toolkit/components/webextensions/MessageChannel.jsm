@@ -302,7 +302,12 @@ function makeMessageCloneable(value, seen = new Set()) {
   }
   seen.add(value);
 
-  let className = Cu.getClassName(value, true);
+  let className;
+  try {
+    className = Cu.getClassName(value, true);
+  } catch (e) {
+    return undefined;
+  }
   if (className == "Array") {
     return value.map(item => makeMessageCloneable(item, seen));
   }
@@ -334,6 +339,11 @@ function sendMessageWithCloneFallback(target, name, data) {
 }
 
 this.MessageChannel = {
+  // Keep direct extension API messages on the clone-safe UXP path too.
+  sendAsyncMessage(target, name, data) {
+    sendMessageWithCloneFallback(target, name, data);
+  },
+
   init() {
     Services.obs.addObserver(this, "message-manager-close", false);
     Services.obs.addObserver(this, "message-manager-disconnect", false);
