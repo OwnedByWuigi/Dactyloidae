@@ -89,9 +89,22 @@ SingleMatchPattern.prototype = {
       let suffix = host.substr(2);
       let dotSuffix = "." + suffix;
 
-      return ({host}) => host === suffix || host.endsWith(dotSuffix);
+      return uri => {
+        try {
+          let host = uri.host;
+          return host === suffix || host.endsWith(dotSuffix);
+        } catch (e) {
+          return false;
+        }
+      };
     }
-    return uri => uri.host === host;
+    return uri => {
+      try {
+        return uri.host === host;
+      } catch (e) {
+        return false;
+      }
+    };
   },
 
   matches(uri, ignorePath = false) {
