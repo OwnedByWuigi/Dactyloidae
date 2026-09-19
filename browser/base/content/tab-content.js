@@ -133,8 +133,12 @@ var AboutHomeListener = {
 
   onUpdate: function(aData) {
     let doc = content.document;
-    if (aData.showRestoreLastSession && !PrivateBrowsingUtils.isContentWindowPrivate(content))
-      doc.getElementById("launcher").setAttribute("session", "true");
+    if (aData.showRestoreLastSession && !PrivateBrowsingUtils.isContentWindowPrivate(content)) {
+      let launcher = doc.getElementById("launcher");
+      if (launcher) {
+        launcher.setAttribute("session", "true");
+      }
+    }
 
     // Inject search engine URL.
     let docElt = doc.documentElement;

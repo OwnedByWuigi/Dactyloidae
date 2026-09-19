@@ -1731,14 +1731,14 @@ var BookmarkingUI = {
     if (this._itemIds.length > 0) {
       this.broadcaster.setAttribute("starred", "true");
       this.broadcaster.setAttribute("buttontooltiptext", this._starredTooltip);
-      if (this.button.getAttribute("overflowedItem") == "true") {
+      if (this.button && this.button.getAttribute("overflowedItem") == "true") {
         this.button.setAttribute("label", this._starButtonOverflowedStarredLabel);
       }
     }
     else {
       this.broadcaster.removeAttribute("starred");
       this.broadcaster.setAttribute("buttontooltiptext", this._unstarredTooltip);
-      if (this.button.getAttribute("overflowedItem") == "true") {
+      if (this.button && this.button.getAttribute("overflowedItem") == "true") {
         this.button.setAttribute("label", this._starButtonOverflowedLabel);
       }
     }

@@ -106,9 +106,17 @@ InternalUserscriptsService.prototype = {
 
     // The codec shim is deliberately limited to YouTube.  Use the browser's
     // decoder probe rather than guessing from the user's graphics settings.
-    if (documentURI &&
-        documentURI.host &&
-        /(^|\.)youtube(?:-nocookie)?\.com$/i.test(documentURI.host)) {
+    let documentHost = null;
+    try {
+      // nsIURI.host is not implemented by hostless URI schemes (about:, data:,
+      // moz-extension:, and others), so reading it can throw.
+      if (documentURI) {
+        documentHost = documentURI.host;
+      }
+    } catch (e) {}
+
+    if (documentHost &&
+        /(^|\.)youtube(?:-nocookie)?\.com$/i.test(documentHost)) {
       let settings = {
         hideUnaccelerated: Services.prefs.getBoolPref(
           "browser.video.youtube.hide-unaccelerated", true),
