@@ -72,6 +72,7 @@ class Connection;
 class PowerManager;
 class LegacyMozTCPSocket;
 class StorageManager;
+class USB;
 
 namespace time {
 class TimeManager;
@@ -226,6 +227,7 @@ public:
   bool MozE10sEnabled();
 
   StorageManager* Storage();
+  USB* GetUsb();
 
   static void GetAcceptLanguages(nsTArray<nsString>& aLanguages);
 
@@ -298,6 +300,7 @@ private:
   nsTArray<RefPtr<Promise> > mVRGetDisplaysPromises;
   nsTArray<uint32_t> mRequestedVibrationPattern;
   RefPtr<StorageManager> mStorageManager;
+  RefPtr<USB> mUSB;
 };
 
 } // namespace dom

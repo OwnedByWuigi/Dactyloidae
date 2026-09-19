@@ -93,6 +93,7 @@ DIRS += [
     'xul',
     'manifest',
     'u2f',
+    'usb',
     'console',
     'performance',
     'xhr',
@@ -113,4 +114,3 @@ TEST_DIRS += [
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('gtk2', 'gtk3', 'windows', 'android', 'cocoa'):
     TEST_DIRS += ['plugins/test']
-

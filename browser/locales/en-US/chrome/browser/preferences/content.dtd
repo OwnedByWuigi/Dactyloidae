@@ -48,6 +48,8 @@
 
 <!ENTITY  javascriptWasm.label           "Enable WebAssembly (WASM)">
 <!ENTITY  javascriptWasm.accesskey       "y">
+<!ENTITY  javascriptWebusb.label         "Enable WebUSB">
+<!ENTITY  javascriptWebusb.accesskey     "U">
 #ifdef MOZ_WEBRTC
 <!ENTITY  javascriptWebrtc.label           "Enable WebRTC">
 <!ENTITY  javascriptWebrtc.accesskey       "R">

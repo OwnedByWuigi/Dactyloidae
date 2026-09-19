@@ -473,6 +473,59 @@ GeolocationPermissionPrompt.prototype = {
 PermissionUI.GeolocationPermissionPrompt = GeolocationPermissionPrompt;
 
 /**
+ * Creates a PermissionPrompt for the WebUSB API.
+ * USB access is granted for the current browser session.
+ */
+function getUSBString(name, fallback) {
+  try {
+    return gBrowserBundle.GetStringFromName(name);
+  } catch (ex) {
+    return fallback;
+  }
+}
+
+function USBPermissionPrompt(request) {
+  this.request = request;
+}
+
+USBPermissionPrompt.prototype = {
+  __proto__: PermissionPromptForRequestPrototype,
+
+  get permissionKey() {
+    return "usb";
+  },
+
+  get notificationID() {
+    return "web-usb";
+  },
+
+  get anchorID() {
+    return "default-notification-icon";
+  },
+
+  get message() {
+    return getUSBString("webUSB.connectToSite",
+                        "Would you like to let this site access USB devices?");
+  },
+
+  get promptActions() {
+    return [{
+      label: getUSBString("webUSB.allow", "Allow USB Devices"),
+      accessKey: getUSBString("webUSB.allow.accesskey", "A"),
+      action: Ci.nsIPermissionManager.ALLOW_ACTION,
+      expireType: Ci.nsIPermissionManager.EXPIRE_SESSION,
+    }, {
+      label: getUSBString("webUSB.block", "Block USB Devices"),
+      accessKey: getUSBString("webUSB.block.accesskey", "B"),
+      action: Ci.nsIPermissionManager.DENY_ACTION,
+      expireType: Ci.nsIPermissionManager.EXPIRE_SESSION,
+    }];
+  },
+};
+
+PermissionUI.USBPermissionPrompt = USBPermissionPrompt;
+
+/**
  * Creates a PermissionPrompt for a nsIContentPermissionRequest for
  * the Desktop Notification API.
  *

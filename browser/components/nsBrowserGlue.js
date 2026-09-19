@@ -2241,6 +2241,9 @@ const ContentPermissionIntegration = {
       case "geolocation": {
         return new PermissionUI.GeolocationPermissionPrompt(request);
       }
+      case "usb": {
+        return new PermissionUI.USBPermissionPrompt(request);
+      }
       case "desktop-notification": {
         return new PermissionUI.DesktopNotificationPermissionPrompt(request);
       }

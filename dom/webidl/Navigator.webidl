@@ -105,6 +105,11 @@ partial interface Navigator {
   readonly attribute Permissions permissions;
 };
 
+partial interface Navigator {
+  [SameObject, SecureContext, Pref="dom.usb.enabled"]
+  readonly attribute USB usb;
+};
+
 // Things that definitely need to be in the spec and and are not for some
 // reason.  See https://www.w3.org/Bugs/Public/show_bug.cgi?id=22406
 partial interface Navigator {

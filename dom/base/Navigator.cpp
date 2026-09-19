@@ -40,6 +40,7 @@
 #include "mozilla/dom/Permissions.h"
 #include "mozilla/dom/ServiceWorkerContainer.h"
 #include "mozilla/dom/StorageManager.h"
+#include "mozilla/dom/USB.h"
 #include "mozilla/dom/TCPSocket.h"
 #include "mozilla/dom/URLSearchParams.h"
 #include "mozilla/dom/workers/RuntimeService.h"
@@ -189,6 +190,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPowerManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mConnection)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mStorageManager)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mUSB)
 #ifdef MOZ_AUDIO_CHANNEL_MANAGER
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAudioChannelManager)
 #endif
@@ -224,6 +226,7 @@ Navigator::Invalidate()
   mPermissions = nullptr;
 
   mStorageManager = nullptr;
+  mUSB = nullptr;
 
   // If there is a page transition, make sure delete the geolocation object.
   if (mGeolocation) {
@@ -545,6 +548,21 @@ Navigator::Storage()
   }
 
   return mStorageManager;
+}
+
+USB*
+Navigator::GetUsb()
+{
+  MOZ_ASSERT(mWindow);
+
+  if (!mUSB) {
+    nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mWindow);
+    MOZ_ASSERT(global);
+
+    mUSB = new USB(global);
+  }
+
+  return mUSB;
 }
 
 // Values for the network.cookie.cookieBehavior pref are documented in

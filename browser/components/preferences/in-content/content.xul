@@ -27,6 +27,9 @@
   <preference id="javascript.options.wasm"
               name="javascript.options.wasm"
               type="bool"/>
+  <preference id="dom.usb.enabled"
+              name="dom.usb.enabled"
+              type="bool"/>
 #ifdef MOZ_WEBRTC
   <preference id="media.peerconnection.enabled"
               name="media.peerconnection.enabled"
@@ -244,6 +247,14 @@
                     preference="javascript.options.wasm"
                     label="&javascriptWasm.label;"
                     accesskey="&javascriptWasm.accesskey;" />
+        </vbox>
+      </row>
+      <row id="javascriptWebUSBRow">
+        <vbox align="start">
+          <checkbox id="javascriptWebUSBPolicy"
+                    preference="dom.usb.enabled"
+                    label="&javascriptWebusb.label;"
+                    accesskey="&javascriptWebusb.accesskey;" />
         </vbox>
       </row>
 #ifdef MOZ_WEBRTC

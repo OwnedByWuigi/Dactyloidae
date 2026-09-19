@@ -16,6 +16,7 @@ PREPROCESSED_WEBIDL_FILES = [
 ]
 
 WEBIDL_FILES = [
+    'USB.webidl',
     'AbortController.webidl',
     'AbortSignal.webidl',
     'AbstractWorker.webidl',

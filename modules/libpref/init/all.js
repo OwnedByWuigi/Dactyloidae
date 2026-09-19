@@ -5322,6 +5322,9 @@ pref("security.block_ftp_subresources", true);
 // Disable Storage api by default. This needs specific front-end parts to be usable.
 pref("dom.storageManager.enabled", false);
 
+// Disable WebUSB by default.
+pref("dom.usb.enabled", false);
+
 // DoS protection for HTTP Auth prompt spawning.
 // -1 = completely disable HTTP Auth prompting. (careful!)
 // 0  = disable this DoS protection

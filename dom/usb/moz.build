@@ -1,0 +1,19 @@
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
+
+EXPORTS.mozilla.dom += [
+    'USB.h',
+    'USBBackend.h',
+    'USBDescriptors.h',
+    'USBDevice.h',
+]
+
+UNIFIED_SOURCES += [
+    'USB.cpp',
+    'USBBackend.cpp',
+    'USBDescriptors.cpp',
+    'USBDevice.cpp',
+]
+
+if CONFIG['OS_TARGET'] == 'WINNT':
+    SOURCES += ['USBBackendWin.cpp']
+    OS_LIBS += ['setupapi', 'winusb']
