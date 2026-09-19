@@ -19,7 +19,6 @@ gopher.jar:
 % locale overbiteff tr-TR %locale/tr-TR/
 
   content/                 (content/*)
-  content/chrome/          (content/chrome/*)
   locale/da-DK/            (locale/da-DK/*)
   locale/de-DE/            (locale/de-DE/*)
   locale/en-US/            (locale/en-US/*)
