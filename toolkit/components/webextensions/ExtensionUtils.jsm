@@ -434,6 +434,13 @@ LocaleData.prototype = {
 
     options = Object.assign(defaultOptions, options);
 
+    // Some extensions probe optional localization attributes with an empty
+    // value.  There is no message to look up in that case; avoid turning the
+    // probe into a misleading "Unknown localization message" warning.
+    if (message == null || message === "") {
+      return options.defaultValue;
+    }
+
     let locales = new Set([this.BUILTIN, options.locale, this.defaultLocale]
                           .filter(locale => this.messages.has(locale)));
 
