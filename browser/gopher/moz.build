@@ -7,11 +7,9 @@ JAR_MANIFESTS += ['jar.mn']
 
 FINAL_TARGET = 'dist/bin/browser'
 
-FINAL_TARGET_FILES.components += [
+EXTRA_COMPONENTS += [
     'components/about.js',
-    'components/about.manifest',
     'components/protocol.js',
-    'components/protocol.manifest',
 ]
 
 FINAL_TARGET_FILES['defaults/preferences'] += [
