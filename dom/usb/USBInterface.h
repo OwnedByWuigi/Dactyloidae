@@ -2,8 +2,8 @@
 #ifndef mozilla_dom_USBInterface_h
 #define mozilla_dom_USBInterface_h
 
-#include "mozilla/dom/USBInterfaceBinding.h"
 #include "mozilla/dom/USBAlternateInterface.h"
+#include "mozilla/dom/USBBinding.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"

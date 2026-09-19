@@ -3,8 +3,8 @@
 #define mozilla_dom_USBAlternateInterface_h
 
 #include "mozilla/dom/Nullable.h"
-#include "mozilla/dom/USBAlternateInterfaceBinding.h"
 #include "mozilla/dom/USBEndpoint.h"
+#include "mozilla/dom/USBBinding.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsString.h"

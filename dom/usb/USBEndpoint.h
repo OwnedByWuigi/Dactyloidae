@@ -3,7 +3,6 @@
 #define mozilla_dom_USBEndpoint_h
 
 #include "mozilla/dom/USBBinding.h"
-#include "mozilla/dom/USBEndpointBinding.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"

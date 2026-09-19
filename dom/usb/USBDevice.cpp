@@ -4,7 +4,7 @@
 
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/USB.h"
-#include "mozilla/dom/USBDeviceBinding.h"
+#include "mozilla/dom/USBBinding.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/Services.h"
 #include "nsError.h"

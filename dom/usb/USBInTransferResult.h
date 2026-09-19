@@ -4,7 +4,6 @@
 
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/USBBinding.h"
-#include "mozilla/dom/USBInTransferResultBinding.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"

@@ -3,7 +3,6 @@
 #define mozilla_dom_USBOutTransferResult_h
 
 #include "mozilla/dom/USBBinding.h"
-#include "mozilla/dom/USBOutTransferResultBinding.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
