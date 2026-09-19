@@ -150,7 +150,7 @@ struct BaselineStackBuilder
         uint8_t* newBuffer = reinterpret_cast<uint8_t*>(js_calloc(newSize));
         if (!newBuffer)
             return false;
-        js_memcpy((newBuffer + newSize) - bufferUsed_, header_->copyStackBottom, bufferUsed_);
+        memcpy((newBuffer + newSize) - bufferUsed_, header_->copyStackBottom, bufferUsed_);
         memcpy(newBuffer, header_, sizeof(BaselineBailoutInfo));
         js_free(buffer_);
         buffer_ = newBuffer;

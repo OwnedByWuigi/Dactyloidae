@@ -6005,7 +6005,7 @@ EncodeLatin1(ExclusiveContext* cx, JSString* str)
         return nullptr;
     }
 
-    js_memcpy(buf, linear->latin1Chars(nogc), len);
+    mozilla::PodCopy(buf, linear->latin1Chars(nogc), len);
     buf[len] = '\0';
     return reinterpret_cast<char*>(buf);
 }

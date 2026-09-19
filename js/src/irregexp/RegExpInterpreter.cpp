@@ -31,7 +31,6 @@
 
 #include "irregexp/RegExpBytecode.h"
 #include "irregexp/RegExpMacroAssembler.h"
-#include "jsutil.h"
 #include "vm/MatchPairs.h"
 
 using namespace js;
@@ -198,8 +197,7 @@ irregexp::InterpretCode(JSContext* cx, const uint8_t* byteCode, const CharT* cha
             return RegExpRunStatus_Success_NotFound;
           BYTECODE(SUCCEED)
             if (matches)
-                js_memcpy(matches->pairsRaw(), registers.begin(),
-                          matches->length() * 2 * sizeof(int32_t));
+                memcpy(matches->pairsRaw(), registers.begin(), matches->length() * 2 * sizeof(int32_t));
             else if (endIndex)
                 *endIndex = registers[1];
             return RegExpRunStatus_Success;

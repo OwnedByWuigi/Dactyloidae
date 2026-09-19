@@ -3530,7 +3530,7 @@ js::detail::CopyScript(JSContext* cx, HandleScript src, HandleScript dst,
     dst->dataSize_ = size;
     MOZ_ASSERT(bool(dst->data) == bool(src->data));
     if (dst->data)
-        js_memcpy(dst->data, src->data, size);
+        memcpy(dst->data, src->data, size);
 
     /* Script filenames, bytecodes and atoms are runtime-wide. */
     dst->setScriptData(src->scriptData());

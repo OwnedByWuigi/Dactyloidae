@@ -8,11 +8,11 @@
 
 #include "vm/String.h"
 
+#include "mozilla/PodOperations.h"
 #include "mozilla/Range.h"
 
 #include "jscntxt.h"
 #include "jscompartment.h"
-#include "jsutil.h"
 
 #include "gc/Allocator.h"
 #include "gc/Marking.h"
@@ -57,7 +57,7 @@ NewInlineString(ExclusiveContext* cx, mozilla::Range<const CharT> chars)
     if (!str)
         return nullptr;
 
-    js_memcpy(storage, chars.begin().get(), len);
+    mozilla::PodCopy(storage, chars.begin().get(), len);
     storage[len] = 0;
     return str;
 }
@@ -75,7 +75,7 @@ NewInlineString(ExclusiveContext* cx, HandleLinearString base, size_t start, siz
         return nullptr;
 
     JS::AutoCheckCannotGC nogc;
-    js_memcpy(chars, base->chars<CharT>(nogc) + start, length * sizeof(CharT));
+    mozilla::PodCopy(chars, base->chars<CharT>(nogc) + start, length);
     chars[length] = 0;
     return s;
 }

@@ -53,100 +53,7 @@ template <typename Char1, typename Char2>
 inline int32_t
 CompareChars(const Char1* s1, size_t len1, const Char2* s2, size_t len2)
 {
-    if (mozilla::IsSame<Char1, Char2>::value &&
-        reinterpret_cast<const void*>(s1) == reinterpret_cast<const void*>(s2))
-    {
-        return int32_t(len1 - len2);
-    }
-
     size_t n = Min(len1, len2);
-
-#if defined(JS_HAVE_SSE2_INTRINSICS)
-    if (sizeof(Char1) == 1 && sizeof(Char2) == 1) {
-        const uint8_t* left = reinterpret_cast<const uint8_t*>(s1);
-        const uint8_t* right = reinterpret_cast<const uint8_t*>(s2);
-        while (n >= 16) {
-            const __m128i leftBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(left));
-            const __m128i rightBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(right));
-            const uint32_t equalMask = static_cast<uint32_t>(
-                _mm_movemask_epi8(_mm_cmpeq_epi8(leftBlock, rightBlock)));
-            if (equalMask != 0xffff) {
-                const uint32_t lane = mozilla::CountTrailingZeroes32((~equalMask) & 0xffff);
-                return int32_t(left[lane]) - int32_t(right[lane]);
-            }
-            left += 16;
-            right += 16;
-            n -= 16;
-        }
-        s1 = reinterpret_cast<const Char1*>(left);
-        s2 = reinterpret_cast<const Char2*>(right);
-    } else if (sizeof(Char1) == 2 && sizeof(Char2) == 2) {
-        const char16_t* left = reinterpret_cast<const char16_t*>(s1);
-        const char16_t* right = reinterpret_cast<const char16_t*>(s2);
-        while (n >= 8) {
-            const __m128i leftBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(left));
-            const __m128i rightBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(right));
-            const uint32_t equalMask = static_cast<uint32_t>(
-                _mm_movemask_epi8(_mm_cmpeq_epi16(leftBlock, rightBlock)));
-            if (equalMask != 0xffff) {
-                const uint32_t lane = mozilla::CountTrailingZeroes32((~equalMask) & 0xffff) / 2;
-                return int32_t(left[lane]) - int32_t(right[lane]);
-            }
-            left += 8;
-            right += 8;
-            n -= 8;
-        }
-        s1 = reinterpret_cast<const Char1*>(left);
-        s2 = reinterpret_cast<const Char2*>(right);
-    }
-
-    // Find the first differing code unit in eight mixed-width characters at
-    // once.  The scalar result is still used for the first mismatch, so this
-    // preserves CompareChars' ordering semantics rather than merely testing
-    // equality.
-    if (sizeof(Char1) == 1 && sizeof(Char2) == 2) {
-        const uint8_t* bytes = reinterpret_cast<const uint8_t*>(s1);
-        const char16_t* wide = reinterpret_cast<const char16_t*>(s2);
-        const __m128i zero = _mm_setzero_si128();
-        while (n >= 8) {
-            const __m128i byteBlock = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(bytes));
-            const __m128i wideBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(wide));
-            const __m128i expanded = _mm_unpacklo_epi8(byteBlock, zero);
-            const uint32_t equalMask = static_cast<uint32_t>(
-                _mm_movemask_epi8(_mm_cmpeq_epi16(expanded, wideBlock)));
-            if (equalMask != 0xffff) {
-                const uint32_t lane = mozilla::CountTrailingZeroes32((~equalMask) & 0xffff) / 2;
-                return int32_t(bytes[lane]) - int32_t(wide[lane]);
-            }
-            bytes += 8;
-            wide += 8;
-            n -= 8;
-        }
-        s1 = reinterpret_cast<const Char1*>(bytes);
-        s2 = reinterpret_cast<const Char2*>(wide);
-    } else if (sizeof(Char1) == 2 && sizeof(Char2) == 1) {
-        const char16_t* wide = reinterpret_cast<const char16_t*>(s1);
-        const uint8_t* bytes = reinterpret_cast<const uint8_t*>(s2);
-        const __m128i zero = _mm_setzero_si128();
-        while (n >= 8) {
-            const __m128i wideBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(wide));
-            const __m128i byteBlock = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(bytes));
-            const __m128i expanded = _mm_unpacklo_epi8(byteBlock, zero);
-            const uint32_t equalMask = static_cast<uint32_t>(
-                _mm_movemask_epi8(_mm_cmpeq_epi16(wideBlock, expanded)));
-            if (equalMask != 0xffff) {
-                const uint32_t lane = mozilla::CountTrailingZeroes32((~equalMask) & 0xffff) / 2;
-                return int32_t(wide[lane]) - int32_t(bytes[lane]);
-            }
-            wide += 8;
-            bytes += 8;
-            n -= 8;
-        }
-        s1 = reinterpret_cast<const Char1*>(wide);
-        s2 = reinterpret_cast<const Char2*>(bytes);
-    }
-#endif
-
     for (size_t i = 0; i < n; i++) {
         if (int32_t cmp = s1[i] - s2[i])
             return cmp;
@@ -345,67 +252,6 @@ template <typename Char1>
 inline bool
 EqualChars(const Char1* s1, const Char1* s2, size_t len)
 {
-    if (s1 == s2)
-        return true;
-
-#if defined(JS_HAVE_SSE2_INTRINSICS)
-    if (sizeof(Char1) == 1) {
-        const uint8_t* left = reinterpret_cast<const uint8_t*>(s1);
-        const uint8_t* right = reinterpret_cast<const uint8_t*>(s2);
-        while (len >= 64) {
-            for (unsigned block = 0; block < 4; block++) {
-                const __m128i leftBlock = _mm_loadu_si128(
-                    reinterpret_cast<const __m128i*>(left + block * 16));
-                const __m128i rightBlock = _mm_loadu_si128(
-                    reinterpret_cast<const __m128i*>(right + block * 16));
-                if (_mm_movemask_epi8(_mm_cmpeq_epi8(leftBlock, rightBlock)) != 0xffff)
-                    return false;
-            }
-            left += 64;
-            right += 64;
-            len -= 64;
-        }
-        while (len >= 16) {
-            const __m128i leftBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(left));
-            const __m128i rightBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(right));
-            if (_mm_movemask_epi8(_mm_cmpeq_epi8(leftBlock, rightBlock)) != 0xffff)
-                return false;
-            left += 16;
-            right += 16;
-            len -= 16;
-        }
-        s1 = reinterpret_cast<const Char1*>(left);
-        s2 = reinterpret_cast<const Char1*>(right);
-    } else if (sizeof(Char1) == 2) {
-        const char16_t* left = reinterpret_cast<const char16_t*>(s1);
-        const char16_t* right = reinterpret_cast<const char16_t*>(s2);
-        while (len >= 32) {
-            for (unsigned block = 0; block < 4; block++) {
-                const __m128i leftBlock = _mm_loadu_si128(
-                    reinterpret_cast<const __m128i*>(left + block * 8));
-                const __m128i rightBlock = _mm_loadu_si128(
-                    reinterpret_cast<const __m128i*>(right + block * 8));
-                if (_mm_movemask_epi8(_mm_cmpeq_epi16(leftBlock, rightBlock)) != 0xffff)
-                    return false;
-            }
-            left += 32;
-            right += 32;
-            len -= 32;
-        }
-        while (len >= 8) {
-            const __m128i leftBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(left));
-            const __m128i rightBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(right));
-            if (_mm_movemask_epi8(_mm_cmpeq_epi16(leftBlock, rightBlock)) != 0xffff)
-                return false;
-            left += 8;
-            right += 8;
-            len -= 8;
-        }
-        s1 = reinterpret_cast<const Char1*>(left);
-        s2 = reinterpret_cast<const Char1*>(right);
-    }
-#endif
-
     return mozilla::PodEqual(s1, s2, len);
 }
 
@@ -413,45 +259,6 @@ template <typename Char1, typename Char2>
 inline bool
 EqualChars(const Char1* s1, const Char2* s2, size_t len)
 {
-#if defined(JS_HAVE_SSE2_INTRINSICS)
-    // Compare eight mixed-width characters at a time.  Widening the Latin-1
-    // bytes before comparing also makes values above 0xff fail naturally,
-    // preserving the scalar implementation's semantics.
-    if (sizeof(Char1) == 1 && sizeof(Char2) == 2) {
-        const uint8_t* bytes = reinterpret_cast<const uint8_t*>(s1);
-        const char16_t* wide = reinterpret_cast<const char16_t*>(s2);
-        const __m128i zero = _mm_setzero_si128();
-        while (len >= 8) {
-            const __m128i byteBlock = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(bytes));
-            const __m128i wideBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(wide));
-            const __m128i expanded = _mm_unpacklo_epi8(byteBlock, zero);
-            if (_mm_movemask_epi8(_mm_cmpeq_epi16(expanded, wideBlock)) != 0xffff)
-                return false;
-            bytes += 8;
-            wide += 8;
-            len -= 8;
-        }
-        s1 = reinterpret_cast<const Char1*>(bytes);
-        s2 = reinterpret_cast<const Char2*>(wide);
-    } else if (sizeof(Char1) == 2 && sizeof(Char2) == 1) {
-        const char16_t* wide = reinterpret_cast<const char16_t*>(s1);
-        const uint8_t* bytes = reinterpret_cast<const uint8_t*>(s2);
-        const __m128i zero = _mm_setzero_si128();
-        while (len >= 8) {
-            const __m128i wideBlock = _mm_loadu_si128(reinterpret_cast<const __m128i*>(wide));
-            const __m128i byteBlock = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(bytes));
-            const __m128i expanded = _mm_unpacklo_epi8(byteBlock, zero);
-            if (_mm_movemask_epi8(_mm_cmpeq_epi16(wideBlock, expanded)) != 0xffff)
-                return false;
-            wide += 8;
-            bytes += 8;
-            len -= 8;
-        }
-        s1 = reinterpret_cast<const Char1*>(wide);
-        s2 = reinterpret_cast<const Char2*>(bytes);
-    }
-#endif
-
     for (const Char1* s1end = s1 + len; s1 < s1end; s1++, s2++) {
         if (*s1 != *s2)
             return false;
@@ -483,67 +290,15 @@ InflateString(ExclusiveContext* cx, const char* bytes, size_t* length);
 inline void
 CopyAndInflateChars(char16_t* dst, const char* src, size_t srclen)
 {
-#if defined(JS_HAVE_SSE2_INTRINSICS)
-    size_t i = 0;
-    const __m128i zero = _mm_setzero_si128();
-    for (; i + 32 <= srclen; i += 32) {
-        const __m128i bytes0 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
-        const __m128i bytes1 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 8));
-        const __m128i bytes2 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 16));
-        const __m128i bytes3 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 24));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i),
-                         _mm_unpacklo_epi8(bytes0, zero));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 8),
-                         _mm_unpacklo_epi8(bytes1, zero));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 16),
-                         _mm_unpacklo_epi8(bytes2, zero));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 24),
-                         _mm_unpacklo_epi8(bytes3, zero));
-    }
-    for (; i + 8 <= srclen; i += 8) {
-        const __m128i bytes8 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i),
-                         _mm_unpacklo_epi8(bytes8, zero));
-    }
-    for (; i < srclen; i++)
-        dst[i] = (unsigned char) src[i];
-#else
     for (size_t i = 0; i < srclen; i++)
         dst[i] = (unsigned char) src[i];
-#endif
 }
 
 inline void
 CopyAndInflateChars(char16_t* dst, const JS::Latin1Char* src, size_t srclen)
 {
-#if defined(JS_HAVE_SSE2_INTRINSICS)
-    size_t i = 0;
-    const __m128i zero = _mm_setzero_si128();
-    for (; i + 32 <= srclen; i += 32) {
-        const __m128i bytes0 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
-        const __m128i bytes1 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 8));
-        const __m128i bytes2 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 16));
-        const __m128i bytes3 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i + 24));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i),
-                         _mm_unpacklo_epi8(bytes0, zero));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 8),
-                         _mm_unpacklo_epi8(bytes1, zero));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 16),
-                         _mm_unpacklo_epi8(bytes2, zero));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 24),
-                         _mm_unpacklo_epi8(bytes3, zero));
-    }
-    for (; i + 8 <= srclen; i += 8) {
-        const __m128i bytes8 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(src + i));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i),
-                         _mm_unpacklo_epi8(bytes8, zero));
-    }
-    for (; i < srclen; i++)
-        dst[i] = src[i];
-#else
     for (size_t i = 0; i < srclen; i++)
         dst[i] = src[i];
-#endif
 }
 
 /*

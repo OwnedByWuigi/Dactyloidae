@@ -9,12 +9,10 @@
 #include "mozilla/Sprintf.h"
 
 #include <algorithm>
-#include <string.h>
 #include <type_traits>
 
 #include "jscntxt.h"
 #include "jsprf.h"
-#include "vm/CharacterOperations.h"
 
 using namespace js;
 
@@ -27,40 +25,8 @@ JS::LossyTwoByteCharsToNewLatin1CharsZ(js::ExclusiveContext* cx,
     unsigned char* latin1 = cx->pod_malloc<unsigned char>(len + 1);
     if (!latin1)
         return Latin1CharsZ();
-#if defined(JS_HAS_SSE2_CHARACTER_OPERATIONS)
-    size_t i = 0;
-    const __m128i lowByteMask = _mm_set1_epi16(0xff);
-    const __m128i zero = _mm_setzero_si128();
-    for (; i + 32 <= len; i += 32) {
-        const __m128i wide0 = _mm_loadu_si128(
-            reinterpret_cast<const __m128i*>(tbchars.begin().get() + i));
-        const __m128i wide1 = _mm_loadu_si128(
-            reinterpret_cast<const __m128i*>(tbchars.begin().get() + i + 8));
-        const __m128i wide2 = _mm_loadu_si128(
-            reinterpret_cast<const __m128i*>(tbchars.begin().get() + i + 16));
-        const __m128i wide3 = _mm_loadu_si128(
-            reinterpret_cast<const __m128i*>(tbchars.begin().get() + i + 24));
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(latin1 + i),
-                         _mm_packus_epi16(_mm_and_si128(wide0, lowByteMask), zero));
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(latin1 + i + 8),
-                         _mm_packus_epi16(_mm_and_si128(wide1, lowByteMask), zero));
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(latin1 + i + 16),
-                         _mm_packus_epi16(_mm_and_si128(wide2, lowByteMask), zero));
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(latin1 + i + 24),
-                         _mm_packus_epi16(_mm_and_si128(wide3, lowByteMask), zero));
-    }
-    for (; i + 8 <= len; i += 8) {
-        const __m128i wide = _mm_loadu_si128(reinterpret_cast<const __m128i*>(tbchars.begin().get() + i));
-        const __m128i lowBytes = _mm_and_si128(wide, lowByteMask);
-        const __m128i packed = _mm_packus_epi16(lowBytes, zero);
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(latin1 + i), packed);
-    }
-    for (; i < len; ++i)
-        latin1[i] = static_cast<unsigned char>(tbchars[i]);
-#else
     for (size_t i = 0; i < len; ++i)
         latin1[i] = static_cast<unsigned char>(tbchars[i]);
-#endif
     latin1[len] = '\0';
     return Latin1CharsZ(latin1, len);
 }
@@ -457,43 +423,8 @@ InflateUTF8StringHelper(ContextT* cx, const UTF8Chars src, size_t* outlen)
     if (encoding == JS::SmallestEncoding::ASCII) {
         size_t srclen = src.length();
         MOZ_ASSERT(*outlen == srclen);
-        if (sizeof(CharT) == 1) {
-            memcpy(dst, src.begin().get(), srclen);
-        } else {
-#if defined(JS_HAS_SSE2_CHARACTER_OPERATIONS)
-            size_t i = 0;
-            const __m128i zero = _mm_setzero_si128();
-            for (; i + 32 <= srclen; i += 32) {
-                const __m128i bytes0 = _mm_loadl_epi64(
-                    reinterpret_cast<const __m128i*>(src.begin().get() + i));
-                const __m128i bytes1 = _mm_loadl_epi64(
-                    reinterpret_cast<const __m128i*>(src.begin().get() + i + 8));
-                const __m128i bytes2 = _mm_loadl_epi64(
-                    reinterpret_cast<const __m128i*>(src.begin().get() + i + 16));
-                const __m128i bytes3 = _mm_loadl_epi64(
-                    reinterpret_cast<const __m128i*>(src.begin().get() + i + 24));
-                _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i),
-                                 _mm_unpacklo_epi8(bytes0, zero));
-                _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 8),
-                                 _mm_unpacklo_epi8(bytes1, zero));
-                _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 16),
-                                 _mm_unpacklo_epi8(bytes2, zero));
-                _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i + 24),
-                                 _mm_unpacklo_epi8(bytes3, zero));
-            }
-            for (; i + 8 <= srclen; i += 8) {
-                const __m128i bytes8 = _mm_loadl_epi64(
-                    reinterpret_cast<const __m128i*>(src.begin().get() + i));
-                _mm_storeu_si128(reinterpret_cast<__m128i*>(dst + i),
-                                 _mm_unpacklo_epi8(bytes8, zero));
-            }
-            for (; i < srclen; i++)
-                dst[i] = CharT(src[i]);
-#else
-            for (size_t i = 0; i < srclen; i++)
-                dst[i] = CharT(src[i]);
-#endif
-        }
+        for (uint32_t i = 0; i < srclen; i++)
+            dst[i] = CharT(src[i]);
     } else {
         MOZ_ALWAYS_TRUE((InflateUTF8StringToBuffer<Copy, CharT>(cx, src, dst, outlen, &encoding)));
     }

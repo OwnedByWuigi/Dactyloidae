@@ -12,8 +12,6 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
 
-#include <string.h>
-
 #include "jsapi.h" // For JSAutoByteString.  See bug 1033916.
 #include "jsbytecode.h"
 #include "jspubtd.h"
@@ -22,12 +20,6 @@
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
 #include "js/Utility.h"
-
-#if defined(__SSE2__) || defined(_M_X64) || \
-    (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
-# define JS_FRIENDAPI_USE_SSE2_CHARACTER_OPERATIONS
-# include <emmintrin.h>
-#endif
 
 #if JS_STACK_GROWTH_DIRECTION > 0
 # define JS_CHECK_STACK_SIZE(limit, sp) (MOZ_LIKELY((uintptr_t)(sp) < (limit)))
@@ -885,21 +877,8 @@ CopyLinearStringChars(char16_t* dest, JSLinearString* s, size_t len, size_t star
     JS::AutoCheckCannotGC nogc;
     if (LinearStringHasLatin1Chars(s)) {
         const JS::Latin1Char* src = GetLatin1LinearStringChars(nogc, s);
-#if defined(JS_FRIENDAPI_USE_SSE2_CHARACTER_OPERATIONS)
-        size_t i = 0;
-        const __m128i zero = _mm_setzero_si128();
-        for (; i + 8 <= len; i += 8) {
-            const __m128i bytes8 = _mm_loadl_epi64(
-                reinterpret_cast<const __m128i*>(src + start + i));
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(dest + i),
-                             _mm_unpacklo_epi8(bytes8, zero));
-        }
-        for (; i < len; i++)
-            dest[i] = src[start + i];
-#else
         for (size_t i = 0; i < len; i++)
             dest[i] = src[start + i];
-#endif
     } else {
         const char16_t* src = GetTwoByteLinearStringChars(nogc, s);
         mozilla::PodCopy(dest, src + start, len);
@@ -913,26 +892,12 @@ CopyLinearStringChars(char* dest, JSLinearString* s, size_t len, size_t start = 
     JS::AutoCheckCannotGC nogc;
     if (LinearStringHasLatin1Chars(s)) {
         const JS::Latin1Char* src = GetLatin1LinearStringChars(nogc, s);
-        memcpy(dest, src + start, len);
+        for (size_t i = 0; i < len; i++)
+           dest[i] = char(src[start + i]);
     } else {
       const char16_t* src = GetTwoByteLinearStringChars(nogc, s);
-#if defined(JS_FRIENDAPI_USE_SSE2_CHARACTER_OPERATIONS)
-      size_t i = 0;
-      const __m128i lowByteMask = _mm_set1_epi16(0xff);
-      const __m128i zero = _mm_setzero_si128();
-      for (; i + 8 <= len; i += 8) {
-          const __m128i wide = _mm_loadu_si128(
-              reinterpret_cast<const __m128i*>(src + start + i));
-          const __m128i lowBytes = _mm_and_si128(wide, lowByteMask);
-          _mm_storel_epi64(reinterpret_cast<__m128i*>(dest + i),
-                           _mm_packus_epi16(lowBytes, zero));
-      }
-      for (; i < len; i++)
-          dest[i] = char(src[start + i]);
-#else
       for (size_t i = 0; i < len; i++)
           dest[i] = char(src[start + i]);
-#endif
     }
 }
 
@@ -3073,9 +3038,5 @@ class MemProfiler
             profiler->moveNurseryToTenured(addrOld, addrNew);
     }
 };
-
-#ifdef JS_FRIENDAPI_USE_SSE2_CHARACTER_OPERATIONS
-# undef JS_FRIENDAPI_USE_SSE2_CHARACTER_OPERATIONS
-#endif
 
 #endif /* jsfriendapi_h */

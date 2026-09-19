@@ -13,7 +13,6 @@
 #include "jscompartment.h"
 #include "jsgc.h"
 #include "jsprf.h"
-#include "jsutil.h"
 
 #include "gc/Marking.h"
 #include "jit/AliasAnalysis.h"
@@ -1043,33 +1042,33 @@ void
 IonScript::copySnapshots(const SnapshotWriter* writer)
 {
     MOZ_ASSERT(writer->listSize() == snapshotsListSize_);
-    js_memcpy((uint8_t*)this + snapshots_,
-              writer->listBuffer(), snapshotsListSize_);
+    memcpy((uint8_t*)this + snapshots_,
+           writer->listBuffer(), snapshotsListSize_);
 
     MOZ_ASSERT(snapshotsRVATableSize_);
     MOZ_ASSERT(writer->RVATableSize() == snapshotsRVATableSize_);
-    js_memcpy((uint8_t*)this + snapshots_ + snapshotsListSize_,
-              writer->RVATableBuffer(), snapshotsRVATableSize_);
+    memcpy((uint8_t*)this + snapshots_ + snapshotsListSize_,
+           writer->RVATableBuffer(), snapshotsRVATableSize_);
 }
 
 void
 IonScript::copyRecovers(const RecoverWriter* writer)
 {
     MOZ_ASSERT(writer->size() == recoversSize_);
-    js_memcpy((uint8_t*)this + recovers_, writer->buffer(), recoversSize_);
+    memcpy((uint8_t*)this + recovers_, writer->buffer(), recoversSize_);
 }
 
 void
 IonScript::copySafepoints(const SafepointWriter* writer)
 {
     MOZ_ASSERT(writer->size() == safepointsSize_);
-    js_memcpy((uint8_t*)this + safepointsStart_, writer->buffer(), safepointsSize_);
+    memcpy((uint8_t*)this + safepointsStart_, writer->buffer(), safepointsSize_);
 }
 
 void
 IonScript::copyBailoutTable(const SnapshotOffset* table)
 {
-    js_memcpy(bailoutTable(), table, bailoutEntries_ * sizeof(uint32_t));
+    memcpy(bailoutTable(), table, bailoutEntries_ * sizeof(uint32_t));
 }
 
 void
@@ -1115,25 +1114,25 @@ IonScript::copySafepointIndices(const SafepointIndex* si, MacroAssembler& masm)
     // code, not the absolute positions of the jumps. Update according to the
     // final code address now.
     SafepointIndex* table = safepointIndices();
-    js_memcpy(table, si, safepointIndexEntries_ * sizeof(SafepointIndex));
+    memcpy(table, si, safepointIndexEntries_ * sizeof(SafepointIndex));
 }
 
 void
 IonScript::copyOsiIndices(const OsiIndex* oi, MacroAssembler& masm)
 {
-    js_memcpy(osiIndices(), oi, osiIndexEntries_ * sizeof(OsiIndex));
+    memcpy(osiIndices(), oi, osiIndexEntries_ * sizeof(OsiIndex));
 }
 
 void
 IonScript::copyRuntimeData(const uint8_t* data)
 {
-    js_memcpy(runtimeData(), data, runtimeSize());
+    memcpy(runtimeData(), data, runtimeSize());
 }
 
 void
 IonScript::copyCacheEntries(const uint32_t* caches, MacroAssembler& masm)
 {
-    js_memcpy(cacheIndex(), caches, numCaches() * sizeof(uint32_t));
+    memcpy(cacheIndex(), caches, numCaches() * sizeof(uint32_t));
 
     // Jumps in the caches reflect the offset of those jumps in the compiled
     // code, not the absolute positions of the jumps. Update according to the

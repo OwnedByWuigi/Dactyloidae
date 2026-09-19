@@ -20,17 +20,7 @@ HashBytes(const void* aBytes, size_t aLength)
 
   /* Walk word by word. */
   size_t i = 0;
-  const size_t wordLength = aLength - (aLength % sizeof(size_t));
-  const size_t doubleWordLength = wordLength - (wordLength % (2 * sizeof(size_t)));
-  for (; i < doubleWordLength; i += 2 * sizeof(size_t)) {
-    size_t data0;
-    size_t data1;
-    memcpy(&data0, b + i, sizeof(data0));
-    memcpy(&data1, b + i + sizeof(data0), sizeof(data1));
-    hash = AddToHash(hash, data0, sizeof(data0));
-    hash = AddToHash(hash, data1, sizeof(data1));
-  }
-  for (; i < wordLength; i += sizeof(size_t)) {
+  for (; i < aLength - (aLength % sizeof(size_t)); i += sizeof(size_t)) {
     /* Do an explicitly unaligned load of the data. */
     size_t data;
     memcpy(&data, b + i, sizeof(size_t));

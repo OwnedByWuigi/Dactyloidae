@@ -113,21 +113,6 @@ js_memmove(void* dst_, const void* src_, size_t len)
 
         d += len;
         s += len;
-        while (len >= 64) {
-            d -= 64;
-            s -= 64;
-            // Load the complete chunk before storing it: the ranges may
-            // overlap, so an early store must not destroy a later load.
-            __m128i v0 = _mm_loadu_si128((const __m128i*)(s + 0));
-            __m128i v1 = _mm_loadu_si128((const __m128i*)(s + 16));
-            __m128i v2 = _mm_loadu_si128((const __m128i*)(s + 32));
-            __m128i v3 = _mm_loadu_si128((const __m128i*)(s + 48));
-            _mm_storeu_si128((__m128i*)(d + 0), v0);
-            _mm_storeu_si128((__m128i*)(d + 16), v1);
-            _mm_storeu_si128((__m128i*)(d + 32), v2);
-            _mm_storeu_si128((__m128i*)(d + 48), v3);
-            len -= 64;
-        }
         while (len >= 16) {
             d -= 16;
             s -= 16;

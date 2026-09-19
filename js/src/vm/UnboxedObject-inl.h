@@ -583,9 +583,9 @@ MoveBoxedOrUnboxedDenseElements(JSContext* cx, JSObject* obj, uint32_t dstStart,
                 obj->as<UnboxedArrayObject>().triggerPreBarrier<Type>(dstStart + i);
         }
 
-        js_memmove(data + dstStart * elementSize,
-                   data + srcStart * elementSize,
-                   length * elementSize);
+        memmove(data + dstStart * elementSize,
+                data + srcStart * elementSize,
+                length * elementSize);
     }
 
     return DenseElementResult::Success;
@@ -619,9 +619,9 @@ CopyBoxedOrUnboxedDenseElements(JSContext* cx, JSObject* dst, JSObject* src,
         uint8_t* srcData = src->as<UnboxedArrayObject>().elements();
         size_t elementSize = UnboxedTypeSize(DstType);
 
-        js_memcpy(dstData + dstStart * elementSize,
-                  srcData + srcStart * elementSize,
-                  length * elementSize);
+        memcpy(dstData + dstStart * elementSize,
+               srcData + srcStart * elementSize,
+               length * elementSize);
 
         // Add a store buffer entry if we might have copied a nursery pointer to dst.
         if (UnboxedTypeNeedsPostBarrier(DstType) && !IsInsideNursery(dst))

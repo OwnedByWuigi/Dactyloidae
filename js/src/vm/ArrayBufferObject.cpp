@@ -656,7 +656,7 @@ ResizeArrayBuffer(JSContext* cx, Handle<ArrayBufferObject*> buffer, uint32_t new
 
     uint32_t copyLength = std::min(newByteLength, buffer->byteLength());
     if (copyLength > 0)
-        js_memcpy(newContents.data(), buffer->dataPointer(), copyLength);
+        memcpy(newContents.data(), buffer->dataPointer(), copyLength);
 
     buffer->changeContentsForResize(cx, newContents, ArrayBufferObject::OwnsData, newByteLength);
     return true;
@@ -729,7 +729,7 @@ ArrayBufferTransfer(JSContext* cx, const CallArgs& args, bool preserveResizabili
 
     uint32_t copyLength = std::min(newByteLength, buffer->byteLength());
     if (copyLength > 0)
-        js_memcpy(newBuffer->dataPointer(), buffer->dataPointer(), copyLength);
+        memcpy(newBuffer->dataPointer(), buffer->dataPointer(), copyLength);
 
     ArrayBufferObject::BufferContents detachedContents =
         buffer->hasStealableContents() ? ArrayBufferObject::BufferContents::createPlain(nullptr)
@@ -1428,7 +1428,7 @@ ArrayBufferObject::create(JSContext* cx, uint32_t nbytes, BufferContents content
 
     if (!contents) {
         void* data = obj->inlineDataPointer();
-        js_memset(data, 0, nbytes);
+        memset(data, 0, nbytes);
         obj->initialize(nbytes, BufferContents::createPlain(data), DoesntOwnData,
                         maxByteLength, resizable);
     } else {

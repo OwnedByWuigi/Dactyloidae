@@ -68,6 +68,7 @@ using mozilla::IsNegativeZero;
 using mozilla::IsSame;
 using mozilla::Move;
 using mozilla::PodCopy;
+using mozilla::PodEqual;
 using mozilla::RangedPtr;
 
 using JS::AutoCheckCannotGC;
@@ -1084,18 +1085,6 @@ ToUpperCaseLength(const CharT* chars, size_t startIndex, size_t length)
     return upperLength;
 }
 
-static inline void
-CopyChars(char16_t* destChars, const char* srcChars, size_t length)
-{
-    CopyAndInflateChars(destChars, srcChars, length);
-}
-
-static inline void
-CopyChars(char16_t* destChars, const Latin1Char* srcChars, size_t length)
-{
-    CopyAndInflateChars(destChars, srcChars, length);
-}
-
 template <typename DestChar, typename SrcChar>
 static inline void
 CopyChars(DestChar* destChars, const SrcChar* srcChars, size_t length)
@@ -1717,16 +1706,6 @@ template <class InnerMatch, typename TextChar, typename PatChar>
 static int
 Matcher(const TextChar* text, uint32_t textlen, const PatChar* pat, uint32_t patlen)
 {
-    // A Latin-1 string can never contain a UTF-16 code unit above 0xff.  Do
-    // this check once instead of repeatedly testing every candidate position
-    // in the mixed-encoding matcher.  This is particularly useful for search
-    // strings containing supplementary-plane or otherwise non-Latin-1 text.
-    if (sizeof(TextChar) == 1 && sizeof(PatChar) == 2 &&
-        !CharactersFitInLatin1(reinterpret_cast<const char16_t*>(pat), patlen))
-    {
-        return -1;
-    }
-
     const typename InnerMatch::Extent extent = InnerMatch::computeExtent(pat, patlen);
 
     uint32_t i = 0;
@@ -1738,16 +1717,6 @@ Matcher(const TextChar* text, uint32_t textlen, const PatChar* pat, uint32_t pat
             pos = (TextChar*) FirstCharMatcher16bit((char16_t*)text + i, n - i, pat[0]);
         else if (sizeof(TextChar) == 1 && sizeof(PatChar) == 1)
             pos = (TextChar*) FirstCharMatcher8bit((char*) text + i, n - i, pat[0]);
-        else if (sizeof(TextChar) == 1 && sizeof(PatChar) == 2)
-            // The complete pattern was checked above, so this narrowing is
-            // lossless and keeps the other mixed-width direction on SIMD.
-            pos = FindCharacter(text + i, n - i, TextChar(pat[0]));
-        else if (sizeof(TextChar) == 2 && sizeof(PatChar) == 1)
-            // FindCharacter is encoding-independent for the text and keeps
-            // mixed Latin-1/UTF-16 searches on the SSE2 fast path.
-            pos = reinterpret_cast<const TextChar*>(
-                FindCharacter(reinterpret_cast<const char16_t*>(text) + i,
-                              n - i, char16_t(pat[0])));
         else
             pos = (TextChar*) FirstCharMatcherUnrolled<TextChar, PatChar>(text + i, n - i, pat[0]);
 
@@ -1773,9 +1742,9 @@ StringMatch(const TextChar* text, uint32_t textLen, const PatChar* pat, uint32_t
     if (textLen < patLen)
         return -1;
 
-#ifdef JS_HAS_SSE2_CHARACTER_OPERATIONS
-    // Avoid the generic substring matcher for a single character when the
-    // bounded SSE2 search helper is available, including mixed encodings.
+#if defined(__i386__) || defined(_M_IX86) || defined(__i386)
+    // Avoid the generic substring matcher for a single character on x86.
+    // FindCharacter uses SSE2 where available, including mixed encodings.
     if (patLen == 1) {
         // A two-byte needle cannot match Latin1 text if it exceeds 0xff.
         if (sizeof(TextChar) == 1 && uint32_t(*pat) > 0xff)
@@ -2193,35 +2162,17 @@ LastIndexOfImpl(const TextChar* text, size_t textLen, const PatChar* pat, size_t
     const PatChar* patNext = pat + 1;
     const PatChar* patEnd = pat + patLen;
 
-    // Search candidate first characters backwards in SIMD-sized blocks.  The
-    // bounded helper keeps the scan safe at allocation and page boundaries,
-    // while the scalar comparison below still verifies the rest of the
-    // pattern exactly.
-    size_t searchLength = start + 1;
-    while (searchLength) {
-        const TextChar* t;
-        if (sizeof(TextChar) == 1 && sizeof(PatChar) == 2) {
-            if (uint32_t(p0) > 0xff)
-                return -1;
-            t = FindCharacterReverse(text, searchLength, TextChar(p0));
-        } else {
-            t = FindCharacterReverse(text, searchLength, TextChar(p0));
-        }
-        if (!t)
-            return -1;
-
-        const TextChar* t1 = t + 1;
-        bool match = true;
-        for (const PatChar* p1 = patNext; p1 < patEnd; ++p1, ++t1) {
-            if (*t1 != *p1) {
-                match = false;
-                break;
+    for (const TextChar* t = text + start; t >= text; --t) {
+        if (*t == p0) {
+            const TextChar* t1 = t + 1;
+            for (const PatChar* p1 = patNext; p1 < patEnd; ++p1, ++t1) {
+                if (*t1 != *p1)
+                    goto break_continue;
             }
-        }
 
-        if (match)
             return static_cast<int32_t>(t - text);
-        searchLength = static_cast<size_t>(t - text);
+        }
+      break_continue:;
     }
 
     return -1;
@@ -2320,14 +2271,14 @@ js::HasSubstringAt(JSLinearString* text, JSLinearString* pat, size_t start)
     if (text->hasLatin1Chars()) {
         const Latin1Char* textChars = text->latin1Chars(nogc) + start;
         if (pat->hasLatin1Chars())
-            return EqualChars(textChars, pat->latin1Chars(nogc), patLen);
+            return PodEqual(textChars, pat->latin1Chars(nogc), patLen);
 
         return EqualChars(textChars, pat->twoByteChars(nogc), patLen);
     }
 
     const char16_t* textChars = text->twoByteChars(nogc) + start;
     if (pat->hasTwoByteChars())
-        return EqualChars(textChars, pat->twoByteChars(nogc), patLen);
+        return PodEqual(textChars, pat->twoByteChars(nogc), patLen);
 
     return EqualChars(pat->latin1Chars(nogc), textChars, patLen);
 }
@@ -4037,13 +3988,13 @@ js::EqualChars(JSLinearString* str1, JSLinearString* str2)
     AutoCheckCannotGC nogc;
     if (str1->hasTwoByteChars()) {
         if (str2->hasTwoByteChars())
-            return EqualChars(str1->twoByteChars(nogc), str2->twoByteChars(nogc), len);
+            return PodEqual(str1->twoByteChars(nogc), str2->twoByteChars(nogc), len);
 
         return EqualChars(str2->latin1Chars(nogc), str1->twoByteChars(nogc), len);
     }
 
     if (str2->hasLatin1Chars())
-        return EqualChars(str1->latin1Chars(nogc), str2->latin1Chars(nogc), len);
+        return PodEqual(str1->latin1Chars(nogc), str2->latin1Chars(nogc), len);
 
     return EqualChars(str1->latin1Chars(nogc), str2->twoByteChars(nogc), len);
 }
@@ -4159,7 +4110,7 @@ js::StringEqualsAscii(JSLinearString* str, const char* asciiBytes)
 
     AutoCheckCannotGC nogc;
     return str->hasLatin1Chars()
-           ? EqualChars(latin1, str->latin1Chars(nogc), length)
+           ? PodEqual(latin1, str->latin1Chars(nogc), length)
            : EqualChars(latin1, str->twoByteChars(nogc), length);
 }
 
@@ -4256,15 +4207,12 @@ template <typename CharT>
 const CharT*
 js_strchr_limit(const CharT* s, char16_t c, const CharT* limit)
 {
-    MOZ_ASSERT(limit >= s);
-
-    // A Latin-1 buffer cannot contain a UTF-16 code unit above 0xff.  Apart
-    // from avoiding a scan, this guard is required before narrowing |c| for
-    // the SIMD helper.
-    if (sizeof(CharT) == 1 && c > 0xff)
-        return nullptr;
-
-    return FindCharacter(s, size_t(limit - s), CharT(c));
+    while (s < limit) {
+        if (*s == c)
+            return s;
+        s++;
+    }
+    return nullptr;
 }
 
 template const Latin1Char*
@@ -4284,20 +4232,8 @@ js::InflateString(ExclusiveContext* cx, const char* bytes, size_t* lengthp)
     chars = cx->pod_malloc<char16_t>(nchars + 1);
     if (!chars)
         goto bad;
-#if defined(JS_HAVE_SSE2_INTRINSICS)
-    size_t i = 0;
-    const __m128i zero = _mm_setzero_si128();
-    for (; i + 8 <= nchars; i += 8) {
-        const __m128i bytes8 = _mm_loadl_epi64(reinterpret_cast<const __m128i*>(bytes + i));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(chars + i),
-                         _mm_unpacklo_epi8(bytes8, zero));
-    }
-    for (; i < nchars; i++)
-        chars[i] = (unsigned char) bytes[i];
-#else
     for (size_t i = 0; i < nchars; i++)
         chars[i] = (unsigned char) bytes[i];
-#endif
     *lengthp = nchars;
     chars[nchars] = 0;
     return chars;
@@ -4310,56 +4246,14 @@ js::InflateString(ExclusiveContext* cx, const char* bytes, size_t* lengthp)
 }
 
 template <typename CharT>
-static inline void
-DeflateChars(char* dst, const CharT* src, size_t length)
-{
-    static_assert(sizeof(CharT) == 1 || sizeof(CharT) == 2, "character width");
-
-    if (sizeof(CharT) == 1) {
-        memcpy(dst, src, length);
-        return;
-    }
-
-#if defined(JS_HAVE_SSE2_INTRINSICS)
-    size_t i = 0;
-    const __m128i lowByteMask = _mm_set1_epi16(0xff);
-    const __m128i zero = _mm_setzero_si128();
-    for (; i + 32 <= length; i += 32) {
-        const __m128i wide0 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
-        const __m128i wide1 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i + 8));
-        const __m128i wide2 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i + 16));
-        const __m128i wide3 = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i + 24));
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + i),
-                         _mm_packus_epi16(_mm_and_si128(wide0, lowByteMask), zero));
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + i + 8),
-                         _mm_packus_epi16(_mm_and_si128(wide1, lowByteMask), zero));
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + i + 16),
-                         _mm_packus_epi16(_mm_and_si128(wide2, lowByteMask), zero));
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + i + 24),
-                         _mm_packus_epi16(_mm_and_si128(wide3, lowByteMask), zero));
-    }
-    for (; i + 8 <= length; i += 8) {
-        const __m128i wide = _mm_loadu_si128(reinterpret_cast<const __m128i*>(src + i));
-        const __m128i lowBytes = _mm_and_si128(wide, lowByteMask);
-        const __m128i packed = _mm_packus_epi16(lowBytes, zero);
-        _mm_storel_epi64(reinterpret_cast<__m128i*>(dst + i), packed);
-    }
-    for (; i < length; i++)
-        dst[i] = char(src[i]);
-#else
-    for (size_t i = 0; i < length; i++)
-        dst[i] = char(src[i]);
-#endif
-}
-
-template <typename CharT>
 bool
 js::DeflateStringToBuffer(JSContext* maybecx, const CharT* src, size_t srclen,
                           char* dst, size_t* dstlenp)
 {
     size_t dstlen = *dstlenp;
     if (srclen > dstlen) {
-        DeflateChars(dst, src, dstlen);
+        for (size_t i = 0; i < dstlen; i++)
+            dst[i] = char(src[i]);
         if (maybecx) {
             AutoSuppressGC suppress(maybecx);
             JS_ReportErrorNumberASCII(maybecx, GetErrorMessage, nullptr,
@@ -4367,7 +4261,8 @@ js::DeflateStringToBuffer(JSContext* maybecx, const CharT* src, size_t srclen,
         }
         return false;
     }
-    DeflateChars(dst, src, srclen);
+    for (size_t i = 0; i < srclen; i++)
+        dst[i] = char(src[i]);
     *dstlenp = srclen;
     return true;
 }

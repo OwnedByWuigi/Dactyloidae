@@ -1895,7 +1895,7 @@ UnboxedPlainObject::fillAfterConvert(ExclusiveContext* cx,
                                      Handle<GCVector<Value>> values, size_t* valueCursor)
 {
     initExpando();
-    js_memset(data(), 0, layout().size());
+    memset(data(), 0, layout().size());
     for (size_t i = 0; i < layout().properties().length(); i++)
         JS_ALWAYS_TRUE(setValue(cx, layout().properties()[i], NextValue(values, valueCursor)));
 }
