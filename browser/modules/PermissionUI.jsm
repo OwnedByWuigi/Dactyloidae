@@ -550,6 +550,35 @@ USBPermissionPrompt.prototype = {
     return "web-usb";
   },
 
+  // PopupNotifications in older UXP builds cannot reliably render a
+  // permission request that contains a variable list of USB devices. Use
+  // the native prompt service so the chooser is always visible and the
+  // selected device can be returned to the content request.
+  prompt() {
+    let choices = getUSBDeviceChoices(this.request);
+    if (!choices.length) {
+      this.cancel();
+      return;
+    }
+
+    let browser = this.browser;
+    let parent = browser && browser.ownerGlobal ? browser.ownerGlobal : null;
+    let selected = { value: 0 };
+    let accepted = Services.prompt.select(
+      parent,
+      getUSBString("webUSB.selectDeviceTitle", "Select USB device"),
+      getUSBString("webUSB.selectDevice", "Choose a USB device to access:"),
+      choices.length,
+      choices,
+      selected);
+
+    if (accepted && selected.value >= 0 && selected.value < choices.length) {
+      this.request.allow({usb: choices[selected.value]});
+    } else {
+      this.cancel();
+    }
+  },
+
   get anchorID() {
     return "default-notification-icon";
   },
