@@ -12,7 +12,8 @@ Some advantages over upstream, roytam1's Serpent, Eclipse Hydra and Firefox are:
 - More modern theme
 - Better e10s support
 - Support for extensions in the Chrome and Edge Web Store (soon)
-- Support for extensions released for both Pale Moon, Basilisk and Firefox
+- Support for extensions and themes released for both Pale Moon, Basilisk and Firefox
+- Support for the WebUSB API (the only Firefox-based browser to do so!)
 - WebExtensions support comparable to Firefox ESR 78
 - Literally being the fastest XUL browser (53.7 in Speedometer 2.1 compared to 22.4 in Pale Moon 34.2 AVX2)
 - Re-add support for iOS, Android, Windows 2000 and later, NetBSD (soon OpenBSD)
