@@ -5,6 +5,8 @@
 
 JAR_MANIFESTS += ['jar.mn']
 
+FINAL_TARGET = 'dist/bin/browser'
+
 FINAL_TARGET_FILES.components += [
     'components/about.js',
     'components/gopher.manifest',
