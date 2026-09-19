@@ -1,0 +1,150 @@
+/* You can modify this to your heart's content. This version tries to
+   harmonize with your computer's theme. */
+
+img.gicon {
+	border: 0px;
+}
+table.gmenu {
+	width: 100%;
+	border: 0px;
+}
+td.gicon {
+	text-align: right;
+	vertical-align: middle;
+	padding: 0px;
+	margin: 1px;
+}
+td.ds {
+	text-align: left;
+	vertical-align: middle;
+	width: 100%;
+	padding: 0px;
+	margin: 1px;
+}
+span.diritem {
+	font-family: lucida sans typewriter, lucida console, droid sans mono, liberation mono, monaco, andale mono, bitstream vera sans mono, monospace;
+	font-size: small;
+}
+span.fileitem {
+	font-family: lucida sans typewriter, lucida console, droid sans mono, liberation mono, monaco, andale mono, bitstream vera sans mono, monospace;
+	font-size: small;
+}
+span.infoitem {
+	font-family: lucida sans typewriter, lucida console, droid sans mono, liberation mono, monaco, andale mono, bitstream vera sans mono, monospace;
+	font-size: small;
+	opacity: 0.9;
+}
+span.searchitem {
+	font-family: lucida sans typewriter, lucida console, droid sans mono, liberation mono, monaco, andale mono, bitstream vera sans mono, monospace;
+	font-size: small;
+	font-weight: bold;
+}
+span.urlitem {
+	font-family: lucida sans typewriter, lucida console, droid sans mono, liberation mono, monaco, andale mono, bitstream vera sans mono, monospace;
+	font-size: small;
+	font-weight: bold;
+}
+span.telnetitem {
+	font-family: lucida sans typewriter, lucida console, droid sans mono, liberation mono, monaco, andale mono, bitstream vera sans mono, monospace;
+	font-size: small;
+	font-weight: bold;
+}
+span.erroritem {
+	font-family: lucida sans typewriter, lucida console, droid sans mono, liberation mono, monaco, andale mono, bitstream vera sans mono, monospace;
+	font-size: small;
+	font-weight: bold;
+}
+span.purl {
+	/* font-family: lucida sans, lucida grande, droid sans, droid sans mono, monospace; */
+	font: message-box;
+	font-weight: bold;
+	font-size: 1.5em;
+}
+div#topbar {
+	display: table-row;
+	padding: 0px;
+	margin: 0px;
+}
+div#urlparent {
+	display: table-cell;
+	width: 100%;
+	text-align: left;
+	padding: 0px;
+	margin: 0px;
+}
+div#urlarea {
+	padding: 8px;
+	margin-bottom: 0px;
+	border-style: none;
+	border-top-width: 1px;
+	border-left-width: 1px;
+	border-right-width: 1px;
+	border-bottom-width: 0px;
+	border-top-left-radius: 10px;
+	border-top-right-radius: 10px;
+	-moz-border-radius-topleft: 10px;
+	-moz-border-radius-topright: 10px;
+	display: table-cell;
+	vertical-align: text-bottom;
+}
+div#buttonarea {
+	padding: 8px;
+	margin-bottom: 0px;
+	border-color: ThreeDShadow;
+	border-style: solid;
+	border-top-width: 1px;
+	border-left-width: 1px;
+	border-right-width: 1px;
+	border-bottom-width: 0px;
+	display: table-cell;
+	border-top-left-radius: 10px;
+	border-top-right-radius: 10px;
+	-moz-border-radius-topleft: 10px;
+	-moz-border-radius-topright: 10px;
+}
+div#contentarea {
+	clear: both;
+	padding: 5px;
+	margin-top: 0px;
+	border-style: solid;
+	border-width: 1px;
+	border-color: ThreeDShadow;
+	-moz-border-radius-topleft: 10px;
+	-moz-border-radius-bottomleft: 10px;
+	-moz-border-radius-bottomright: 10px;
+	border-top-left-radius: 10px;
+	border-bottom-left-radius: 10px;
+	border-bottom-right-radius: 10px;
+}
+div#everything {
+	background-color: #ffffff;
+	-moz-border-radius: 10px;
+	border-radius: 10px;
+}
+body {
+	background-color: -moz-Dialog;
+}
+a.plus {
+	text-decoration: none;
+	font-family: monospace;
+	font-weight: bold;
+	font-size: 2.0em;
+	padding-right: 2px;
+	color: #000000;
+}
+span.inlineprompt {
+	font: message-box;
+}
+div.inlineprompt {
+	border: 1px solid #b0b0b0;
+	background-color: #d8d8c8;
+	-moz-border-radius-topleft: 7px;
+	-moz-border-radius-topright: 7px;
+	-moz-border-radius-bottomleft: 7px;
+	-moz-border-radius-bottomright: 7px;
+	border-top-left-radius: 7px;
+	border-top-right-radius: 7px;
+	border-bottom-left-radius: 7px;
+	border-bottom-right-radius: 7px;
+	padding: 10px;
+}

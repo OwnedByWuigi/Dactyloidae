@@ -10,6 +10,7 @@ SPHINX_TREES['browser'] = 'docs'
 DIRS += [
     'base',
     'components',
+    'gopher',
     'internaluserscripts',
     'locales',
     'modules',

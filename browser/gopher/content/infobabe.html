@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<!--
+
+This code is issued under a disjunctive tri-license giving you the choice of
+one of the three following sets of free software/open source licensing terms:
+
+    * Mozilla Public License, version 1.1
+    * GNU General Public License, version 2.0 
+    * GNU Lesser General Public License, version 2.1
+
+For users under the Mozilla Public License:
+
+The contents of this file are subject to the Mozilla Public License
+Version 1.1 (the "License"); you may not use this file except in
+compliance with the License. You may obtain a copy of the License at
+http://www.mozilla.org/MPL/
+
+Software distributed under the License is distributed on an "AS IS"
+basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the
+License for the specific language governing rights and limitations
+under the License.
+
+The Original Code is the OverbiteFF Gopher addon.
+
+The Initial Developer of the Original Code is Cameron Kaiser.
+Portions created by Cameron Kaiser are Copyright (C) 2008-2016
+Cameron Kaiser. All Rights Reserved. Copyright (C) 2008-2016 Contributors
+to the Overbite Project.
+
+For users under the GNU Public License:
+
+OverbiteFF Gopher/CSO Firefox addon
+Copyright (C) 2008-2016 Cameron Kaiser
+Copyright (C) 2008-2016 Contributors to the Overbite Project
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; version 2.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+[ or http://www.gnu.org/licenses/gpl-2.0.html ]
+
+For users under the GNU Lesser General Public License:
+
+OverbiteFF Gopher/CSO Firefox addon
+Copyright (C) 2008-2016 Cameron Kaiser
+Copyright (C) 2008-2016 Contributors to the Overbite Project
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Lesser General Public
+License as published by the Free Software Foundation; version 2.1.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public
+License along with this library; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+[ or http://www.gnu.org/licenses/lgpl-2.1.html ]
+
+
+-->
+<head>
+<script type="text/javascript">
+<!-- //
+
+try {
+	var bundle = Components.classes["@mozilla.org/intl/stringbundle;1"]
+		.getService(Components
+			.interfaces.nsIStringBundleService)
+		.createBundle("chrome://overbiteff/locale/aboutp.properties");
+} catch(ex) {
+	alert("This has to run as chrome code to load bundle references.");
+}
+
+function q(what) {
+	if (!bundle) {
+		alert("Bundle didn't get defined");
+		return null;
+	}
+	document.write(bundle.GetStringFromName(what));
+	return true;
+}
+function y() {
+	var d = new Date();
+	document.write(d.getFullYear());
+	return true;
+}
+
+var key = "extensions.overbiteff.buildmark";
+var buildmark = 0;
+
+// this hack is mostly for 1.8 but should be useful in 1.9
+var prefs = Components.classes["@mozilla.org/preferences-service;1"];
+var prefserv = prefs.getService(Components.interfaces.nsIPrefService);
+prefs = prefs.getService(Components.interfaces.nsIPrefBranch);
+if (prefs.getPrefType(key) == prefs.PREF_INT)
+	buildmark = prefs.getIntPref(key);
+if (!buildmark)
+	location.replace('gopher://');
+
+function b() {
+	document.write(buildmark);
+	return true;
+}
+
+var bluechan = 128;
+var rgchan = 65536 * 255 + 65280;
+var boxbox;
+function fadebox() {
+
+	/* HACK FOR ELECTROLYSIS WARNING */
+	if (window.location.hash && window.location.hash == "#e10s") {
+		boxbox = document.getElementById("installedbox");
+		boxbox.style.backgroundColor = "#ffc0c0";
+		document.getElementById("install1").innerHTML =
+			"WARNING: OverbiteFF is not yet compatible with Electrolysis.";
+		document.getElementById("install2").innerHTML =
+			"Please use a non-E10S window.";
+		return true;
+	}
+		
+	if (!boxbox) {
+		boxbox = document.getElementById("installedbox");
+		setTimeout("fadebox()", 1500);
+		return true;
+	}
+	var j = rgchan + bluechan;
+	boxbox.style.backgroundColor = "#"+j.toString(16);
+	bluechan++;
+	if (bluechan < 256)
+		setTimeout("fadebox()", 25);
+	return true;
+}
+	
+	
+// -->
+</script>
+<title>
+About OverbiteFF
+</title>
+<style type="text/css">
+<!--
+
+body {
+	font-family: univers, helvetica, "helvetica neue", arial, sans-serif;
+	background-color: #ffffff;
+}
+
+h1 {
+	text-align: center;
+	color: #0000ff;
+	font-size: 5.0em;
+}
+
+a {
+	color: #0000ff;
+	text-decoration: none;
+}
+
+a:hover {
+	color: #ff0000;
+	text-decoration: underline;
+}
+
+div.blurb {
+	text-align: center;
+	font-size: 2.5em;
+	color: #000000;
+}
+
+div.version {
+	text-align: center;
+	font-size: 1.8em;
+	color: #404040;
+}
+
+div.credits {
+	clear: both;
+	text-align: center;
+	color: #000000;
+	font-size: 1.1em;
+	margin: 15px;
+}
+
+div.legalese {
+	margin: 15px;
+	clear: both;
+	text-align: center;
+	color: #000000;
+	font-size: 0.87em;
+}
+
+div.mascrow {
+	display: table-row;
+}
+
+div.leftmasc {
+	width: 100%;
+	display: table-cell;
+	text-align: center;
+	vertical-align: middle;
+}
+
+div.rightmasc {
+	display: table-cell;
+	text-align: right;
+	vertical-align: middle;
+}
+
+img.mascot {
+	border: 0px;
+}
+
+div.installed {
+	text-align: center;
+	color: #006000;
+	font-size: 1.8em;
+}
+
+div.startpoints {
+	text-align: center;
+	color: #000000;
+	font-size: 1.5em;
+}
+
+div#installedbox {
+	background-color: #ffff80;
+	padding: 6px;
+}
+
+table {
+	border: 0px;
+}
+
+-->
+</style>
+</head>
+<body onLoad="fadebox()">
+
+<div id = "installedbox">
+<div id = "install1" class = "installed">
+<script type="text/javascript">q('oinstalled')</script>
+</div>
+<div id = "install2" class = "startpoints">
+<script type="text/javascript">q('ostartwith')</script>
+<a href = "gopher://gopher.floodgap.com/1/v2"><script
+type = "text/javascript">q('v2')</script></a>
+|
+<a href = "gopher://gopher.floodgap.com/1/world"><script
+type = "text/javascript">q('world')</script></a>
+</div>
+</div>
+
+<div class = "mascrow">
+<div class = "leftmasc">
+<h1><a href = "gopher://gopher.floodgap.com/1/overbite/">OverbiteFF</a></h1>
+<div class="blurb">
+<script type="text/javascript">q('blurb')</script>
+</div>
+<div class="version">Version
+3.1-Mozilla
+(<script type="text/javascript">b()</script>)
+</div>
+</div>
+<div class = "rightmasc">
+<a href = "http://gopher.floodgap.com/overbite/"><img class="mascot"
+src = "chrome://overbiteff/content/mascot.png"></a>
+</div>
+</div>
+
+<div class = "credits">
+<b><script type="text/javascript">q('programming')</script></b>
+<a href = "gopher://gopher.floodgap.com/">Cameron Kaiser</a>
+</div>
+
+<div class = "credits">
+<b><script type="text/javascript">q('l10n')</script></b>
+<br>
+Cato Auestad,
+Shaine Mata,
+David Meyer,
+<a href = "gopher://port70.net/">M&aacute;t&eacute; Nagy</a>,
+<a href = "gopher://ankylym.ru/">Roman Pavlov</a>,
+<a href = "gopher://telefisk.org/">Jacob Dahl Pind</a>,
+Jeroen Schot,
+Dennis Schulmeister,
+B.J. Stobiecki,
+Benoit Triquet,
+Stegozor
+</div>
+
+<div class = "credits">
+<b><script type="text/javascript">q('testers')</script></b>
+<br>
+Cato Auestad,
+Sridhar Ayengar,
+Michael Casadevall,
+Philip Chee,
+<a href = "gopher://gopher.quux.org/">John Goerzen</a>,
+Brian Koontz,
+<a href = "gopher://sdf-eu.org/1/users/jacobh/">Jacob Head</a>,
+David Meyer,
+Avery Morrow,
+Jos&eacute; Moya,
+<a href = "gopher://port70.net/">M&aacute;t&eacute; Nagy</a>,
+<a href = "gopher://ankylym.ru/">Roman Pavlov</a>,
+<a href = "gopher://telefisk.org/">Jacob Dahl Pind</a>,
+<a href = "gopher://gopher.robsayers.com/">Rob Sayers</a>,
+Jeroen Schot,
+Dennis Schulmeister,
+B.J. Stobiecki,
+Benoit Triquet,
+Peter Tynan,
+Stegozor
+</div>
+
+<div class = "legalese">
+<b>Copyright &copy; 2008-<script type="text/javascript">y()</script> Contributors to the
+<a href = "http://gopher.floodgap.com/overbite/">Overbite Project</a>.</b>
+<script type="text/javascript">q('allrights')</script>
+</div>
+
+<div class = "legalese">
+<b>Overbite Mascot, Copyright &copy; 2008-<script type="text/javascript">y()</script> Cameron Kaiser.</b>
+<script type="text/javascript">q('logolicense')</script>
+<script type="text/javascript">q('allrights')</script>
+<br>
+<script type="text/javascript">q('iconlicense')</script>
+</div>
+
+<div class = "legalese">
+<b><script type="text/javascript">q('codelicense1')</script></b>
+<script type="text/javascript">q('codelicense2')</script>
+<br>
+<a href = "http://www.mozilla.org/MPL/"><b>Mozilla Public License</b></a>
+|
+<a href = "http://www.gnu.org/licenses/gpl-2.0.html"><b>GNU Public License
+v2</a>
+|
+<a href = "http://www.gnu.org/licenses/lgpl-2.1.html"><b>GNU Lesser
+Public License v2.1</a>
+</div>
+
+</body>
+</html>
