@@ -53,7 +53,11 @@ bool
 MatchesRequest(const USBDeviceInfo& aDevice,
                const USBDeviceRequestOptions& aOptions)
 {
-  bool included = false;
+  // Chromium accepts a chooser request that has no restrictive filters and
+  // lets the user select from the enumerated USB devices.  Keep that useful
+  // behaviour in UXP as well; an empty filter list must not suppress the
+  // permission prompt entirely.
+  bool included = aOptions.mFilters.IsEmpty();
   for (const auto& filter : aOptions.mFilters) {
     if (MatchesFilter(aDevice, filter)) {
       included = true;

@@ -490,25 +490,61 @@ function USBPermissionPrompt(request) {
 
 function getUSBDeviceChoices(request) {
   let choices = [];
-  let types = request.types.QueryInterface(Ci.nsIArray);
-  if (!types.length) {
-    return choices;
-  }
+  try {
+    let types = request.types.QueryInterface(Ci.nsIArray);
+    if (!types.length) {
+      return choices;
+    }
 
-  let type = types.queryElementAt(0, Ci.nsIContentPermissionType);
-  let options = type.options;
-  if (!options) {
-    return choices;
-  }
+    let type = types.queryElementAt(0, Ci.nsIContentPermissionType);
+    let options = type.options;
+    if (!options) {
+      return choices;
+    }
 
-  for (let i = 0; i < options.length; ++i) {
-    choices.push(options.queryElementAt(i, Ci.nsISupportsString).data);
+    for (let i = 0; i < options.length; ++i) {
+      let option = options.queryElementAt(i, Ci.nsISupportsString);
+      choices.push(option.data || "USB device");
+    }
+  } catch (ex) {
+    Cu.reportError("Unable to read WebUSB device choices: " + ex);
   }
   return choices;
 }
 
 USBPermissionPrompt.prototype = {
   __proto__: PermissionPromptForRequestPrototype,
+
+  // UXP builds do not always expose the requesting <browser> through
+  // nsIContentPermissionRequest.element.  Resolve the active browser window
+  // here so the USB doorhanger is still shown for those requests.
+  get browser() {
+    let element = this.request.element;
+    if (element && element.ownerGlobal && element.ownerGlobal.PopupNotifications) {
+      return element;
+    }
+
+    try {
+      let window = this.request.window;
+      if (window) {
+        let browser = window.QueryInterface(Ci.nsIInterfaceRequestor)
+                            .getInterface(Ci.nsIWebNavigation)
+                            .QueryInterface(Ci.nsIDocShell)
+                            .chromeEventHandler;
+        if (browser && browser.ownerGlobal &&
+            browser.ownerGlobal.PopupNotifications) {
+          return browser;
+        }
+      }
+    } catch (ex) {
+      // Fall through to the most recent browser window below.
+    }
+
+    let chromeWindow = Services.wm.getMostRecentWindow("navigator:browser");
+    return chromeWindow && chromeWindow.gBrowser
+      ? chromeWindow.gBrowser.selectedBrowser
+      : element;
+  },
 
   get notificationID() {
     return "web-usb";
