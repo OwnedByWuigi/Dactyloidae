@@ -23,3 +23,7 @@ UNIFIED_SOURCES += [
 if CONFIG['OS_TARGET'] == 'WINNT':
     SOURCES += ['USBBackendWin.cpp']
     OS_LIBS += ['setupapi', 'winusb']
+
+include('/ipc/chromium/chromium-config.mozbuild')
+
+FINAL_LIBRARY = 'xul'
