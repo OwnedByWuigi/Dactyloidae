@@ -75,7 +75,6 @@ const OBFFFIXITYPEPREF = "extensions.overbiteff.fixitype";
 const OBFFSCHEME = "gopher";
 const OBFFCHROMEURL = "chrome://overbiteff";
 const OBFFABOUTURL = (OBFFCHROMEURL + "/content/infobabe.html");
-const OBFFIABOUTURL = "about:overbite";
 const OBFFRABOUTURL = (OBFFCHROMEURL + "/content/startpage.html");
 const OBFFPROT_HANDLER_CONTRACTID = "@mozilla.org/network/protocol;1?name="+OBFFSCHEME;
 const OBFFPROT_HANDLER_CID = Components.ID("{977ffc4c-a635-433d-8477-ea575bfb7b19}");
@@ -1967,88 +1966,5 @@ function OverbiteSetPrefs() {
 
 OverbiteLog("startup with version "+OBFFVERS+" build "+OBFFBUILD);
 
-var prefs = Cc["@mozilla.org/preferences-service;1"];
-var prefserv = prefs.getService(Ci.nsIPrefService);
-prefs = prefs.getService(Ci.nsIPrefBranch);
-
-if (prefs.getPrefType(OBFFBUILDPREF) != prefs.PREF_INT ||
-		prefs.getIntPref(OBFFBUILDPREF) < OBFFBUILD) {
-	var obs = Cc["@mozilla.org/observer-service;1"]
-		.getService(Ci.nsIObserverService);
-
-	// create an observer to wait for the top level window
-	// and then take it over for startup
-	var listeno = {
-		_timer : null,
-		_window : null,
-/* TEMPORARY HACK: Complain in the brag screen if this is an e10s window. */
-		_e10s : false,
-
-		// nsISupports
-		QueryInterface : XPCOMUtils.generateQI([nsISupports,
-							nsIObserver,
-							nsITimerCallback]),
-
-		// nsITimerCallback
-		notify : function(timer) {
-			OverbiteLog("timer tripped");
-			this._timer = null;
-			this._window.focus();
-			this._window.getBrowser().selectedTab =
-				this._window.getBrowser().addTab(OBFFIABOUTURL+
-/* TEMPORARY HACK: Complain in the brag screen if this is an e10s window. */
-					((this._e10s) ? "#e10s" : ""));
-			this._window = null;
-		},
-
-		// nsIObserver
-		observe : function(subject, topic, data) {
-			// we're not picky about topic, since it
-			// is designed to respond to *at least* two.
-			OverbiteLog("observer tripped by topic: "+topic);
-
-/* TEMPORARY HACK: Complain in the brag screen if this is an e10s window. */
-			if (subject && subject.gMultiProcessBrowser)
-				this._e10s = true; // damn
-				
-			var obs = Cc["@mozilla.org/observer-service;1"]
-				.getService(Ci.nsIObserverService);
-			var wm = Cc["@mozilla.org/appshell/window-mediator;1"]
-				.getService(Ci.nsIWindowMediator);
-
-			var w = wm.getMostRecentWindow('navigator:browser');
-			if (!w)
-					return; // and live to hook another day
-			OverbiteLog("trying window");
-			this._window = w;
-
-		// for some reason this doesn't work until the window appears
-		// so we do it at the window opening level
-			var prefs = Cc["@mozilla.org/preferences-service;1"];
-			var prefserv = prefs.getService(Ci.nsIPrefService);
-			prefs = prefs.getService(Ci.nsIPrefBranch);
-
-			if (prefs.getPrefType(OBFFBUILDPREF) !=
-					prefs.PREF_INT ||
-				prefs.getIntPref(OBFFBUILDPREF) <
-					 OBFFBUILD) {
-				// save even if the tab fails -- we
-				// only want to try this the first time
-				prefs.setIntPref(OBFFBUILDPREF, OBFFBUILD);
-				prefserv.savePrefFile(null);
-				OverbiteLog("prefs set");
-
-				this._timer = Cc["@mozilla.org/timer;1"]
-					.createInstance(Ci.nsITimer);
-				this._timer.initWithCallback(this, 2000, 0);
-			}
-			obs.removeObserver(this, topic);
-			return;
-		}
-	};
-
-	obs.addObserver(listeno, "sessionstore-windows-restored", false);
-	obs.addObserver(listeno, "browser-delayed-startup-finished", false);
-	OverbiteLog("no window yet, listener installed");
-} 
-
+// The legacy add-on opened about:overbite on first startup. Built-in browser
+// integration must not create or select a tab during application startup.
