@@ -67,7 +67,7 @@ public:
   void GetProductName(DOMString& aValue) const;
   void GetSerialNumber(DOMString& aValue) const;
   bool Opened() const { return mOpened; }
-  USBConfiguration* Configuration() const { return mConfiguration; }
+  USBConfiguration* GetConfiguration() const { return mConfiguration; }
   void GetConfigurations(nsTArray<RefPtr<USBConfiguration>>& aValue) const
   { aValue = mConfigurations; }
 
