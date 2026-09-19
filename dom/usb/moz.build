@@ -8,8 +8,8 @@ EXPORTS.mozilla.dom += [
     'USBDescriptors.h',
     'USBDevice.h',
     'USBEndpoint.h',
-    'USBInTransferResult.h',
     'USBInterface.h',
+    'USBInTransferResult.h',
     'USBOutTransferResult.h',
 ]
 
