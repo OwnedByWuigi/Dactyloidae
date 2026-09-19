@@ -81,7 +81,7 @@ interface USBDevice : EventTarget {
   readonly attribute DOMString? productName;
   readonly attribute DOMString? serialNumber;
   readonly attribute USBConfiguration? configuration;
-  [Cached] readonly attribute sequence<USBConfiguration> configurations;
+  [Cached, Constant] readonly attribute sequence<USBConfiguration> configurations;
   readonly attribute boolean opened;
 
   [NewObject] Promise<void> open();
@@ -109,14 +109,14 @@ interface USBDevice : EventTarget {
 interface USBConfiguration {
   readonly attribute octet configurationValue;
   readonly attribute DOMString? configurationName;
-  [Cached] readonly attribute sequence<USBInterface> interfaces;
+  [Cached, Constant] readonly attribute sequence<USBInterface> interfaces;
 };
 
 [SecureContext, Exposed=Window]
 interface USBInterface {
   readonly attribute octet interfaceNumber;
   readonly attribute USBAlternateInterface alternate;
-  [Cached] readonly attribute sequence<USBAlternateInterface> alternates;
+  [Cached, Constant] readonly attribute sequence<USBAlternateInterface> alternates;
   readonly attribute boolean claimed;
 };
 
@@ -127,7 +127,7 @@ interface USBAlternateInterface {
   readonly attribute octet interfaceSubclass;
   readonly attribute octet interfaceProtocol;
   readonly attribute DOMString? interfaceName;
-  [Cached] readonly attribute sequence<USBEndpoint> endpoints;
+  [Cached, Constant] readonly attribute sequence<USBEndpoint> endpoints;
 };
 
 [SecureContext, Exposed=Window]
