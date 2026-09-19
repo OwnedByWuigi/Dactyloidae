@@ -64,10 +64,10 @@ struct USBControlTransferInfo {
   uint16_t mIndex = 0;
 };
 
-class USBDeviceHandle : public nsISupports
+class USBDeviceHandle
 {
 public:
-  NS_DECL_ISUPPORTS
+  NS_INLINE_DECL_REFCOUNTING(USBDeviceHandle)
 
   virtual nsresult Open() = 0;
   virtual void Close() = 0;

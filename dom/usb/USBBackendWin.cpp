@@ -40,7 +40,8 @@ public:
       return NS_ERROR_INVALID_ARG;
     }
 
-    mDevice = CreateFileW(reinterpret_cast<const wchar_t*>(mPath.get()),
+    mDevice = CreateFileW(reinterpret_cast<const wchar_t*>(
+                            static_cast<const void*>(mPath.get())),
                           GENERIC_READ | GENERIC_WRITE,
                           FILE_SHARE_READ | FILE_SHARE_WRITE,
                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
@@ -173,22 +174,25 @@ public:
 
   nsresult ClaimInterface(uint8_t aInterfaceNumber) override
   {
-    return mInterface && WinUsb_ClaimInterface(mInterface, aInterfaceNumber)
-      ? NS_OK : NS_ERROR_FAILURE;
+    // WinUSB owns the interface represented by mInterface. There is no
+    // ClaimInterface API; interface 0 is already claimed by the handle.
+    return mInterface && aInterfaceNumber == 0
+      ? NS_OK : NS_ERROR_NOT_IMPLEMENTED;
   }
 
   nsresult ReleaseInterface(uint8_t aInterfaceNumber) override
   {
-    return mInterface && WinUsb_ReleaseInterface(mInterface, aInterfaceNumber)
-      ? NS_OK : NS_ERROR_FAILURE;
+    return mInterface && aInterfaceNumber == 0
+      ? NS_OK : NS_ERROR_NOT_IMPLEMENTED;
   }
 
   nsresult SelectAlternateInterface(uint8_t aInterfaceNumber,
                                     uint8_t aAlternateSetting) override
   {
-    return mInterface &&
-           WinUsb_SetCurrentAlternateSetting(mInterface, aInterfaceNumber,
-                                             aAlternateSetting)
+    if (!mInterface || aInterfaceNumber != 0) {
+      return NS_ERROR_NOT_IMPLEMENTED;
+    }
+    return WinUsb_SetCurrentAlternateSetting(mInterface, aAlternateSetting)
       ? NS_OK : NS_ERROR_FAILURE;
   }
 
@@ -204,8 +208,7 @@ public:
 
   nsresult Reset() override
   {
-    return mInterface && WinUsb_ResetDevice(mInterface)
-      ? NS_OK : NS_ERROR_FAILURE;
+    return NS_ERROR_NOT_IMPLEMENTED;
   }
 
   nsresult ControlTransferIn(const USBControlTransferInfo& aSetup,
@@ -310,8 +313,6 @@ private:
   WINUSB_INTERFACE_HANDLE mInterface;
 };
 
-NS_IMPL_ISUPPORTS(WinUSBDeviceHandle, USBDeviceHandle)
-
 bool
 ParseHex(const wchar_t* aValue, uint32_t aLength, uint16_t& aResult)
 {
@@ -377,7 +378,8 @@ ParseHardwareId(const nsString& aHardwareId, USBDeviceInfo& aInfo)
         (id[i + 1] == 'I' || id[i + 1] == 'i') &&
         (id[i + 2] == 'D' || id[i + 2] == 'd') && id[i + 3] == '_') {
       uint16_t value;
-      if (ParseHex(reinterpret_cast<const wchar_t*>(id + i + 4), 4, value)) {
+      if (ParseHex(reinterpret_cast<const wchar_t*>(
+                     static_cast<const void*>(id + i + 4)), 4, value)) {
         aInfo.mVendorId = value;
       }
     }
@@ -386,7 +388,8 @@ ParseHardwareId(const nsString& aHardwareId, USBDeviceInfo& aInfo)
         (id[i + 1] == 'I' || id[i + 1] == 'i') &&
         (id[i + 2] == 'D' || id[i + 2] == 'd') && id[i + 3] == '_') {
       uint16_t value;
-      if (ParseHex(reinterpret_cast<const wchar_t*>(id + i + 4), 4, value)) {
+      if (ParseHex(reinterpret_cast<const wchar_t*>(
+                     static_cast<const void*>(id + i + 4)), 4, value)) {
         aInfo.mProductId = value;
       }
     }
