@@ -6,7 +6,7 @@ interface USB : EventTarget {
   Promise<sequence<USBDevice>> getDevices();
 
   [NewObject]
-  Promise<USBDevice> requestDevice(optional USBDeviceRequestOptions options = {});
+  Promise<USBDevice> requestDevice(optional USBDeviceRequestOptions options);
 
   attribute EventHandler onconnect;
   attribute EventHandler ondisconnect;
