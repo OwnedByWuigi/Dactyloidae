@@ -1,6 +1,6 @@
 <img src="browser/branding/unofficial/content/about-wordmark.svg" alt="Dactyloidae web browser" height="60">
 <br>
-<a href="https://discord.gg/ycmQAMej77">Official Discord server</a>
+<a href="https://discord.gg/ycmQAMej77">Official Discord server</a> | <a href="https://t.me/dactyloidae">Official Telegram channel</a>
 <br><br>
 <img src="docs/readme/demo.png" height="500">
 
