@@ -227,7 +227,7 @@ public:
   bool MozE10sEnabled();
 
   StorageManager* Storage();
-  USB* GetUsb();
+  USB* Usb();
 
   static void GetAcceptLanguages(nsTArray<nsString>& aLanguages);
 

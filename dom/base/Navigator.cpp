@@ -551,7 +551,7 @@ Navigator::Storage()
 }
 
 USB*
-Navigator::GetUsb()
+Navigator::Usb()
 {
   MOZ_ASSERT(mWindow);
 
