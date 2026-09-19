@@ -8,7 +8,9 @@ JAR_MANIFESTS += ['jar.mn']
 FINAL_TARGET = 'dist/bin/browser'
 
 FINAL_TARGET_FILES.components += [
+    'components/about.manifest',
     'components/about.js',
+    'components/protocol.manifest',
     'components/protocol.js',
 ]
 

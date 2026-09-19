@@ -9,7 +9,7 @@ In this tree it is built into the browser rather than installed as an add-on. Th
 The integration is split into the same pieces used by other browser-native features:
 
 - `moz.build` adds the component files, default preferences, and chrome package to the browser build.
-- `components/gopher.manifest` registers the Gopher protocol and the `about:gopher`/`about:overbite` pages.
+- `components/protocol.manifest` registers the Gopher protocol, while `components/about.manifest` registers the `about:gopher` and `about:overbite` pages.
 - `components/protocol.js` implements Gopher networking, directory conversion, internal resources, and supported item types.
 - `components/about.js` supplies the Overbite information page.
 - `jar.mn` packages the `overbiteff` content and locale namespaces.
