@@ -220,7 +220,6 @@
         }
       },
       "managed": {
-        "unsupported": true,
         "$ref": "StorageArea",
         "description": "Items in the <code>managed</code> storage area are set by the domain administrator, and are read-only for the extension; trying to modify this namespace results in an error."
       }

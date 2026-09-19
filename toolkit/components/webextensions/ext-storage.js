@@ -29,6 +29,27 @@ function storageApiFactory(context) {
         },
       },
 
+      // UXP has no enterprise managed-storage backend. Expose the namespace
+      // as an empty, read-only area so extensions can feature-detect it and
+      // continue using their defaults.
+      managed: {
+        get: function(spec) {
+          return ExtensionStorage.getManaged(spec);
+        },
+        set: function() {
+          throw new context.cloneScope.Error(
+            "storage.managed is read-only");
+        },
+        remove: function() {
+          throw new context.cloneScope.Error(
+            "storage.managed is read-only");
+        },
+        clear: function() {
+          throw new context.cloneScope.Error(
+            "storage.managed is read-only");
+        },
+      },
+
       onChanged: new EventManager(context, "storage.onChanged", fire => {
         let listenerLocal = changes => {
           fire(changes, "local");

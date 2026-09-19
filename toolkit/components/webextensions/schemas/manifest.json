@@ -183,6 +183,29 @@
             "optional": true
           },
 
+          "optional_permissions": {
+            "type": "array",
+            "items": {
+              "choices": [
+                { "$ref": "Permission" },
+                {
+                  "type": "string",
+                  "deprecated": "Unknown optional permission ${value}"
+                }
+              ]
+            },
+            "optional": true
+          },
+
+          "user_scripts": {
+            "type": "object",
+            "optional": true,
+            "properties": {
+              "api_script": { "$ref": "ExtensionURL" }
+            },
+            "additionalProperties": { "$ref": "UnrecognizedProperty" }
+          },
+
           "web_accessible_resources": {
             "type": "array",
             "items": { "type": "string" },
@@ -218,6 +241,7 @@
             "enum": [
               "alarms",
               "clipboardWrite",
+              "contextualIdentities",
               "dns",
               "idle",
               "menus",
@@ -387,8 +411,7 @@
       },
       {
         "id": "PersistentBackgroundProperty",
-        "type": "boolean",
-        "deprecated": "Event pages are not currently supported. This will run as a persistent background page."
+        "type": "boolean"
       }
     ]
   }
