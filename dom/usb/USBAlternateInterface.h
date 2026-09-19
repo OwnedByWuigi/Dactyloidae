@@ -3,6 +3,7 @@
 #define mozilla_dom_USBAlternateInterface_h
 
 #include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/USBEndpoint.h"
 #include "mozilla/dom/USBBinding.h"
 #include "nsCOMPtr.h"
@@ -24,7 +25,11 @@ public:
   uint8_t InterfaceClass() const { return mClass; }
   uint8_t InterfaceSubclass() const { return mSubclass; }
   uint8_t InterfaceProtocol() const { return mProtocol; }
-  void GetInterfaceName(Nullable<nsString>& aValue) const { aValue = mName; }
+  void GetInterfaceName(DOMString& aValue) const
+  {
+    if (mName.IsNull()) aValue.SetNull();
+    else aValue.SetOwnedString(mName.Value());
+  }
   void GetEndpoints(nsTArray<RefPtr<USBEndpoint>>& aValue) const { aValue = mEndpoints; }
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*>) override;
 private:

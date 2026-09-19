@@ -159,14 +159,13 @@ USBInTransferResult::~USBInTransferResult()
 
 void
 USBInTransferResult::GetData(JSContext* aCx,
-                             JS::MutableHandle<JSObject*> aData,
-                             ErrorResult& aRv)
+                             JS::MutableHandle<JSObject*> aData)
 {
   if (!mData) {
     mData = ArrayBuffer::Create(aCx, this, mRawData.Length(),
                                 mRawData.Elements());
     if (!mData) {
-      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+      aData.set(nullptr);
       return;
     }
     mRawData.Clear();

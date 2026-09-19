@@ -19,7 +19,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(USBInterface)
   nsISupports* GetParentObject() const { return mOwner; }
   uint8_t InterfaceNumber() const { return mNumber; }
-  USBAlternateInterface* GetAlternate() const { return mAlternate; }
+  USBAlternateInterface* Alternate() const { return mAlternate; }
   void SetAlternate(uint8_t);
   void GetAlternates(nsTArray<RefPtr<USBAlternateInterface>>& aValue) const { aValue = mAlternates; }
   bool Claimed() const { return mClaimed; }

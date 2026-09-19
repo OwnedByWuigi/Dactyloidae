@@ -142,6 +142,36 @@ USBDevice::SetDeviceInfo(const USBDeviceInfo& aInfo)
 }
 
 void
+USBDevice::GetManufacturerName(DOMString& aValue) const
+{
+  if (mManufacturerName.IsNull()) {
+    aValue.SetNull();
+  } else {
+    aValue.SetOwnedString(mManufacturerName.Value());
+  }
+}
+
+void
+USBDevice::GetProductName(DOMString& aValue) const
+{
+  if (mProductName.IsNull()) {
+    aValue.SetNull();
+  } else {
+    aValue.SetOwnedString(mProductName.Value());
+  }
+}
+
+void
+USBDevice::GetSerialNumber(DOMString& aValue) const
+{
+  if (mSerialNumber.IsNull()) {
+    aValue.SetNull();
+  } else {
+    aValue.SetOwnedString(mSerialNumber.Value());
+  }
+}
+
+void
 USBDevice::SetConfigurations(
   const nsTArray<USBConfigurationInfo>& aConfigurations)
 {

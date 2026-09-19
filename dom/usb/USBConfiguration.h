@@ -3,6 +3,7 @@
 #define mozilla_dom_USBConfiguration_h
 
 #include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/USBInterface.h"
 #include "mozilla/dom/USBBinding.h"
 #include "nsCOMPtr.h"
@@ -21,7 +22,11 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(USBConfiguration)
   nsISupports* GetParentObject() const { return mOwner; }
   uint8_t ConfigurationValue() const { return mValue; }
-  void GetConfigurationName(Nullable<nsString>& aValue) const { aValue = mName; }
+  void GetConfigurationName(DOMString& aValue) const
+  {
+    if (mName.IsNull()) aValue.SetNull();
+    else aValue.SetOwnedString(mName.Value());
+  }
   void GetInterfaces(nsTArray<RefPtr<USBInterface>>& aValue) const { aValue = mInterfaces; }
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*>) override;
 private:

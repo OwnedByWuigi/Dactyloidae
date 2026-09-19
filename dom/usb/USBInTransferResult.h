@@ -19,7 +19,7 @@ public:
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(USBInTransferResult)
   nsISupports* GetParentObject() const { return mOwner; }
   USBTransferStatus Status() const { return mStatus; }
-  void GetData(JSContext*, JS::MutableHandle<JSObject*>, ErrorResult&);
+  void GetData(JSContext*, JS::MutableHandle<JSObject*>);
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*>) override;
 private:
   ~USBInTransferResult();

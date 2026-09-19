@@ -8,6 +8,7 @@
 #include "mozilla/dom/USBBackend.h"
 #include "mozilla/dom/USBDescriptors.h"
 #include "mozilla/dom/TypedArray.h"
+#include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/Nullable.h"
 #include "nsString.h"
 #include <stdint.h>
@@ -53,23 +54,20 @@ public:
 
   uint16_t VendorId() const { return mVendorId; }
   uint16_t ProductId() const { return mProductId; }
-  uint8_t USBVersionMajor() const { return mUSBVersionMajor; }
-  uint8_t USBVersionMinor() const { return mUSBVersionMinor; }
-  uint8_t USBVersionSubminor() const { return mUSBVersionSubminor; }
+  uint8_t UsbVersionMajor() const { return mUSBVersionMajor; }
+  uint8_t UsbVersionMinor() const { return mUSBVersionMinor; }
+  uint8_t UsbVersionSubminor() const { return mUSBVersionSubminor; }
   uint8_t DeviceClass() const { return mDeviceClass; }
   uint8_t DeviceSubclass() const { return mDeviceSubclass; }
   uint8_t DeviceProtocol() const { return mDeviceProtocol; }
   uint8_t DeviceVersionMajor() const { return mDeviceVersionMajor; }
   uint8_t DeviceVersionMinor() const { return mDeviceVersionMinor; }
   uint8_t DeviceVersionSubminor() const { return mDeviceVersionSubminor; }
-  void GetManufacturerName(Nullable<nsString>& aValue) const
-  { aValue = mManufacturerName; }
-  void GetProductName(Nullable<nsString>& aValue) const
-  { aValue = mProductName; }
-  void GetSerialNumber(Nullable<nsString>& aValue) const
-  { aValue = mSerialNumber; }
+  void GetManufacturerName(DOMString& aValue) const;
+  void GetProductName(DOMString& aValue) const;
+  void GetSerialNumber(DOMString& aValue) const;
   bool Opened() const { return mOpened; }
-  USBConfiguration* GetConfiguration() const { return mConfiguration; }
+  USBConfiguration* Configuration() const { return mConfiguration; }
   void GetConfigurations(nsTArray<RefPtr<USBConfiguration>>& aValue) const
   { aValue = mConfigurations; }
 
