@@ -32,8 +32,6 @@ public:
   {
   }
 
-  NS_DECL_ISUPPORTS
-
   nsresult Open() override
   {
     if (mPath.IsEmpty()) {

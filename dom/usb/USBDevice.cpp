@@ -80,7 +80,7 @@ CopyTransferData(const ArrayBufferViewOrArrayBuffer& aData,
 } // anonymous namespace
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(USBDevice, DOMEventTargetHelper,
-                                   mHandle, mConfiguration, mConfigurations)
+                                   mConfiguration, mConfigurations)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(USBDevice)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
