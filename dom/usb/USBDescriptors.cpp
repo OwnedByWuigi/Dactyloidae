@@ -3,7 +3,7 @@
 #include "USBDescriptors.h"
 
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/dom/ArrayBuffer.h"
+#include "mozilla/dom/TypedArray.h"
 
 namespace mozilla {
 namespace dom {

@@ -4,9 +4,9 @@
 
 #ifdef XP_WIN
 
-#include <setupapi.h>
 #include <string.h>
 #include <windows.h>
+#include <setupapi.h>
 #include <winusb.h>
 
 #include "mozilla/fallible.h"

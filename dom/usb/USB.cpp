@@ -96,7 +96,7 @@ private:
   RefPtr<Promise> mPromise;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
   nsTArray<RefPtr<USBDevice>> mCandidates;
-  RefPtr<nsContentPermissionRequester> mRequester;
+  nsCOMPtr<nsIContentPermissionRequester> mRequester;
 };
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(USBPermissionRequest)
@@ -127,12 +127,14 @@ USBPermissionRequest::GetTypes(nsIArray** aTypes)
 {
   nsTArray<nsString> options;
   for (const auto& device : mCandidates) {
-    Nullable<nsString> label;
+    DOMString label;
     device->GetProductName(label);
-    if (label.IsNull() || label.Value().IsEmpty()) {
+    nsAutoString labelString;
+    label.ToString(labelString);
+    if (label.IsNull() || labelString.IsEmpty()) {
       options.AppendElement(NS_LITERAL_STRING("USB device"));
     } else {
-      options.AppendElement(label.Value());
+      options.AppendElement(labelString);
     }
   }
   return nsContentPermissionUtils::CreatePermissionArray(
