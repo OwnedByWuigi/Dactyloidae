@@ -750,9 +750,12 @@ SingletonEventManager.prototype = {
 };
 
 // Simple API for event listeners where events never fire.
-function ignoreEvent(context, name) {
+function ignoreEvent(context, name, warn = true) {
   return {
     addListener: function(callback) {
+      if (!warn) {
+        return;
+      }
       let id = context.extension.id;
       let frame = Components.stack.caller;
       let msg = `In add-on ${id}, attempting to use listener "${name}", which is unimplemented.`;
@@ -1095,8 +1098,8 @@ class MessageManagerProxy {
     if (this.messageManager) {
       return this.messageManager.sendAsyncMessage(...args);
     }
-    /* globals uneval */
-    Cu.reportError(`Cannot send message: Other side disconnected: ${uneval(args)}`);
+    // Message senders can outlive their child process during normal teardown.
+    // Treat this as a dropped message instead of reporting a spurious error.
   }
 
   /**

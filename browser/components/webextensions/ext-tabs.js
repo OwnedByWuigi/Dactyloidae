@@ -103,6 +103,7 @@ let tabListener = {
 
     AllWindowEvents.addListener("TabClose", this);
     AllWindowEvents.addListener("TabOpen", this);
+    AllWindowEvents.addListener("TabReplaced", this);
     WindowListManager.addOpenListener(this.handleWindowOpen);
     WindowListManager.addCloseListener(this.handleWindowClose);
 
@@ -137,6 +138,10 @@ let tabListener = {
         } else {
           this.emitRemoved(tab, false);
         }
+        break;
+
+      case "TabReplaced":
+        this.emitReplaced(event.detail.addedTab, event.detail.removedTab);
         break;
     }
   },
@@ -218,6 +223,13 @@ let tabListener = {
     Services.tm.mainThread.dispatch(() => {
       this.emit("tab-removed", {tab, tabId, windowId, isWindowClosing});
     }, Ci.nsIThread.DISPATCH_NORMAL);
+  },
+
+  emitReplaced(addedTab, removedTab) {
+    this.emit("tab-replaced", {
+      addedTabId: TabManager.getId(addedTab),
+      removedTabId: TabManager.getId(removedTab),
+    });
   },
 
   tabReadyInitialized: false,
@@ -347,7 +359,15 @@ extensions.registerSchemaAPI("tabs", "addon_parent", context => {
         };
       }).api(),
 
-      onReplaced: ignoreEvent(context, "tabs.onReplaced"),
+      onReplaced: new EventManager(context, "tabs.onReplaced", fire => {
+        let listener = (eventName, event) => {
+          fire(event.addedTabId, event.removedTabId);
+        };
+        tabListener.on("tab-replaced", listener);
+        return () => {
+          tabListener.off("tab-replaced", listener);
+        };
+      }).api(),
 
       onMoved: new EventManager(context, "tabs.onMoved", fire => {
         // There are certain circumstances where we need to ignore a move event.

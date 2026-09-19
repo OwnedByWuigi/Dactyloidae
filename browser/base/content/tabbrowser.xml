@@ -2920,6 +2920,18 @@
             // Finish tearing down the tab that's going away.
             remoteBrowser._endRemoveTab(aOtherTab);
 
+            // Notify WebExtensions when one tab is replaced by another. Tab
+            // adoption uses this same swap internally, but represents a move
+            // and is marked below so it does not generate a replacement event.
+            if (!aOurTab._adoptingTab) {
+              let event = new CustomEvent("TabReplaced", {
+                bubbles: true,
+                detail: {addedTab: aOurTab, removedTab: aOtherTab},
+              });
+              aOurTab.dispatchEvent(event);
+            }
+            delete aOurTab._adoptingTab;
+
             if (isBusy)
               this.setTabTitleLoading(aOurTab);
             else
@@ -3359,6 +3371,7 @@
             params.userContextId = aTab.getAttribute("usercontextid");
           }
           let newTab = this.addTab("about:blank", params);
+          newTab._adoptingTab = aTab;
           let newBrowser = this.getBrowserForTab(newTab);
           let newURL = aTab.linkedBrowser.currentURI.spec;
 

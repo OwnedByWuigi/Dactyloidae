@@ -76,7 +76,11 @@ RemoteMediator.prototype = {
     let callbackID = this._addCallback(callback, installs.uris);
 
     installs.mimetype = XPINSTALL_MIMETYPE;
-    installs.triggeringPrincipal = principal;
+    // nsIPrincipal is an XPCOM object and cannot cross the legacy message
+    // manager boundary used by content processes. Serialize it explicitly.
+    installs.triggeringPrincipal = Cc["@mozilla.org/network/serialization-helper;1"]
+      .getService(Ci.nsISerializationHelper)
+      .serializeToString(principal);
     installs.callbackID = callbackID;
 
     if (Services.appinfo.processType == Ci.nsIXULRuntime.PROCESS_TYPE_DEFAULT) {

@@ -321,13 +321,60 @@ function webAPIForAddon(addon) {
 
   let result = {};
 
+  function cloneable(value, seen = new Set()) {
+    if (value === null || value === undefined ||
+        typeof value == "string" || typeof value == "number" ||
+        typeof value == "boolean") {
+      return value;
+    }
+
+    if (typeof value != "object") {
+      return undefined;
+    }
+
+    // Older message managers cannot structured-clone these XPCOM values.
+    try {
+      if (value instanceof Ci.nsIURI) {
+        return value.spec;
+      }
+      if (value instanceof Ci.nsIFile) {
+        return value.path;
+      }
+    } catch (e) {}
+
+    if (seen.has(value)) {
+      return undefined;
+    }
+    seen.add(value);
+
+    let className = Cu.getClassName(value, true);
+    if (className == "Array") {
+      return value.map(item => cloneable(item, seen));
+    }
+    if (className != "Object") {
+      return undefined;
+    }
+
+    let copy = {};
+    for (let key of Object.keys(value)) {
+      let item = cloneable(value[key], seen);
+      if (item !== undefined) {
+        copy[key] = item;
+      }
+    }
+    return copy;
+  }
+
   // By default just pass through any plain property, the webidl will
   // control access.  Also filter out private properties, regular Addon
   // objects are okay but MockAddon used in tests has non-serializable
   // private properties.
   for (let prop in addon) {
     if (prop[0] != "_" && typeof(addon[prop]) != "function") {
-      result[prop] = addon[prop];
+      let value = cloneable(addon[prop]);
+      if (value !== undefined) {
+        result[prop] = value;
+      }
     }
   }
 
