@@ -1,7 +1,6 @@
 # -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
 
 EXPORTS.mozilla.dom += [
-    'USB.h',
     'USBAlternateInterface.h',
     'USBBackend.h',
     'USBConfiguration.h',
@@ -11,6 +10,7 @@ EXPORTS.mozilla.dom += [
     'USBInterface.h',
     'USBInTransferResult.h',
     'USBOutTransferResult.h',
+    'WebUSB.h',
 ]
 
 UNIFIED_SOURCES += [

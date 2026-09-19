@@ -40,7 +40,7 @@
 #include "mozilla/dom/Permissions.h"
 #include "mozilla/dom/ServiceWorkerContainer.h"
 #include "mozilla/dom/StorageManager.h"
-#include "mozilla/dom/USB.h"
+#include "mozilla/dom/WebUSB.h"
 #include "mozilla/dom/TCPSocket.h"
 #include "mozilla/dom/URLSearchParams.h"
 #include "mozilla/dom/workers/RuntimeService.h"

@@ -1,6 +1,6 @@
 /* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 
-#include "USB.h"
+#include "WebUSB.h"
 
 #include "mozilla/dom/USBBinding.h"
 #include "mozilla/dom/Promise.h"

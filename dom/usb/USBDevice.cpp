@@ -3,10 +3,11 @@
 #include "USBDevice.h"
 
 #include "mozilla/dom/Promise.h"
-#include "mozilla/dom/USB.h"
+#include "mozilla/dom/WebUSB.h"
 #include "mozilla/dom/USBBinding.h"
 #include "mozilla/dom/UnionTypes.h"
 #include "mozilla/Services.h"
+#include "jsapi.h"
 #include "nsError.h"
 #include "nsIDocument.h"
 #include "nsIPermissionManager.h"
@@ -25,7 +26,7 @@ BackendPromise(nsIGlobalObject* aOwner, nsresult aResult, ErrorResult& aRv)
     return nullptr;
   }
   if (NS_SUCCEEDED(aResult)) {
-    promise->MaybeResolve();
+    promise->MaybeResolve(JS::UndefinedHandleValue);
   } else {
     promise->MaybeReject(aResult);
   }
@@ -234,7 +235,7 @@ USBDevice::Open(ErrorResult& aRv)
   }
 
   if (mOpened) {
-    promise->MaybeResolve();
+    promise->MaybeResolve(JS::UndefinedHandleValue);
     return promise.forget();
   }
 
@@ -250,7 +251,7 @@ USBDevice::Open(ErrorResult& aRv)
   if (NS_SUCCEEDED(mHandle->GetConfigurations(configurations))) {
     SetConfigurations(configurations);
   }
-  promise->MaybeResolve();
+  promise->MaybeResolve(JS::UndefinedHandleValue);
   return promise.forget();
 }
 
@@ -267,7 +268,7 @@ USBDevice::Close(ErrorResult& aRv)
     mHandle = nullptr;
   }
   mOpened = false;
-  promise->MaybeResolve();
+  promise->MaybeResolve(JS::UndefinedHandleValue);
   return promise.forget();
 }
 
@@ -297,7 +298,7 @@ USBDevice::Forget(ErrorResult& aRv)
                                              "usb");
     }
   }
-  promise->MaybeResolve();
+  promise->MaybeResolve(JS::UndefinedHandleValue);
   return promise.forget();
 }
 
