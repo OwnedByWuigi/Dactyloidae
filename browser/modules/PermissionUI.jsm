@@ -488,12 +488,27 @@ function USBPermissionPrompt(request) {
   this.request = request;
 }
 
+function getUSBDeviceChoices(request) {
+  let choices = [];
+  let types = request.types.QueryInterface(Ci.nsIArray);
+  if (!types.length) {
+    return choices;
+  }
+
+  let type = types.queryElementAt(0, Ci.nsIContentPermissionType);
+  let options = type.options;
+  if (!options) {
+    return choices;
+  }
+
+  for (let i = 0; i < options.length; ++i) {
+    choices.push(options.queryElementAt(i, Ci.nsISupportsString).data);
+  }
+  return choices;
+}
+
 USBPermissionPrompt.prototype = {
   __proto__: PermissionPromptForRequestPrototype,
-
-  get permissionKey() {
-    return "usb";
-  },
 
   get notificationID() {
     return "web-usb";
@@ -509,17 +524,21 @@ USBPermissionPrompt.prototype = {
   },
 
   get promptActions() {
-    return [{
-      label: getUSBString("webUSB.allow", "Allow USB Devices"),
-      accessKey: getUSBString("webUSB.allow.accesskey", "A"),
-      action: Ci.nsIPermissionManager.ALLOW_ACTION,
-      expireType: Ci.nsIPermissionManager.EXPIRE_SESSION,
-    }, {
+    let actions = [];
+    for (let choice of getUSBDeviceChoices(this.request)) {
+      actions.push({
+        label: choice,
+        accessKey: "",
+        callback: () => this.request.allow({usb: choice}),
+      });
+    }
+
+    actions.push({
       label: getUSBString("webUSB.block", "Block USB Devices"),
       accessKey: getUSBString("webUSB.block.accesskey", "B"),
-      action: Ci.nsIPermissionManager.DENY_ACTION,
-      expireType: Ci.nsIPermissionManager.EXPIRE_SESSION,
-    }];
+      callback: () => this.cancel(),
+    });
+    return actions;
   },
 };
 

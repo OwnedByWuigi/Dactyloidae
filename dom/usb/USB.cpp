@@ -5,7 +5,10 @@
 #include "mozilla/dom/USBBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/USBDevice.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "jsapi.h"
 #include "nsContentPermissionHelper.h"
+#include "nsContentUtils.h"
 #include "nsIDocument.h"
 #include "nsError.h"
 #include "nsPIDOMWindow.h"
@@ -177,15 +180,46 @@ USBPermissionRequest::Cancel()
 NS_IMETHODIMP
 USBPermissionRequest::Allow(JS::HandleValue aChoices)
 {
-  (void)aChoices;
   if (mCandidates.IsEmpty()) {
     mPromise->MaybeReject(NS_ERROR_DOM_NOT_FOUND_ERR);
     return NS_OK;
   }
 
-  RefPtr<USBDevice> device = mCandidates[0];
+  uint32_t selected = 0;
+  if (aChoices.isObject()) {
+    JSContext* cx = nsContentUtils::GetCurrentJSContext();
+    if (cx) {
+      JS::RootedObject object(cx, &aChoices.toObject());
+      JSAutoCompartment ac(cx, object);
+      JS::RootedValue value(cx);
+      if (JS_GetProperty(cx, object, "usb", &value) && value.isString()) {
+        nsAutoJSString choice;
+        if (choice.init(cx, value)) {
+          for (uint32_t i = 0; i < mCandidates.Length(); ++i) {
+            DOMString label;
+            mCandidates[i]->GetProductName(label);
+            nsAutoString labelString;
+            label.ToString(labelString);
+            if ((label.IsNull() || labelString.IsEmpty()) &&
+                choice.EqualsLiteral("USB device")) {
+              selected = i;
+              break;
+            }
+            if (!label.IsNull() && labelString.Equals(choice)) {
+              selected = i;
+              break;
+            }
+          }
+        }
+      } else {
+        JS_ClearPendingException(cx);
+      }
+    }
+  }
+
+  RefPtr<USBDevice> device = mCandidates[selected];
   mUSB->AddAuthorizedDevice(device);
-  mPromise->MaybeResolve(device);
+  mPromise->MaybeResolve(device.get());
   return NS_OK;
 }
 
