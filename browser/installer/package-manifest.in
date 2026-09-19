@@ -360,8 +360,6 @@
 @RESPATH@/browser/components/nsSetDefaultBrowser.js
 @RESPATH@/browser/components/internaluserscripts.js
 @RESPATH@/browser/components/internaluserscripts.manifest
-@RESPATH@/browser/components/about.manifest
-@RESPATH@/browser/components/about.js
 @RESPATH@/browser/components/protocol.manifest
 @RESPATH@/browser/components/protocol.js
 @RESPATH@/browser/components/devtools-startup.manifest
@@ -634,7 +632,7 @@
 @RESPATH@/browser/@PREF_DIR@/basilisk.js
 @RESPATH@/browser/@PREF_DIR@/basilisk-branding.js
 @RESPATH@/browser/@PREF_DIR@/internaluserscripts.js
-@RESPATH@/browser/@PREF_DIR@/overbiteff.js
+@RESPATH@/browser/@PREF_DIR@/gopher.js
 @RESPATH@/goanna.js
 @RESPATH@/defaults/autoconfig/prefcalls.js
 @RESPATH@/browser/defaults/permissions

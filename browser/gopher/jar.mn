@@ -4,19 +4,19 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 gopher.jar:
-% content overbiteff %content/
-% locale overbiteff da-DK %locale/da-DK/
-% locale overbiteff de-DE %locale/de-DE/
-% locale overbiteff en-US %locale/en-US/
-% locale overbiteff es-ES %locale/es-ES/
-% locale overbiteff fr-FR %locale/fr-FR/
-% locale overbiteff hu-HU %locale/hu-HU/
-% locale overbiteff ja-JP %locale/ja-JP/
-% locale overbiteff nb-NO %locale/nb-NO/
-% locale overbiteff nl-NL %locale/nl-NL/
-% locale overbiteff pl-PL %locale/pl-PL/
-% locale overbiteff ru-RU %locale/ru-RU/
-% locale overbiteff tr-TR %locale/tr-TR/
+% content libgopher %content/
+% locale libgopher da-DK %locale/da-DK/
+% locale libgopher de-DE %locale/de-DE/
+% locale libgopher en-US %locale/en-US/
+% locale libgopher es-ES %locale/es-ES/
+% locale libgopher fr-FR %locale/fr-FR/
+% locale libgopher hu-HU %locale/hu-HU/
+% locale libgopher ja-JP %locale/ja-JP/
+% locale libgopher nb-NO %locale/nb-NO/
+% locale libgopher nl-NL %locale/nl-NL/
+% locale libgopher pl-PL %locale/pl-PL/
+% locale libgopher ru-RU %locale/ru-RU/
+% locale libgopher tr-TR %locale/tr-TR/
 
   content/                 (content/*)
   locale/da-DK/            (locale/da-DK/*)

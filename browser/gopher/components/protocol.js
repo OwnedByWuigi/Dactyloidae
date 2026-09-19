@@ -69,12 +69,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 */
 const OBFFVERS = 3.1; 
 const OBFFBUILD = 1695;
-const OBFFBUILDPREF = "extensions.overbiteff.buildmark";
-const OBFFDOTLESSPREF = "extensions.overbiteff.dotless";
-const OBFFFIXITYPEPREF = "extensions.overbiteff.fixitype";
+const OBFFBUILDPREF = "network.gopher.buildmark";
+const OBFFDOTLESSPREF = "network.gopher.dotless";
+const OBFFFIXITYPEPREF = "network.gopher.fixitype";
 const OBFFSCHEME = "gopher";
-const OBFFCHROMEURL = "chrome://overbiteff";
-const OBFFABOUTURL = (OBFFCHROMEURL + "/content/infobabe.html");
+const OBFFCHROMEURL = "chrome://libgopher";
 const OBFFRABOUTURL = (OBFFCHROMEURL + "/content/startpage.html");
 const OBFFPROT_HANDLER_CONTRACTID = "@mozilla.org/network/protocol;1?name="+OBFFSCHEME;
 const OBFFPROT_HANDLER_CID = Components.ID("{977ffc4c-a635-433d-8477-ea575bfb7b19}");
@@ -123,7 +122,7 @@ var nullcaps = {
 function OverbiteLogAlways(msg, error) {
         var consoleService = Cc["@mozilla.org/consoleservice;1"]
 		.getService(Ci.nsIConsoleService);
-	msg = "OverbiteFF says: "+msg;
+	msg = "libgopher: "+msg;
 	if (error) {
 		consoleService.logStringError(msg);
 	} else {
@@ -1897,20 +1896,10 @@ OverbiteProtocol.prototype = {
 			return ioService.newChannel(IURL, null, null);
 		}
 
-		// otherwise
-		// make chrome channel to about page if
-			// input_uri lacks a hostname
+		// Reject empty-host Gopher URLs. The legacy about-page fallback has
+		// intentionally been removed from the built-in browser integration.
 		if (!input_uri.host.length) {
-			OverbiteLog("internal about page served up instead");
-			OverbiteSetPrefs(); // sigh
-
-			// SEKRIT FUNKTION. gopher:/// clears the caps cache
-			capscache = new Object();
-			OverbiteLogAlways("caps cache is cleared");
-
-			return ioService.newChannel(
-				OBFFABOUTURL,
-				null, null);
+			throw Cr.NS_ERROR_MALFORMED_URI;
 		}
 
 		// otherwise
@@ -1956,15 +1945,7 @@ function NSGetModule(compMgr, fileSpec) {
 if (XPCOMUtils.generateNSGetFactory)
 	var NSGetFactory = XPCOMUtils.generateNSGetFactory(components);
 
-function OverbiteSetPrefs() {
-	var prefs = Cc["@mozilla.org/preferences-service;1"];
-	var prefserv = prefs.getService(Ci.nsIPrefService);
-	prefs = prefs.getService(Ci.nsIPrefBranch);
-	prefs.setIntPref(OBFFBUILDPREF, OBFFBUILD);
-	prefserv.savePrefFile(null);
-}
-
 OverbiteLog("startup with version "+OBFFVERS+" build "+OBFFBUILD);
 
-// The legacy add-on opened about:overbite on first startup. Built-in browser
-// integration must not create or select a tab during application startup.
+// Built-in browser integration must not create or select a tab during
+// application startup.

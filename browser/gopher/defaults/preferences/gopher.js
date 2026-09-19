@@ -1,1 +1,1 @@
-pref("extensions.overbiteff.buildmark", 0);
+pref("network.gopher.buildmark", 0);

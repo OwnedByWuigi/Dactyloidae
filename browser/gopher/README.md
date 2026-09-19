@@ -1,6 +1,6 @@
 ## libgopher
 
-libgopher is a fork of OverbiteFF, a plugin which lets you browse Gopher sites on legacy Firefox-based browsers such as Dactyloidae.
+libgopher (a fork of overbiteff) lets you browse Gopher sites directly in legacy Firefox-based browsers such as Dactyloidae.
 
 In this tree it is built into the browser rather than installed as an add-on. The browser registers the Gopher protocol handler during startup, so `gopher://` links work immediately in a new profile.
 
@@ -9,11 +9,10 @@ In this tree it is built into the browser rather than installed as an add-on. Th
 The integration is split into the same pieces used by other browser-native features:
 
 - `moz.build` adds the component files, default preferences, and chrome package to the browser build.
-- `components/protocol.manifest` registers the Gopher protocol, while `components/about.manifest` registers the `about:gopher` and `about:overbite` pages.
+- `components/protocol.manifest` registers the Gopher protocol.
 - `components/protocol.js` implements Gopher networking, directory conversion, internal resources, and supported item types.
-- `components/about.js` supplies the Overbite information page.
-- `jar.mn` packages the `overbiteff` content and locale namespaces.
-- `defaults/preferences/overbiteff.js` initializes the build marker preference.
+- `jar.mn` packages the `libgopher` content and locale namespaces.
+- `defaults/preferences/gopher.js` initializes the build marker preference.
 
 The browser-level build entry is `browser/moz.build`; no XPI installation or add-on manager registration is required.
 
@@ -25,12 +24,7 @@ The primary entry point is any Gopher URL, for example:
 gopher://gopher.floodgap.com/
 ```
 
-The built-in information pages are available at:
-
-```text
-about:gopher
-about:overbite
-```
+There are no built-in informational `about:` pages; navigation starts from a normal `gopher://` URL.
 
 The protocol handler also serves the generated internal resources used by Gopher directory pages, including icons, CSS, and the page interaction script. These resources are addressed through `gopher:///internal-*` URLs and are resolved from the packaged `content/chrome/` directory.
 
@@ -44,8 +38,8 @@ The protocol handler first checks the profile’s `gopherchrome` directory for r
 
 The following preferences are recognized when present:
 
-- `extensions.overbiteff.dotless` — enables dotless text cleanup.
-- `extensions.overbiteff.fixitype` — enables the legacy item-type correction behavior.
-- `extensions.overbiteff.buildmark` — records the initialized OverbiteFF build number.
+- `network.gopher.dotless` — enables dotless text cleanup.
+- `network.gopher.fixitype` — enables the legacy item-type correction behavior.
+- `network.gopher.buildmark` — records the initialized libgopher build number.
 
 Only the build marker is given a default value by the built-in preference file; the other options remain opt-in.

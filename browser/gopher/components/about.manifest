@@ -1,5 +1,0 @@
-component {80d3faa0-de53-11dc-95ff-0800200c9a66} about.js
-contract @mozilla.org/network/protocol/about;1?what=gopher {80d3faa0-de53-11dc-95ff-0800200c9a66}
-contract @mozilla.org/network/protocol/about;1?what=overbite {80d3faa0-de53-11dc-95ff-0800200c9a66}
-category profile-after-change OverbiteAbout @mozilla.org/network/protocol/about;1?what=gopher
-category profile-after-change OverbiteAbout @mozilla.org/network/protocol/about;1?what=overbite
