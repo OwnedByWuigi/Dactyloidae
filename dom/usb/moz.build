@@ -2,8 +2,8 @@
 
 EXPORTS.mozilla.dom += [
     'USB.h',
-    'USBBackend.h',
     'USBAlternateInterface.h',
+    'USBBackend.h',
     'USBConfiguration.h',
     'USBDescriptors.h',
     'USBDevice.h',
