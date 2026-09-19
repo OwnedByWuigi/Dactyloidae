@@ -68,6 +68,13 @@ function BrowserAction(options, extension) {
                                "or not in your browser_action options.");
   }
 
+  this.defaultArea = {
+    navbar: CustomizableUI.AREA_NAVBAR,
+    menupanel: CustomizableUI.AREA_PANEL,
+    tabstrip: CustomizableUI.AREA_TABSTRIP,
+    personaltoolbar: CustomizableUI.AREA_BOOKMARKS,
+  }[options.default_area] || CustomizableUI.AREA_NAVBAR;
+
   this.tabContext = new TabContext(tab => Object.create(this.defaults),
                                    extension);
 
@@ -83,7 +90,7 @@ BrowserAction.prototype = {
       removable: true,
       label: this.defaults.title || this.extension.name,
       tooltiptext: this.defaults.title || "",
-      defaultArea: CustomizableUI.AREA_NAVBAR,
+      defaultArea: this.defaultArea,
 
       onBeforeCreated: document => {
         let view = document.createElementNS(XUL_NS, "panelview");
@@ -146,7 +153,7 @@ BrowserAction.prototype = {
     // Ensure browser actions remain discoverable in the main toolbar while
     // respecting an existing user-selected placement.
     if (!CustomizableUI.getPlacementOfWidget(this.id)) {
-      CustomizableUI.addWidgetToArea(this.id, CustomizableUI.AREA_NAVBAR);
+      CustomizableUI.addWidgetToArea(this.id, this.defaultArea);
     }
 
     this.tabContext.on("tab-select", // eslint-disable-line mozilla/balanced-listeners

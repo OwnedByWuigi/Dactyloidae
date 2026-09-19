@@ -220,6 +220,7 @@
               "clipboardWrite",
               "dns",
               "idle",
+              "menus",
               "notifications",
               "privacy",
               "storage"
