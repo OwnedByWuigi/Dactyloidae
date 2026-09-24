@@ -115,6 +115,62 @@ GetValueFromString(const nsAString& aString,
   return IsValidUnitType(*aUnitType);
 }
 
+// SVG geometry attributes can contain a percentage with a pixel adjustment.
+// Keep the two terms separate so the percentage follows viewport changes.
+static bool
+GetPercentageCalcFromString(const nsAString& aString,
+                            float& aPercentage, float& aPixelOffset)
+{
+  nsAutoString value(aString);
+  value.Trim(" \t\r\n\f");
+  if (value.Length() < 6 ||
+      !Substring(value, 0, 5).LowerCaseEqualsLiteral("calc(") ||
+      value.Last() != ')') {
+    return false;
+  }
+
+  RangedPtr<const char16_t> iter = SVGContentUtils::GetStartRangedPtr(value) + 5;
+  const RangedPtr<const char16_t> end =
+    SVGContentUtils::GetEndRangedPtr(value) - 1;
+  while (iter < end && IsSVGWhitespace(*iter)) {
+    ++iter;
+  }
+  if (!SVGContentUtils::ParseNumber(iter, end, aPercentage) ||
+      iter == end || *iter++ != '%') {
+    return false;
+  }
+  if (iter == end || !IsSVGWhitespace(*iter)) {
+    return false;
+  }
+  while (iter < end && IsSVGWhitespace(*iter)) {
+    ++iter;
+  }
+  if (iter == end || (*iter != '+' && *iter != '-')) {
+    return false;
+  }
+  bool subtract = *iter++ == '-';
+  if (iter == end || !IsSVGWhitespace(*iter)) {
+    return false;
+  }
+  while (iter < end && IsSVGWhitespace(*iter)) {
+    ++iter;
+  }
+  if (!SVGContentUtils::ParseNumber(iter, end, aPixelOffset) ||
+      end - iter < 2 || *iter++ != 'p' || *iter++ != 'x') {
+    return false;
+  }
+  while (iter < end && IsSVGWhitespace(*iter)) {
+    ++iter;
+  }
+  if (iter != end) {
+    return false;
+  }
+  if (subtract) {
+    aPixelOffset = -aPixelOffset;
+  }
+  return true;
+}
+
 static float GetMMPerPixel() { return MM_PER_INCH_FLOAT / 96; }
 
 static float
@@ -272,7 +328,7 @@ nsSVGLength2::SetBaseValueInSpecifiedUnits(float aValue,
                                            nsSVGElement *aSVGElement,
                                            bool aDoSetAttr)
 {
-  if (mIsBaseSet && mBaseVal == aValue) {
+  if (mIsBaseSet && mBaseVal == aValue && !mHasBaseCalc) {
     return;
   }
 
@@ -282,6 +338,8 @@ nsSVGLength2::SetBaseValueInSpecifiedUnits(float aValue,
   }
   mBaseVal = aValue;
   mIsBaseSet = true;
+  mBaseCalcOffset = 0;
+  mHasBaseCalc = false;
   if (!mIsAnimated) {
     mAnimVal = mBaseVal;
   }
@@ -300,7 +358,8 @@ nsSVGLength2::ConvertToSpecifiedUnits(uint16_t unitType,
   if (!IsValidUnitType(unitType))
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 
-  if (mIsBaseSet && mSpecifiedUnitType == uint8_t(unitType))
+  if (mIsBaseSet && mSpecifiedUnitType == uint8_t(unitType) &&
+      !mHasBaseCalc)
     return NS_OK;
 
   // Even though we're not changing the visual effect this length will have
@@ -309,9 +368,10 @@ nsSVGLength2::ConvertToSpecifiedUnits(uint16_t unitType,
   // change.
   nsAttrValue emptyOrOldValue = aSVGElement->WillChangeLength(mAttrEnum);
 
-  float valueInUserUnits =
-    mBaseVal / GetUnitScaleFactor(aSVGElement, mSpecifiedUnitType);
+  float valueInUserUnits = GetBaseValue(aSVGElement);
   mSpecifiedUnitType = uint8_t(unitType);
+  mHasBaseCalc = false;
+  mBaseCalcOffset = 0;
   // Setting aDoSetAttr to false here will ensure we don't call
   // Will/DidChangeAngle a second time (and dispatch duplicate notifications).
   SetBaseValue(valueInUserUnits, aSVGElement, false);
@@ -331,7 +391,7 @@ nsSVGLength2::NewValueSpecifiedUnits(uint16_t unitType,
   if (!IsValidUnitType(unitType))
     return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 
-  if (mIsBaseSet && mBaseVal == valueInSpecifiedUnits &&
+  if (mIsBaseSet && mBaseVal == valueInSpecifiedUnits && !mHasBaseCalc &&
       mSpecifiedUnitType == uint8_t(unitType)) {
     return NS_OK;
   }
@@ -339,6 +399,8 @@ nsSVGLength2::NewValueSpecifiedUnits(uint16_t unitType,
   nsAttrValue emptyOrOldValue = aSVGElement->WillChangeLength(mAttrEnum);
   mBaseVal = valueInSpecifiedUnits;
   mIsBaseSet = true;
+  mBaseCalcOffset = 0;
+  mHasBaseCalc = false;
   mSpecifiedUnitType = uint8_t(unitType);
   if (!mIsAnimated) {
     mAnimVal = mBaseVal;
@@ -379,13 +441,20 @@ nsSVGLength2::SetBaseValueString(const nsAString &aValueAsString,
 {
   float value;
   uint16_t unitType;
+  float pixelOffset = 0;
+  bool isCalc = false;
 
   if (!GetValueFromString(aValueAsString, value, &unitType)) {
-    return NS_ERROR_DOM_SYNTAX_ERR;
+    if (!GetPercentageCalcFromString(aValueAsString, value, pixelOffset)) {
+      return NS_ERROR_DOM_SYNTAX_ERR;
+    }
+    unitType = nsIDOMSVGLength::SVG_LENGTHTYPE_PERCENTAGE;
+    isCalc = true;
   }
 
   if (mIsBaseSet && mBaseVal == float(value) &&
-      mSpecifiedUnitType == uint8_t(unitType)) {
+      mSpecifiedUnitType == uint8_t(unitType) &&
+      mBaseCalcOffset == pixelOffset && mHasBaseCalc == isCalc) {
     return NS_OK;
   }
 
@@ -396,6 +465,8 @@ nsSVGLength2::SetBaseValueString(const nsAString &aValueAsString,
   mBaseVal = value;
   mIsBaseSet = true;
   mSpecifiedUnitType = uint8_t(unitType);
+  mBaseCalcOffset = pixelOffset;
+  mHasBaseCalc = isCalc;
   if (!mIsAnimated) {
     mAnimVal = mBaseVal;
   }
@@ -413,18 +484,36 @@ void
 nsSVGLength2::GetBaseValueString(nsAString & aValueAsString) const
 {
   GetValueString(aValueAsString, mBaseVal, mSpecifiedUnitType);
+  if (mHasBaseCalc) {
+    nsAutoString percentage(aValueAsString);
+    nsAutoString pixels;
+    GetValueString(pixels, std::abs(mBaseCalcOffset),
+                   nsIDOMSVGLength::SVG_LENGTHTYPE_PX);
+    aValueAsString.AssignLiteral("calc(");
+    aValueAsString.Append(percentage);
+    aValueAsString.Append(mBaseCalcOffset < 0 ? NS_LITERAL_STRING(" - ")
+                                               : NS_LITERAL_STRING(" + "));
+    aValueAsString.Append(pixels);
+    aValueAsString.Append(')');
+  }
 }
 
 void
 nsSVGLength2::GetAnimValueString(nsAString & aValueAsString) const
 {
   GetValueString(aValueAsString, mAnimVal, mSpecifiedUnitType);
+  if (mHasBaseCalc && !mIsAnimated) {
+    GetBaseValueString(aValueAsString);
+  }
 }
 
 void
 nsSVGLength2::SetBaseValue(float aValue, nsSVGElement *aSVGElement,
                            bool aDoSetAttr)
 {
+  if (mHasBaseCalc) {
+    mSpecifiedUnitType = nsIDOMSVGLength::SVG_LENGTHTYPE_NUMBER;
+  }
   SetBaseValueInSpecifiedUnits(aValue * GetUnitScaleFactor(aSVGElement,
                                                            mSpecifiedUnitType),
                                aSVGElement, aDoSetAttr);
