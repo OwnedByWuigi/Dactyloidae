@@ -6,6 +6,9 @@ browser.jar:
         content/browser/pictureInPicture.js           (content/pictureInPicture.js)
         content/browser/pictureInPicture.css          (content/pictureInPicture.css)
         content/browser/pictureInPictureContent.js    (content/pictureInPictureContent.js)
+        content/browser/usbDevicePicker.xul           (content/usbDevicePicker.xul)
+        content/browser/usbDevicePicker.js            (content/usbDevicePicker.js)
+        content/browser/usbDevicePicker.css           (content/usbDevicePicker.css)
 %  content browser %content/browser/ contentaccessible=yes
 #ifdef XP_MACOSX
 %  overlay chrome://mozapps/content/downloads/downloads.xul chrome://browser/content/downloadManagerOverlay.xul

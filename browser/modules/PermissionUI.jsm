@@ -486,6 +486,8 @@ function getUSBString(name, fallback) {
 
 function USBPermissionPrompt(request) {
   this.request = request;
+  this.window = null;
+  this.completed = false;
 }
 
 function getUSBDeviceChoices(request) {
@@ -551,10 +553,14 @@ USBPermissionPrompt.prototype = {
   },
 
   // PopupNotifications in older UXP builds cannot reliably render a
-  // permission request that contains a variable list of USB devices. Use
-  // the native prompt service so the chooser is always visible and the
-  // selected device can be returned to the content request.
+  // permission request that contains a variable list of USB devices. Use a
+  // dedicated XUL window so the chooser stays visible above the browser.
   prompt() {
+    if (this.window && !this.window.closed) {
+      this.window.focus();
+      return;
+    }
+
     let choices = getUSBDeviceChoices(this.request);
     if (!choices.length) {
       this.cancel();
@@ -563,19 +569,64 @@ USBPermissionPrompt.prototype = {
 
     let browser = this.browser;
     let parent = browser && browser.ownerGlobal ? browser.ownerGlobal : null;
-    let selected = { value: 0 };
-    let accepted = Services.prompt.select(
-      parent,
-      getUSBString("webUSB.selectDeviceTitle", "Select USB device"),
-      getUSBString("webUSB.selectDevice", "Choose a USB device to access:"),
-      choices.length,
-      choices,
-      selected);
-
-    if (accepted && selected.value >= 0 && selected.value < choices.length) {
-      this.request.allow({usb: choices[selected.value]});
-    } else {
+    if (!parent) {
       this.cancel();
+      return;
+    }
+
+    try {
+      this.window = parent.openDialog(
+        "chrome://browser/content/usbDevicePicker.xul", "",
+        "chrome,dialog=no,dependent,alwaysRaised,resizable=no,width=420,height=260",
+        {
+          prompt: this,
+          choices,
+          title: getUSBString("webUSB.selectDeviceTitle", "Select USB device"),
+          message: getUSBString("webUSB.selectDevice",
+                                "Choose a USB device to access:"),
+          selectLabel: getUSBString("webUSB.selectDeviceButton", "Select"),
+          cancelLabel: getUSBString("webUSB.cancel", "Cancel"),
+        });
+    } catch (ex) {
+      Cu.reportError("Unable to open USB device picker: " + ex);
+      this.cancel();
+    }
+  },
+
+  select(index) {
+    if (this.completed) {
+      return;
+    }
+    let choices = getUSBDeviceChoices(this.request);
+    if (index < 0 || index >= choices.length) {
+      this.cancel();
+      return;
+    }
+    this.completed = true;
+    try {
+      this.request.allow({usb: choices[index]});
+    } finally {
+      this.closeWindow();
+    }
+  },
+
+  cancel() {
+    if (this.completed) {
+      return;
+    }
+    this.completed = true;
+    try {
+      this.request.cancel();
+    } finally {
+      this.closeWindow();
+    }
+  },
+
+  closeWindow() {
+    let window = this.window;
+    this.window = null;
+    if (window && !window.closed) {
+      window.close();
     }
   },
 

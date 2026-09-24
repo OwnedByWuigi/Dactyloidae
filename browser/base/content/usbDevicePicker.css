@@ -1,0 +1,29 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#usb-device-picker {
+  min-width: 360px;
+  min-height: 220px;
+}
+
+#picker {
+  padding: 16px;
+}
+
+#message {
+  margin: 0 0 10px;
+}
+
+#devices {
+  min-height: 100px;
+  margin: 0 0 12px;
+}
+
+#buttons {
+  margin-inline-start: 8px;
+}
+
+#buttons > button + button {
+  margin-inline-start: 8px;
+}
