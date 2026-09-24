@@ -28,13 +28,10 @@
 CSS_PSEUDO_ELEMENT(after, ":after", CSS_PSEUDO_ELEMENT_IS_CSS2)
 CSS_PSEUDO_ELEMENT(before, ":before", CSS_PSEUDO_ELEMENT_IS_CSS2)
 
-// XXX: ::slotted() and ::part() are treated as if they were pseudo-classes,
-// and are never parsed as pseudo-elements.
+// XXX: ::slotted() is treated as if it were a pseudo-class, and
+// is never parsed as a pseudo-element.
 CSS_PSEUDO_ELEMENT(slotted, ":slotted",
                    CSS_PSEUDO_ELEMENT_SUPPORTS_TREE_ABIDING)
-CSS_PSEUDO_ELEMENT(part, ":part",
-                   CSS_PSEUDO_ELEMENT_SUPPORTS_TREE_ABIDING |
-                   CSS_PSEUDO_ELEMENT_SUPPORTS_USER_ACTION_STATE)
 
 CSS_PSEUDO_ELEMENT(backdrop, ":backdrop", 0)
 

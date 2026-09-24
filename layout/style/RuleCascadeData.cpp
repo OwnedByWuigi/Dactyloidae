@@ -404,22 +404,6 @@ RuleHash::AppendUniversalRule(const RuleSelectorPair& aRuleInfo)
     RuleValue(aRuleInfo, mRuleCount++, mQuirksMode));
 }
 
-static bool
-SelectorContainsPseudoClass(nsCSSSelector* aSelector, CSSPseudoClassType aType)
-{
-  for (nsCSSSelector* selector = aSelector; selector; selector = selector->mNext) {
-    for (nsPseudoClassList* pseudoClass = selector->mPseudoClassList;
-         pseudoClass;
-         pseudoClass = pseudoClass->mNext) {
-      if (pseudoClass->mType == aType) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
 void
 RuleHash::AppendRule(const RuleSelectorPair& aRuleInfo)
 {
@@ -427,10 +411,7 @@ RuleHash::AppendRule(const RuleSelectorPair& aRuleInfo)
   if (selector->IsPseudoElement()) {
     selector = selector->mNext;
   }
-  if (SelectorContainsPseudoClass(selector, CSSPseudoClassType::part)) {
-    AppendUniversalRule(aRuleInfo);
-    RULE_HASH_STAT_INCREMENT(mUniversalSelectors);
-  } else if (nullptr != selector->mIDList) {
+  if (nullptr != selector->mIDList) {
     AppendRuleToTable(&mIdTable, selector->mIDList->mAtom, aRuleInfo);
     RULE_HASH_STAT_INCREMENT(mIdSelectors);
   } else if (nullptr != selector->mClassList) {
@@ -471,10 +452,6 @@ LookForTargetPseudo(nsCSSSelector* aSelector,
                     nsRestyleHint* possibleChange)
 {
   if (aMatchContext->mOnlyMatchHostPseudo) {
-    if (SelectorContainsPseudoClass(aSelector, CSSPseudoClassType::part)) {
-      return true;
-    }
-
     while (aSelector && aSelector->mNext != nullptr) {
       aSelector = aSelector->mNext;
     }
@@ -525,8 +502,7 @@ ContentEnumFunc(const RuleValue& value,
     data->mTreeMatchContext.SetHaveRelevantLink();
   }
   // XXX: Ignore the ancestor filter if we're testing the assigned slot.
-  bool useAncestorFilter = !(data->mTreeMatchContext.mForAssignedSlot ||
-                             data->mTreeMatchContext.mOnlyMatchHostPseudo);
+  bool useAncestorFilter = !(data->mTreeMatchContext.mForAssignedSlot);
   if (useAncestorFilter && ancestorFilter &&
       !ancestorFilter->MightHaveMatchingAncestor<RuleValue::eMaxAncestorHashes>(
         value.mAncestorSelectorHashes)) {
@@ -580,18 +556,9 @@ ContentEnumFunc(const RuleValue& value,
                                       nodeContext,
                                       data->mTreeMatchContext,
                                       selectorFlags)) {
-    Element* treeMatchStart = data->mElement;
-    if (SelectorContainsPseudoClass(selector, CSSPseudoClassType::part)) {
-      nsIContent* partHost = data->mElement->GetContainingShadowHost();
-      if (!partHost || !partHost->IsElement()) {
-        return;
-      }
-      treeMatchStart = partHost->AsElement();
-    }
-
     nsCSSSelector* next = selector->mNext;
     if (!next || nsCSSRuleUtils::SelectorMatchesTree(
-                   treeMatchStart,
+                   data->mElement,
                    next,
                    data->mTreeMatchContext,
                    nodeContext.mIsRelevantLink ? SelectorMatchesTreeFlags(0)

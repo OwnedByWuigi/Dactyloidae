@@ -9,7 +9,6 @@
 #include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "nsIMozBrowserFrame.h"
-#include "nsGkAtoms.h"
 #include "nsRuleWalker.h"
 #include "nsStyleUtil.h"
 #include "StyleRule.h"
@@ -187,36 +186,6 @@ InitSystemMetrics()
 #endif
 
   return true;
-}
-
-static nsPseudoClassList*
-FindPseudoClass(const nsCSSSelector* aSelector, CSSPseudoClassType aType)
-{
-  for (nsPseudoClassList* pseudoClass = aSelector->mPseudoClassList;
-       pseudoClass;
-       pseudoClass = pseudoClass->mNext) {
-    if (pseudoClass->mType == aType) {
-      return pseudoClass;
-    }
-  }
-
-  return nullptr;
-}
-
-static bool
-ElementMatchesPart(Element* aElement, const nsPseudoClassList* aPseudoClass)
-{
-  MOZ_ASSERT(aPseudoClass->mType == CSSPseudoClassType::part);
-  MOZ_ASSERT(aPseudoClass->u.mString);
-
-  nsAutoString partValue;
-  if (!aElement->GetAttr(kNameSpaceID_None, nsGkAtoms::part, partValue)) {
-    return false;
-  }
-
-  const nsDefaultStringComparator comparator;
-  return nsStyleUtil::ValueIncludes(
-    partValue, nsDependentString(aPseudoClass->u.mString), comparator);
 }
 
 /* static */ void
@@ -671,10 +640,7 @@ nsCSSRuleUtils::SelectorMatches(Element* aElement,
              "is false since we don't know how to set it correctly in "
              "Has(Attribute|State)DependentStyle");
 
-  nsPseudoClassList* partPseudo =
-    FindPseudoClass(aSelector, CSSPseudoClassType::part);
-
-  if (aNodeMatchContext.mIsFeatureless && !partPseudo &&
+  if (aNodeMatchContext.mIsFeatureless &&
       !CanMatchFeaturelessElement(aSelector)) {
     return false;
   }
@@ -688,27 +654,6 @@ nsCSSRuleUtils::SelectorMatches(Element* aElement,
       return false;
     }
     targetElement = slot->AsElement();
-  }
-
-  if (partPseudo) {
-    if (!ElementMatchesPart(aElement, partPseudo)) {
-      return false;
-    }
-
-    nsIContent* partHostContent = aElement->GetContainingShadowHost();
-    if (!partHostContent || !partHostContent->IsElement()) {
-      return false;
-    }
-
-    Element* partHost = partHostContent->AsElement();
-    if (aTreeMatchContext.mScopedRoot) {
-      ShadowRoot* scopedShadow = aTreeMatchContext.mScopedRoot->GetShadowRoot();
-      if (!scopedShadow || partHost->GetContainingShadow() != scopedShadow) {
-        return false;
-      }
-    }
-
-    targetElement = partHost;
   }
 
   // namespace/tag match
@@ -970,9 +915,6 @@ nsCSSRuleUtils::SelectorMatches(Element* aElement,
           }
         } break;
 
-        case CSSPseudoClassType::part:
-          break;
-
         case CSSPseudoClassType::host: {
           ShadowRoot* shadow = aElement->GetShadowRoot();
           // In order to match :host, the element must be a shadow root host,
@@ -985,11 +927,15 @@ nsCSSRuleUtils::SelectorMatches(Element* aElement,
             return false;
           }
 
-          // Check if the element has the same shadow root.
-          if (aTreeMatchContext.mScopedRoot) {
-            if (shadow != aTreeMatchContext.mScopedRoot->GetShadowRoot()) {
-              return false;
+          // We're matching :host from inside the shadow root.
+          if (!aTreeMatchContext.mOnlyMatchHostPseudo) {
+            // Check if the element has the same shadow root.
+            if (aTreeMatchContext.mScopedRoot) {
+              if (shadow != aTreeMatchContext.mScopedRoot->GetShadowRoot()) {
+                return false;
+              }
             }
+            // We were called elsewhere.
           }
 
           // Reject if the next selector is an explicit universal selector.

@@ -78,8 +78,7 @@ nsCSSPseudoElements::IsCSS2PseudoElement(nsIAtom *aAtom)
 /* static */ bool
 nsCSSPseudoElements::IsHybridPseudoElement(CSSPseudoElementType aType)
 {
-  return aType == CSSPseudoElementType::slotted ||
-         aType == CSSPseudoElementType::part;
+  return aType == CSSPseudoElementType::slotted;
 }
 
 /* static */ bool

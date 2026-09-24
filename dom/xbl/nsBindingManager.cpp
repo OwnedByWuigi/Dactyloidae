@@ -823,37 +823,16 @@ nsBindingManager::WalkAllRules(nsIStyleRuleProcessor::EnumFunc aFunc,
   }
 }
 
+// The approach in WalkAllShadowRootHostRules seems reasonable on the surface and reminds me of what is done with mScopedRoot elsewhere. But something important is missing, either here or in the code that would normally use it.
+
 void
 nsBindingManager::WalkAllShadowRootHostRules(nsIStyleRuleProcessor::EnumFunc aFunc,
                                          ElementDependentRuleProcessorData* aData)
-{
-  if (!mBoundContentSet) {
-    return;
-  }
-
-  bool oldOnlyMatchHostPseudo = aData->mTreeMatchContext.mOnlyMatchHostPseudo;
-  nsIContent* oldScopedRoot = aData->mTreeMatchContext.mScopedRoot;
-  aData->mTreeMatchContext.mOnlyMatchHostPseudo = true;
-
-  for (auto iter = mBoundContentSet->Iter(); !iter.Done(); iter.Next()) {
-    nsIContent* boundContent = iter.Get()->GetKey();
-    ShadowRoot* shadowRoot = boundContent->GetShadowRoot();
-    if (!shadowRoot) {
-      continue;
-    }
-
-    nsXBLBinding* binding = shadowRoot->GetAssociatedBinding();
-    if (!binding) {
-      continue;
-    }
-
-    aData->mTreeMatchContext.mScopedRoot = boundContent;
-    binding->WalkRules(aFunc, aData);
-  }
-
-  aData->mTreeMatchContext.mScopedRoot = oldScopedRoot;
-  aData->mTreeMatchContext.mOnlyMatchHostPseudo = oldOnlyMatchHostPseudo;
-}
+ {
+   aData->mTreeMatchContext.mOnlyMatchHostPseudo = true;
+   WalkAllRules(aFunc, aData, true);
+   aData->mTreeMatchContext.mOnlyMatchHostPseudo = false;
+ }
 
 nsresult
 nsBindingManager::MediumFeaturesChanged(nsPresContext* aPresContext,
