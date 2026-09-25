@@ -99,62 +99,6 @@ InternalUserscriptsService.prototype = {
       }
     } catch (e) {}
     let contentWin = win.wrappedJSObject || win;
-    let documentURI = null;
-    try {
-      documentURI = win.document.documentURIObject;
-    } catch (e) {}
-
-    // The codec shim is deliberately limited to YouTube.  Use the browser's
-    // decoder probe rather than guessing from the user's graphics settings.
-    let documentHost = null;
-    try {
-      // nsIURI.host is not implemented by hostless URI schemes (about:, data:,
-      // moz-extension:, and others), so reading it can throw.
-      if (documentURI) {
-        documentHost = documentURI.host;
-      }
-    } catch (e) {}
-
-    if (documentHost &&
-        /(^|\.)youtube(?:-nocookie)?\.com$/i.test(documentHost)) {
-      let settings = {
-        hideUnaccelerated: Services.prefs.getBoolPref(
-          "browser.video.youtube.hide-unaccelerated", true),
-        forceH264: Services.prefs.getBoolPref(
-          "browser.video.youtube.force-h264", false),
-        disable60fps: Services.prefs.getBoolPref(
-          "browser.video.youtube.disable-60fps", false),
-        vp9HardwareAccelerated: false,
-      };
-
-      let loadCodecShim = function (vp9HardwareAccelerated) {
-        settings.vp9HardwareAccelerated = vp9HardwareAccelerated;
-        contentWin.__dactyloidaeYouTubeVideoSettings = settings;
-        try {
-          Services.scriptloader.loadSubScript(
-            "chrome://internaluserscripts/content/bundled-scripts/youtube-codec-check.user.js",
-            contentWin);
-        } catch (e) {}
-      };
-
-      try {
-        let utils = win.QueryInterface(Ci.nsIInterfaceRequestor)
-                       .getInterface(Ci.nsIDOMWindowUtils);
-        let hardwareSupport = utils.supportsHardwareVP9Decoding;
-        if (hardwareSupport && typeof hardwareSupport.then === "function") {
-          hardwareSupport.then(function (result) {
-            loadCodecShim(/^Yes;/.test(result));
-          }, function () {
-            loadCodecShim(false);
-          });
-        } else {
-          loadCodecShim(/^Yes;/.test(hardwareSupport));
-        }
-      } catch (e) {
-        loadCodecShim(false);
-      }
-    }
-
     let logPolyfill = function (name, source) {
       try {
         if (

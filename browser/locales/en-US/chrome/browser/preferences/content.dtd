@@ -52,11 +52,3 @@
 <!ENTITY  javascriptWebrtc.label           "Enable WebRTC">
 <!ENTITY  javascriptWebrtc.accesskey       "R">
 #endif
-
-<!ENTITY  videoContent.label "Video">
-<!ENTITY  youtubeHideUnaccelerated.label "Hide codecs from YouTube that aren't hardware accelerated">
-<!ENTITY  youtubeHideUnaccelerated.accesskey "H">
-<!ENTITY  youtubeForceH264.label "Force H264 on YouTube">
-<!ENTITY  youtubeForceH264.accesskey "F">
-<!ENTITY  youtubeDisable60fps.label "Disable 60fps video on YouTube">
-<!ENTITY  youtubeDisable60fps.accesskey "D">
