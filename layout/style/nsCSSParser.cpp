@@ -4168,10 +4168,35 @@ CSSParserImpl::ParseMediaQueryExpression(nsMediaQuery* aQuery)
   }
 
   if (!mToken.IsSymbol(':')) {
-    REPORT_UNEXPECTED_TOKEN(PEMQExpectedFeatureNameEnd);
-    UngetToken();
-    SkipUntil(')');
-    return false;
+    // Media Queries Level 4 permits range features in a comparison context,
+    // e.g. (width >= 1012px), in addition to min-width/max-width.
+    if (expr->mRange != nsMediaExpression::eEqual ||
+        feature->mRangeType != nsMediaFeature::eMinMaxAllowed ||
+        !(mToken.IsSymbol('<') || mToken.IsSymbol('>') ||
+          mToken.IsSymbol('='))) {
+      REPORT_UNEXPECTED_TOKEN(PEMQExpectedFeatureNameEnd);
+      UngetToken();
+      SkipUntil(')');
+      return false;
+    }
+
+    if (mToken.IsSymbol('=')) {
+      expr->mRange = nsMediaExpression::eEqual;
+    } else {
+      bool greater = mToken.IsSymbol('>');
+      // Use GetToken(false) so whitespace between the two characters of
+      // an inclusive comparison is not accepted as part of the operator.
+      bool gotToken = GetToken(false);
+      bool inclusive = gotToken && mToken.IsSymbol('=');
+      if (gotToken && !inclusive) {
+        UngetToken();
+      }
+      expr->mRange = greater
+        ? (inclusive ? nsMediaExpression::eMin
+                     : nsMediaExpression::eMinExclusive)
+        : (inclusive ? nsMediaExpression::eMax
+                     : nsMediaExpression::eMaxExclusive);
+    }
   }
 
   bool rv = false;

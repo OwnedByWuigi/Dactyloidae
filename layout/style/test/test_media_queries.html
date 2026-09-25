@@ -321,6 +321,15 @@ function run() {
                      (Math.floor(value/em_size) - 1) + "rem)");
   }
 
+  // GitHub's navigation uses range queries without whitespace around the
+  // comparison operator.  Check both sides of its desktop breakpoint.
+  should_apply("(width>=117px)");
+  should_not_apply("(width<=116.98px)");
+  should_apply("(width=117px)");
+  expression_should_not_be_parseable("width > = 117px");
+  expression_should_not_be_parseable("min-width >= 117px");
+  expression_should_not_be_parseable("orientation >= landscape");
+
   change_state(function() {
     iframe_style.width = "100px";
     iframe_style.height = "10px";
