@@ -1,3 +1,133 @@
+diff --git a/browser/base/content/browser.xul b/browser/base/content/browser.xul
+index 20c0ab097d..0521b130de 100644
+--- a/browser/base/content/browser.xul
++++ b/browser/base/content/browser.xul
+@@ -561,16 +561,16 @@
+                            context="backForwardMenu"/>
+ 				
+         <toolbarbutton id="home-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
+-                       removable="true"
+-                       label="&homeButton.label;"
+-                       ondragover="homeButtonObserver.onDragOver(event)"
+-                       ondragenter="homeButtonObserver.onDragOver(event)"
+-                       ondrop="homeButtonObserver.onDrop(event)"
+-                       ondragexit="homeButtonObserver.onDragExit(event)"
+-                       key="goHome"
+-                       onclick="BrowserGoHome(event);"
+-                       cui-areatype="toolbar"
+-                       aboutHomeOverrideTooltip="&abouthome.pageTitle;"/>
++	                       removable="true"
++	                       label="&homeButton.label;"
++	                       ondragover="homeButtonObserver.onDragOver(event)"
++	                       ondragenter="homeButtonObserver.onDragOver(event)"
++	                       ondrop="homeButtonObserver.onDrop(event)"
++	                       ondragexit="homeButtonObserver.onDragExit(event)"
++	                       key="goHome"
++	                       onclick="BrowserGoHome(event);"
++	                       cui-areatype="toolbar"
++	                       aboutHomeOverrideTooltip="&abouthome.pageTitle;"/>
+             <textbox id="urlbar" flex="1"
+                      placeholder="&urlbar.placeholder2;"
+                      type="autocomplete"
+@@ -689,6 +689,98 @@
+           </hbox>
+         </toolbaritem>
+ 
++ 	        <toolbaritem id="search-container" title="&searchItem.title;"
++	                     align="center" class="chromeclass-toolbar-additional panel-wide-item"
++	                     cui-areatype="toolbar"
++	                     flex="100" persist="width" removable="true">
++	          <searchbar id="searchbar" flex="1"/>
++	        </toolbaritem>
++	
++	        <toolbarbutton id="bookmarks-menu-button"
++	                       class="toolbarbutton-1 chromeclass-toolbar-additional"
++	                       removable="true"
++	                       type="menu-button"
++	                       label="&bookmarksMenuButton.label;"
++	                       tooltip="dynamic-shortcut-tooltip"
++	                       anchor="dropmarker"
++	                       ondragenter="PlacesMenuDNDHandler.onDragEnter(event);"
++	                       ondragover="PlacesMenuDNDHandler.onDragOver(event);"
++	                       ondragleave="PlacesMenuDNDHandler.onDragLeave(event);"
++	                       ondrop="PlacesMenuDNDHandler.onDrop(event);"
++	                       cui-areatype="toolbar"
++	                       oncommand="BookmarkingUI.onCommand(event);">
++	          <observes element="bookmarkThisPageBroadcaster" attribute="starred"/>
++	          <observes element="bookmarkThisPageBroadcaster" attribute="buttontooltiptext"/>
++	          <menupopup id="BMB_bookmarksPopup"
++	                     class="cui-widget-panel cui-widget-panelview cui-widget-panelWithFooter PanelUI-subView"
++	                     placespopup="true"
++	                     context="placesContext"
++	                     openInTabs="children"
++	                     oncommand="BookmarksEventHandler.onCommand(event, this.parentNode._placesView);"
++	                     onclick="BookmarksEventHandler.onClick(event, this.parentNode._placesView);"
++	                     onpopupshowing="BookmarkingUI.onPopupShowing(event);
++	                                     BookmarkingUI.attachPlacesView(event, this);"
++	                     tooltip="bhTooltip" popupsinherittooltip="true">
++	            <menuitem id="BMB_viewBookmarksSidebar"
++	                      class="subviewbutton"
++	                      label="&viewBookmarksSidebar2.label;"
++	                      type="checkbox"
++	                      oncommand="SidebarUI.toggle('viewBookmarksSidebar');">
++	              <observes element="viewBookmarksSidebar" attribute="checked"/>
++	            </menuitem>
++	            <!-- NB: temporary solution for bug 985024, this should go away soon. -->
++	            <menuitem id="BMB_bookmarksShowAllTop"
++	                      class="menuitem-iconic subviewbutton"
++	                      label="&showAllBookmarks2.label;"
++	                      command="Browser:ShowAllBookmarks"
++	                      key="manBookmarkKb"/>
++	            <menuseparator/>
++	            <menuitem label="&recentBookmarks.label;"
++	                      id="BMB_recentBookmarks"
++	                      disabled="true"
++	                      class="menuitem-iconic subviewbutton"/>
++	            <menuseparator/>
++	            <menu id="BMB_bookmarksToolbar"
++	                  class="menu-iconic bookmark-item subviewbutton"
++	                  label="&personalbarCmd.label;"
++	                  container="true">
++	              <menupopup id="BMB_bookmarksToolbarPopup"
++	                         placespopup="true"
++	                         context="placesContext"
++	                         onpopupshowing="if (!this.parentNode._placesView)
++	                                           new PlacesMenu(event, 'place:folder=TOOLBAR',
++	                                                          PlacesUIUtils.getViewForNode(this.parentNode.parentNode).options);">
++	                <menuitem id="BMB_viewBookmarksToolbar"
++	                          placesanonid="view-toolbar"
++	                          toolbarId="PersonalToolbar"
++	                          type="checkbox"
++	                          oncommand="onViewToolbarCommand(event)"
++	                          label="&viewBookmarksToolbar.label;"/>
++	                <menuseparator/>
++	                <!-- Bookmarks toolbar items -->
++	              </menupopup>
++	            </menu>
++	            <menu id="BMB_unsortedBookmarks"
++	                  class="menu-iconic bookmark-item subviewbutton"
++	                  label="&bookmarksMenuButton.other.label;"
++	                  container="true">
++	              <menupopup id="BMB_unsortedBookmarksPopup"
++	                         placespopup="true"
++	                         context="placesContext"
++	                         onpopupshowing="if (!this.parentNode._placesView)
++	                                           new PlacesMenu(event, 'place:folder=UNFILED_BOOKMARKS',
++	                                                          PlacesUIUtils.getViewForNode(this.parentNode.parentNode).options);"/>
++	            </menu>
++	            <menuseparator/>
++	            <!-- Bookmarks menu items will go here -->
++	            <menuitem id="BMB_bookmarksShowAll"
++	                      class="subviewbutton panel-subview-footer"
++	                      label="&showAllBookmarks2.label;"
++	                      command="Browser:ShowAllBookmarks"
++	                      key="manBookmarkKb"/>
++	          </menupopup>
++	        </toolbarbutton>
++
+         <!-- This is a placeholder for the Downloads Indicator.  It is visible
+              during the customization of the toolbar, in the palette, and before
+              the Downloads Indicator overlay is loaded. -->
 diff --git a/browser/themes/linux/jar.mn b/browser/themes/linux/jar.mn
 index 6afafa9d0a..e9f666418b 100644
 --- a/browser/themes/linux/jar.mn
@@ -173,7 +303,7 @@ index 941313ef22..557aee1991 100644
   * We want the last category to always have non-0 getBoundingClientRect().bottom
   * so we can use the value to figure out the max-height of the list in
 diff --git a/browser/themes/windows/browser.css b/browser/themes/windows/browser.css
-index e632cc2974..375e1e5608 100644
+index e632cc2974..978c3b790e 100644
 --- a/browser/themes/windows/browser.css
 +++ b/browser/themes/windows/browser.css
 @@ -2,2387 +2,6 @@
@@ -2949,17 +3079,6 @@ index e632cc2974..375e1e5608 100644
  .statuspanel-label:-moz-locale-dir(ltr):not([mirror]),
  .statuspanel-label:-moz-locale-dir(rtl)[mirror] {
    border-right-style: solid;
-@@ -4862,8 +2283,8 @@ toolbar[brighttext] .statuspanel-label {
- 
- %include ../shared/fullscreen/warning.inc.css
- %include ../shared/ctrlTab.inc.css
--%include ../../../devtools/client/themes/responsivedesign.inc.css
--%include ../../../devtools/client/themes/commandline.inc.css
-+%include ../../../../devtools/client/themes/responsivedesign.inc.css
-+%include ../../../../devtools/client/themes/commandline.inc.css
- %include ../shared/plugin-doorhanger.inc.css
- 
- notification.pluginVulnerable > .notification-inner > .messageCloseButton {
 @@ -5124,591 +2545,3 @@ notification.pluginVulnerable > .notification-inner > .messageCloseButton {
    padding-top: .9167em;
    padding-bottom: .9167em;
