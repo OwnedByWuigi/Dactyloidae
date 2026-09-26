@@ -1,7 +1,7 @@
 {
   "default": {
     "visibleDefaultEngines": [
-      "startpage", "google-2018", "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+      "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
     ]
   },
   "regionOverrides": {
@@ -10,693 +10,693 @@
     "en-US": {
       "default": {
         "visibleDefaultEngines": [
-          "startpage", "google-2018", "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ach": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "af": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "an": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ar": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "as": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ast": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "az": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "bg": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "bn-BD": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "bn-IN": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "br": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "bs": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ca": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "cak": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "cs": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "cy": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "da": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "de": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "dsb": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "el": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "en-GB": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "en-ZA": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "eo": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "es-AR": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "es-CL": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "es-ES": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "es-MX": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "et": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "eu": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "fa": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ff": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "fi": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "fr": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "fy-NL": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ga-IE": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "gd": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "gl": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "gn": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "gu-IN": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "he": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "hi-IN": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "hr": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "hsb": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "hu": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "hy-AM": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "id": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "is": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "it": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ja-JP-mac": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ja": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ka": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "kab": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "kk": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "km": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "kn": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ko": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "lij": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "lt": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ltg": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "lv": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "mai": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "mk": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ml": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "mr": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ms": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "my": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "nb-NO": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ne-NP": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "nl": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "nn-NO": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "or": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "pa-IN": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "pl": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "pt-BR": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "pt-PT": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "rm": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ro": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ru": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "si": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "sk": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "sl": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "son": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "sq": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "sr": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "sv-SE": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ta": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "te": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "th": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "tl": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "tr": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "uk": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "ur": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "uz": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "vi": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "wo": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "xh": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "zh-CN": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     },
     "zh-TW": {
       "default": {
         "visibleDefaultEngines": [
-          "ddg", "ddg-lite", "yahoo", "bing", "wikipedia"
+          "ddg", "google-2018", "startpage", "yahoo", "bing", "wikipedia"
         ]
       }
     }
