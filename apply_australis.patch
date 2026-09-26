@@ -1,11 +1,103 @@
+diff --git a/browser/app/profile/basilisk.js b/browser/app/profile/basilisk.js
+index 75b8c6065c..434ce2d692 100644
+--- a/browser/app/profile/basilisk.js
++++ b/browser/app/profile/basilisk.js
+@@ -391,7 +391,11 @@ pref("browser.tabs.loadDivertedInBackground", false);
+ pref("browser.tabs.loadBookmarksInBackground", false);
+ pref("browser.tabs.tabClipWidth", 140);
+ pref("browser.tabs.animate", true);
++#ifdef UNIX_BUT_NOT_MAC
+ pref("browser.tabs.drawInTitlebar", false);
++#else
++pref("browser.tabs.drawInTitlebar", true);
++#endif
+ 
+ // When tabs opened by links in other tabs via a combination of
+ // browser.link.open_newwindow being set to 3 and target="_blank" etc are
+diff --git a/browser/base/content/abouthome/aboutHome.css b/browser/base/content/abouthome/aboutHome.css
+index b1926505db..9f5da438d0 100644
+--- a/browser/base/content/abouthome/aboutHome.css
++++ b/browser/base/content/abouthome/aboutHome.css
+@@ -6,6 +6,7 @@
+ 
+ html {
+   font: message-box;
++  font-size: 100%;
+   background-color: hsl(0,0%,95%);
+   color: #000;
+   height: 100%;
+@@ -19,10 +20,6 @@ body {
+   height: 100%;
+ }
+ 
+-h1 {
+-	font-weight: normal !important
+-}
+-
+ input,
+ button {
+   font-size: inherit;
+@@ -34,9 +31,12 @@ a {
+   text-decoration: none;
+ }
+ 
++.spacer {
++  -moz-box-flex: 1;
++}
++
+ #topSection {
+   text-align: center;
+-  margin-top: 100px;
+ }
+ 
+ #brandLogo {
+diff --git a/browser/base/content/abouthome/aboutHome.xhtml b/browser/base/content/abouthome/aboutHome.xhtml
+index 4b43548ddb..8fce4d2116 100644
+--- a/browser/base/content/abouthome/aboutHome.xhtml
++++ b/browser/base/content/abouthome/aboutHome.xhtml
+@@ -37,7 +37,7 @@
+   <body dir="&locale.dir;">
+     <div class="spacer"/>
+     <div id="topSection">
+-      <h1>Where to next?</h1>
++      <div id="brandLogo"></div>
+       <div id="searchIconAndTextContainer">
+         <div id="searchIcon"/>
+         <input type="text" name="q" value="" id="searchText" maxlength="256"
+@@ -46,6 +46,22 @@
+                title="&contentSearchSubmit.tooltip;"/>
+       </div>
+     </div>
+-
++    <div class="spacer"/>
++    <div id="launcher">
++      <button class="launchButton" id="downloads">&abouthome.downloadsButton.label;</button>
++      <button class="launchButton" id="bookmarks">&abouthome.bookmarksButton.label;</button>
++      <button class="launchButton" id="history">&abouthome.historyButton.label;</button>
++      <button class="launchButton" id="addons">&abouthome.addonsButton.label;</button>
++#ifdef MOZ_SERVICES_SYNC
++      <button class="launchButton" id="sync">&abouthome.syncButton.label;</button>
++#endif
++#ifdef XP_WIN
++      <button class="launchButton" id="settings">&abouthome.preferencesButtonWin.label;</button>
++#else
++      <button class="launchButton" id="settings">&abouthome.preferencesButtonUnix.label;</button>
++#endif
++      <div id="restorePreviousSessionSeparator"/>
++      <button class="launchButton" id="restorePreviousSession">&historyRestoreLastSession.label;</button>
++    </div>
+   </body>
+ </html>
 diff --git a/browser/base/content/browser.xul b/browser/base/content/browser.xul
-index 20c0ab097d..0521b130de 100644
+index 20c0ab097d..f275019753 100644
 --- a/browser/base/content/browser.xul
 +++ b/browser/base/content/browser.xul
-@@ -561,16 +561,16 @@
+@@ -559,18 +559,6 @@
+                            onclick="checkForMiddleClick(this, event);"
+                            tooltip="forward-button-tooltip"
                             context="backForwardMenu"/>
- 				
-         <toolbarbutton id="home-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
+-				
+-        <toolbarbutton id="home-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
 -                       removable="true"
 -                       label="&homeButton.label;"
 -                       ondragover="homeButtonObserver.onDragOver(event)"
@@ -16,30 +108,32 @@ index 20c0ab097d..0521b130de 100644
 -                       onclick="BrowserGoHome(event);"
 -                       cui-areatype="toolbar"
 -                       aboutHomeOverrideTooltip="&abouthome.pageTitle;"/>
-+	                       removable="true"
-+	                       label="&homeButton.label;"
-+	                       ondragover="homeButtonObserver.onDragOver(event)"
-+	                       ondragenter="homeButtonObserver.onDragOver(event)"
-+	                       ondrop="homeButtonObserver.onDrop(event)"
-+	                       ondragexit="homeButtonObserver.onDragExit(event)"
-+	                       key="goHome"
-+	                       onclick="BrowserGoHome(event);"
-+	                       cui-areatype="toolbar"
-+	                       aboutHomeOverrideTooltip="&abouthome.pageTitle;"/>
              <textbox id="urlbar" flex="1"
                       placeholder="&urlbar.placeholder2;"
                       type="autocomplete"
-@@ -689,6 +689,98 @@
+@@ -689,6 +677,110 @@
            </hbox>
          </toolbaritem>
  
-+ 	        <toolbaritem id="search-container" title="&searchItem.title;"
++        <toolbarbutton id="home-button" class="toolbarbutton-1 chromeclass-toolbar-additional"
++                       removable="true"
++                       label="&homeButton.label;"
++                       ondragover="homeButtonObserver.onDragOver(event)"
++                       ondragenter="homeButtonObserver.onDragOver(event)"
++                       ondrop="homeButtonObserver.onDrop(event)"
++                       ondragexit="homeButtonObserver.onDragExit(event)"
++                       key="goHome"
++                       onclick="BrowserGoHome(event);"
++                       cui-areatype="toolbar"
++                       aboutHomeOverrideTooltip="&abouthome.pageTitle;"/>
++
++	        <toolbaritem id="search-container" title="&searchItem.title;"
 +	                     align="center" class="chromeclass-toolbar-additional panel-wide-item"
 +	                     cui-areatype="toolbar"
 +	                     flex="100" persist="width" removable="true">
 +	          <searchbar id="searchbar" flex="1"/>
 +	        </toolbaritem>
-+	
++
 +	        <toolbarbutton id="bookmarks-menu-button"
 +	                       class="toolbarbutton-1 chromeclass-toolbar-additional"
 +	                       removable="true"
@@ -128,32 +222,6 @@ index 20c0ab097d..0521b130de 100644
          <!-- This is a placeholder for the Downloads Indicator.  It is visible
               during the customization of the toolbar, in the palette, and before
               the Downloads Indicator overlay is loaded. -->
-diff --git a/browser/themes/linux/jar.mn b/browser/themes/linux/jar.mn
-index 6afafa9d0a..e9f666418b 100644
---- a/browser/themes/linux/jar.mn
-+++ b/browser/themes/linux/jar.mn
-@@ -12,7 +12,7 @@ browser.jar:
-   skin/classic/browser/aboutSyncTabs.css
- #endif
-   skin/classic/browser/actionicon-tab.png
--* skin/classic/browser/browser.css                   (../windows/browser.css)
-+* skin/classic/browser/browser.css
- * skin/classic/browser/devedition.css
- * skin/classic/browser/browser-lightweightTheme.css
-   skin/classic/browser/click-to-play-warning-stripes.png
-diff --git a/browser/themes/osx/jar.mn b/browser/themes/osx/jar.mn
-index 2c584712dd..92d2ceedf5 100644
---- a/browser/themes/osx/jar.mn
-+++ b/browser/themes/osx/jar.mn
-@@ -12,7 +12,7 @@ browser.jar:
- #endif
-   skin/classic/browser/actionicon-tab.png
-   skin/classic/browser/actionicon-tab@2x.png
--* skin/classic/browser/browser.css                   (../windows/browser.css)
-+* skin/classic/browser/browser.css
- * skin/classic/browser/devedition.css
- * skin/classic/browser/browser-lightweightTheme.css
-   skin/classic/browser/click-to-play-warning-stripes.png
 diff --git a/browser/themes/shared/customizableui/panelUI.inc.css b/browser/themes/shared/customizableui/panelUI.inc.css
 index 231c1abe70..5550ef295a 100644
 --- a/browser/themes/shared/customizableui/panelUI.inc.css
@@ -303,7 +371,7 @@ index 941313ef22..557aee1991 100644
   * We want the last category to always have non-0 getBoundingClientRect().bottom
   * so we can use the value to figure out the max-height of the list in
 diff --git a/browser/themes/windows/browser.css b/browser/themes/windows/browser.css
-index e632cc2974..978c3b790e 100644
+index e632cc2974..cb6acc1e44 100644
 --- a/browser/themes/windows/browser.css
 +++ b/browser/themes/windows/browser.css
 @@ -2,2387 +2,6 @@
@@ -2694,10 +2762,12 @@ index e632cc2974..978c3b790e 100644
  @import url("chrome://global/skin/");
  
  @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
-@@ -2436,174 +55,6 @@
-   --urlbar-separator-color: ThreeDLightShadow;
- }
+@@ -2434,175 +53,9 @@
+   --arrowpanel-dimmed-even-further: hsla(0,0%,80%,.8);
  
+   --urlbar-separator-color: ThreeDLightShadow;
+-}
+-
 -  /* Dark theme support - activates on OS dark mode or manual toggle */
 -  @media (prefers-color-scheme: dark) {
 -    :root {
@@ -2782,7 +2852,7 @@ index e632cc2974..978c3b790e 100644
 -      --arrowpanel-dimmed-even-further: hsla(0,0%,20%,.8);
 -    }
 -  }
--
+ 
 -  /* Manual dark theme toggle - can be set via data-theme attribute */
 -  :root[data-theme="dark"] {
 -    --titlebar-min-max-hover-bg-color: #4a4a4a;
@@ -2865,11 +2935,20 @@ index e632cc2974..978c3b790e 100644
 -    --arrowpanel-dimmed-further: hsla(0,0%,20%,.45);
 -    --arrowpanel-dimmed-even-further: hsla(0,0%,20%,.8);
 -  }
--
++  --chrome-icon-filter: none;
++}
+ 
  @media (-moz-windows-default-theme) {
    :root {
-     --panel-separator-color: hsla(210,4%,10%,.14);
-@@ -3786,6 +1237,7 @@ toolbar[brighttext] #close-button {
+@@ -3339,7 +792,6 @@ toolbar[brighttext] .toolbarbutton-1 > .toolbarbutton-menubutton-dropmarker {
+ @media (-moz-os-version: windows-xp),
+        (-moz-os-version: windows-vista),
+        (-moz-os-version: windows-win7) {
+-  /* < Win8 */
+   :root {
+     --toolbarbutton-hover-background: linear-gradient(hsla(0,0%,100%,.6), hsla(0,0%,100%,.1));
+     --toolbarbutton-hover-bordercolor: hsla(210,54%,20%,.15) hsla(210,54%,20%,.2) hsla(210,54%,20%,.25);
+@@ -3786,6 +1238,7 @@ toolbar[brighttext] #close-button {
    border: 1px solid;
    border-color: var(--urlbar-border-color);
  }
@@ -2877,14 +2956,14 @@ index e632cc2974..978c3b790e 100644
  #urlbar:hover,
  .searchbar-textbox:hover {
    border-color: var(--urlbar-border-color-hover);
-@@ -4040,6 +1492,19 @@ html|*.urlbar-input:-moz-lwtheme::placeholder,
+@@ -4040,6 +1493,23 @@ html|*.urlbar-input:-moz-lwtheme::placeholder,
    outline-offset: -3px;
  }
  
 +/* Location bar dropmarker */
 +
 +.urlbar-history-dropmarker {
-+  -moz-appearance: none;
++  -moz-appearance: menulist-button;
 +  padding: 0 3px;
 +  background-color: transparent;
 +  border: none;
@@ -2894,21 +2973,47 @@ index e632cc2974..978c3b790e 100644
 +  transition: opacity 0.15s ease;
 +}
 +
++.urlbar-history-dropmarker > .dropmarker-icon {
++  filter: var(--chrome-icon-filter);
++}
++
  #urlbar-wrapper[switchingtabs] > #urlbar > .urlbar-textbox-container > .urlbar-history-dropmarker {
    transition: none;
  }
-@@ -4074,7 +1539,6 @@ html|*.urlbar-input:-moz-lwtheme::placeholder,
- 
-   .urlbar-history-dropmarker > .dropmarker-icon {
-     width: 11px;
--    filter: var(--chrome-icon-filter);
-   }
+@@ -4127,116 +1597,34 @@ html|span.ac-tag {
+   padding: 0 1px;
  }
  
-@@ -4157,88 +1621,6 @@ html|span.ac-tag {
-   color: hsl(210, 80%, 40%);
- }
- 
+-.ac-separator,
+-.ac-url,
+-.ac-action {
+-  font-size: 12px;
+-}
+-
+-.ac-separator {
+-  color: hsl(0, 0%, 50%);
+-}
+-
+-.ac-url {
+-  color: hsl(210, 77%, 47%);
+-}
+-
+-.ac-action {
+-  color: hsl(178, 100%, 28%);
+-}
+-
+-.ac-title[selected=true],
+-.ac-separator[selected],
+-.ac-url[selected=true],
+-.ac-action[selected=true] {
+-  color: hsl(0, 0%, 100%);
+-}
+-
+-.ac-tags-text[selected] > html|span.ac-tag {
+-  background-color: hsl(0, 0%, 100%);
+-  color: hsl(210, 80%, 40%);
+-}
+-
 -:root[data-theme="dark"] #PopupAutoComplete,
 -:root[data-theme="dark"] #PopupAutoCompleteRichResult,
 -:root[data-theme="dark"] #PopupSearchAutoComplete,
@@ -2921,8 +3026,12 @@ index e632cc2974..978c3b790e 100644
 -  background-color: #2b2b2b !important;
 -  color: #f3f3f3 !important;
 -  border-color: #5a5a5a !important;
--}
--
++.ac-separator,
++.ac-url,
++.ac-action {
++  font-size: 12px;
+ }
+ 
 -:root[data-theme="dark"] #PopupAutoComplete .autocomplete-richlistbox,
 -:root[data-theme="dark"] #PopupAutoCompleteRichResult .autocomplete-richlistbox,
 -:root[data-theme="dark"] #PopupSearchAutoComplete .autocomplete-richlistbox,
@@ -2934,8 +3043,10 @@ index e632cc2974..978c3b790e 100644
 -toolbar[brighttext] #PopupSearchAutoComplete .autocomplete-richlistbox {
 -  background-color: #2b2b2b !important;
 -  color: #f3f3f3 !important;
--}
--
++.ac-separator {
++  color: hsl(0, 0%, 50%);
+ }
+ 
 -:root[data-theme="dark"] #PopupAutoComplete .autocomplete-richlistitem,
 -:root[data-theme="dark"] #PopupAutoCompleteRichResult .autocomplete-richlistitem,
 -:root[data-theme="dark"] #PopupSearchAutoComplete .autocomplete-richlistitem,
@@ -2947,8 +3058,10 @@ index e632cc2974..978c3b790e 100644
 -toolbar[brighttext] #PopupSearchAutoComplete .autocomplete-richlistitem {
 -  background-color: #2b2b2b !important;
 -  color: #f3f3f3 !important;
--}
--
++.ac-url {
++  color: hsl(210, 77%, 47%);
+ }
+ 
 -:root[data-theme="dark"] #PopupAutoComplete .ac-title,
 -:root[data-theme="dark"] #PopupAutoCompleteRichResult .ac-title,
 -:root[data-theme="dark"] #PopupSearchAutoComplete .ac-title,
@@ -2959,8 +3072,10 @@ index e632cc2974..978c3b790e 100644
 -toolbar[brighttext] #PopupAutoCompleteRichResult .ac-title,
 -toolbar[brighttext] #PopupSearchAutoComplete .ac-title {
 -  color: #f3f3f3 !important;
--}
--
++.ac-action {
++  color: hsl(178, 100%, 28%);
+ }
+ 
 -:root[data-theme="dark"] #PopupAutoComplete .ac-separator,
 -:root[data-theme="dark"] #PopupAutoComplete .ac-url,
 -:root[data-theme="dark"] #PopupAutoComplete .ac-action,
@@ -2989,12 +3104,20 @@ index e632cc2974..978c3b790e 100644
 -toolbar[brighttext] #PopupSearchAutoComplete .ac-url,
 -toolbar[brighttext] #PopupSearchAutoComplete .ac-action {
 -  color: #a9d0ff !important;
--}
--
++.ac-title[selected=true],
++.ac-separator[selected],
++.ac-url[selected=true],
++.ac-action[selected=true] {
++  color: hsl(0, 0%, 100%);
++}
++
++.ac-tags-text[selected] > html|span.ac-tag {
++  background-color: hsl(0, 0%, 100%);
++  color: hsl(210, 80%, 40%);
+ }
+ 
  html|span.ac-emphasize-text-title,
- html|span.ac-emphasize-text-tag,
- html|span.ac-emphasize-text-url {
-@@ -4356,6 +1738,22 @@ html|span.ac-emphasize-text-url {
+@@ -4356,6 +1744,22 @@ html|span.ac-emphasize-text-url {
  
  /* combined go/reload/stop button in location bar */
  
@@ -3017,7 +3140,7 @@ index e632cc2974..978c3b790e 100644
  #urlbar-reload-button {
    -moz-image-region: rect(0, 14px, 14px, 0);
  }
-@@ -4502,6 +1900,18 @@ html|span.ac-emphasize-text-url {
+@@ -4502,6 +1906,18 @@ html|span.ac-emphasize-text-url {
    margin-bottom: -20px;
  }
  
@@ -3036,7 +3159,20 @@ index e632cc2974..978c3b790e 100644
  #editBookmarkPanelTitle {
    font-size: 130%;
  }
-@@ -4813,6 +2223,26 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
+@@ -4614,6 +2030,12 @@ html|span.ac-emphasize-text-url {
+   }
+ }
+ 
++:root[data-theme="dark"] #TabsToolbar .tab-close-button,
++#main-window[lwtheme-brighttext] #TabsToolbar .tab-close-button,
++toolbar[brighttext] #TabsToolbar .tab-close-button {
++  -moz-appearance: none !important;
++}
++
+ @media (min-resolution: 1.1dppx) {
+   .tab-close-button:-moz-lwtheme-brighttext,
+   #TabsToolbar[brighttext] .tab-close-button:not([selected="true"]) {
+@@ -4813,6 +2235,26 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
    outline: 1px dotted -moz-DialogText;
  }
  
@@ -3063,7 +3199,7 @@ index e632cc2974..978c3b790e 100644
  /* Status panel */
  
  .statuspanel-label {
-@@ -4833,15 +2263,6 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
+@@ -4833,15 +2275,6 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
    }
  }
  
@@ -3079,101 +3215,340 @@ index e632cc2974..978c3b790e 100644
  .statuspanel-label:-moz-locale-dir(ltr):not([mirror]),
  .statuspanel-label:-moz-locale-dir(rtl)[mirror] {
    border-right-style: solid;
-@@ -5124,591 +2545,3 @@ notification.pluginVulnerable > .notification-inner > .messageCloseButton {
-   padding-top: .9167em;
-   padding-bottom: .9167em;
+@@ -5113,19 +2546,289 @@ notification.pluginVulnerable > .notification-inner > .messageCloseButton {
+   background-color: buttonface;
  }
--
+ 
+-#ContentSelectDropdown > menupopup > menucaption[disabled="true"] {
+-  color: GrayText;
++#ContentSelectDropdown > menupopup > menucaption[disabled="true"] {
++  color: GrayText;
++}
++
++#ContentSelectDropdown > .isOpenedViaTouch > menucaption > .menu-iconic-text,
++#ContentSelectDropdown > .isOpenedViaTouch > menuitem > .menu-iconic-text {
++  /* Touch padding should follow the 11/12 ratio, where 12px is the default
++     font-size with 11px being the preferred padding size. */
++  padding-top: .9167em;
++  padding-bottom: .9167em;
++}
++
++@media (prefers-color-scheme: dark) {
++  :root {
++    --titlebar-min-max-hover-bg-color: #4a4a4a;
++    --titlebar-min-max-active-bg-color: #3c3c3c;
++    --titlebar-close-hover-bg-color: #c42b1c;
++    --titlebar-close-active-bg-color: #a62518;
++    --top-level-bg-color: #2b2b2b;
++    --top-level-bg-hover-color: #3c3c3c;
++    --top-level-bg-active-color: #4a4a4a;
++    --toolbar-bgcolor: #2b2b2b;
++    --toolbar-bgimage: none;
++    --toolbar-field-background-color: #3c3c3c;
++    --toolbar-field-color: #e0e0e0;
++    --toolbar-field-border-color: #5a5a5a;
++    --toolbar-field-focus-background-color: #3c3c3c;
++    --toolbar-field-focus-color: #ffffff;
++    --toolbar-field-focus-border-color: #0078d7;
++    --button-bgcolor: #3c3c3c;
++    --button-hover-bgcolor: #4a4a4a;
++    --button-active-bgcolor: #5a5a5a;
++    --button-primary-bgcolor: #0078d7;
++    --button-primary-hover-bgcolor: #1084d7;
++    --button-primary-active-bgcolor: #0066b3;
++    --tabs-border: 1px solid #1a1a1a;
++    --tab-bgcolor: transparent;
++    --tab-hover-bgcolor: rgba(255,255,255,0.06);
++    --tab-selected-bgcolor: #2b2b2b;
++    --tab-text-color: #e0e0e0;
++    --scrollbar-thumb-bgcolor: #5a5a5a;
++    --scrollbar-thumb-hover-bgcolor: #6a6a6a;
++    --scrollbar-track-bgcolor: #2b2b2b;
++    --autocomplete-popup-background: #2b2b2b;
++    --autocomplete-popup-border-color: #5a5a5a;
++    --autocomplete-popup-highlight-background: #0078d7;
++    --second-level-bg-color: #3c3c3c;
++    --second-level-bg-hover-color: #4a4a4a;
++    --second-level-bg-active-color: #5a5a5a;
++    --second-level-alt-bg-hover-color: #5a5a5a;
++    --second-level-alt-bg-active-color: #6a6a6a;
++    --tab-scroll-up-down-bg-color: #3c3c3c;
++    --tab-scroll-up-down-bg-hover-color: #4a4a4a;
++    --tab-scroll-up-down-bg-active-color: #5a5a5a;
++    --tab-scroll-up-down-bg-disabled-color: #3c3c3c;
++    --tab-button-bg-active-color: #5a5a5a;
++    --new-tab-hover-bg-color: #4a4a4a;
++    --alltabs-bg-hover-color: #4a4a4a;
++    --alltabs-bg-active-color: #5a5a5a;
++    --searchbar-bg-color: #3c3c3c;
++    --searchbar-bg-hover-color: #4a4a4a;
++    --searchbar-bg-active-color: #5a5a5a;
++    --tab-separator-color: #4a4a4a;
++    --urlbar-separator-color: #5a5a5a;
++    --navigator-separator-bg-color: #5a5a5a;
++    --downloads-indicator-remainder-color: #5a5a5a;
++    --downloads-indicator-bg-color: #0078d7;
++    --downloads-indicator-paused-bg-color: #ffa500;
++    --main-font-color: #e0e0e0;
++    --inactive-font-color: #b0b0b0;
++    --verified-identity-font-color: #90ee90;
++    --toolbarbutton-badge-bg-color: rgba(0, 120, 215, 0.8);
++    --toolbarbutton-badge-border-color: rgba(255, 255, 255, 0.3);
++    --panel-separator-color: rgba(255, 255, 255, 0.1);
++    --blue-accent-color: #0078d7;
++    --gray-text-color: #b0b0b0;
++    --hyperlink-text-color: #6eb3ff;
++    --button-bg-color: #3c3c3c;
++    --button-border-hover-color: #6a6a6a;
++    --button-bg-active-color: #5a5a5a;
++    --context-menu-bg-color: #2b2b2b;
++    --context-menu-bg-hover-color: #3c3c3c;
++    --context-menu-bg-active-color: #4a4a4a;
++    --context-menu-border-color: #5a5a5a;
++    --context-menu-separator-color: #5a5a5a;
++    --findbar-notfound-bg-color: #5a3030;
++    --findbar-flash-bg-color: #5a5a00;
++    --image-inversion-percentage: 100%;
++    --image-brightness: 1.0;
++    --chrome-icon-filter: invert(100%) brightness(1.12);
++    --arrowpanel-dimmed: hsla(0,0%,20%,.3);
++    --arrowpanel-dimmed-further: hsla(0,0%,20%,.45);
++    --arrowpanel-dimmed-even-further: hsla(0,0%,20%,.8);
++    --toolbarbutton-hover-background: rgba(255,255,255,.15);
++    --toolbarbutton-hover-bordercolor: rgba(255,255,255,.25);
++    --toolbarbutton-hover-boxshadow: none;
++    --toolbarbutton-active-background: rgba(255,255,255,.25);
++    --toolbarbutton-active-bordercolor: rgba(255,255,255,.4);
++    --toolbarbutton-active-boxshadow: 0 0 0 1px rgba(255,255,255,.25) inset;
++    --toolbarbutton-checkedhover-backgroundcolor: rgba(255,255,255,.2);
++  }
++}
++
++:root[data-theme="dark"] {
++  --titlebar-min-max-hover-bg-color: #4a4a4a;
++  --titlebar-min-max-active-bg-color: #3c3c3c;
++  --titlebar-close-hover-bg-color: #c42b1c;
++  --titlebar-close-active-bg-color: #a62518;
++  --top-level-bg-color: #2b2b2b;
++  --top-level-bg-hover-color: #3c3c3c;
++  --top-level-bg-active-color: #4a4a4a;
++  --toolbar-bgcolor: #2b2b2b;
++  --toolbar-bgimage: none;
++  --toolbar-field-background-color: #3c3c3c;
++  --toolbar-field-color: #e0e0e0;
++  --toolbar-field-border-color: #5a5a5a;
++  --toolbar-field-focus-background-color: #3c3c3c;
++  --toolbar-field-focus-color: #ffffff;
++  --toolbar-field-focus-border-color: #0078d7;
++  --button-bgcolor: #3c3c3c;
++  --button-hover-bgcolor: #4a4a4a;
++  --button-active-bgcolor: #5a5a5a;
++  --button-primary-bgcolor: #0078d7;
++  --button-primary-hover-bgcolor: #1084d7;
++  --button-primary-active-bgcolor: #0066b3;
++  --tabs-border: 1px solid #1a1a1a;
++  --tab-bgcolor: transparent;
++  --tab-hover-bgcolor: rgba(255,255,255,0.06);
++  --tab-selected-bgcolor: #2b2b2b;
++  --tab-text-color: #e0e0e0;
++  --scrollbar-thumb-bgcolor: #5a5a5a;
++  --scrollbar-thumb-hover-bgcolor: #6a6a6a;
++  --scrollbar-track-bgcolor: #2b2b2b;
++  --autocomplete-popup-background: #2b2b2b;
++  --autocomplete-popup-border-color: #5a5a5a;
++  --autocomplete-popup-highlight-background: #0078d7;
++  --second-level-bg-color: #3c3c3c;
++  --second-level-bg-hover-color: #4a4a4a;
++  --second-level-bg-active-color: #5a5a5a;
++  --second-level-alt-bg-hover-color: #5a5a5a;
++  --second-level-alt-bg-active-color: #6a6a6a;
++  --tab-scroll-up-down-bg-color: #3c3c3c;
++  --tab-scroll-up-down-bg-hover-color: #4a4a4a;
++  --tab-scroll-up-down-bg-active-color: #5a5a5a;
++  --tab-scroll-up-down-bg-disabled-color: #3c3c3c;
++  --tab-button-bg-active-color: #5a5a5a;
++  --new-tab-hover-bg-color: #4a4a4a;
++  --alltabs-bg-hover-color: #4a4a4a;
++  --alltabs-bg-active-color: #5a5a5a;
++  --searchbar-bg-color: #3c3c3c;
++  --searchbar-bg-hover-color: #4a4a4a;
++  --searchbar-bg-active-color: #5a5a5a;
++  --tab-separator-color: #4a4a4a;
++  --urlbar-separator-color: #5a5a5a;
++  --navigator-separator-bg-color: #5a5a5a;
++  --downloads-indicator-remainder-color: #5a5a5a;
++  --downloads-indicator-bg-color: #0078d7;
++  --downloads-indicator-paused-bg-color: #ffa500;
++  --main-font-color: #e0e0e0;
++  --inactive-font-color: #b0b0b0;
++  --verified-identity-font-color: #90ee90;
++  --toolbarbutton-badge-bg-color: rgba(0, 120, 215, 0.8);
++  --toolbarbutton-badge-border-color: rgba(255, 255, 255, 0.3);
++  --panel-separator-color: rgba(255, 255, 255, 0.1);
++  --blue-accent-color: #0078d7;
++  --gray-text-color: #b0b0b0;
++  --hyperlink-text-color: #6eb3ff;
++  --button-bg-color: #3c3c3c;
++  --button-border-hover-color: #6a6a6a;
++  --button-bg-active-color: #5a5a5a;
++  --context-menu-bg-color: #2b2b2b;
++  --context-menu-bg-hover-color: #3c3c3c;
++  --context-menu-bg-active-color: #4a4a4a;
++  --context-menu-border-color: #5a5a5a;
++  --context-menu-separator-color: #5a5a5a;
++  --findbar-notfound-bg-color: #5a3030;
++  --findbar-flash-bg-color: #5a5a00;
++  --image-inversion-percentage: 100%;
++  --image-brightness: 1.0;
++  --chrome-icon-filter: invert(100%) brightness(1.12);
++  --arrowpanel-dimmed: hsla(0,0%,20%,.3);
++  --arrowpanel-dimmed-further: hsla(0,0%,20%,.45);
++  --arrowpanel-dimmed-even-further: hsla(0,0%,20%,.8);
++  --toolbarbutton-hover-background: rgba(255,255,255,.15);
++  --toolbarbutton-hover-bordercolor: rgba(255,255,255,.25);
++  --toolbarbutton-hover-boxshadow: none;
++  --toolbarbutton-active-background: rgba(255,255,255,.25);
++  --toolbarbutton-active-bordercolor: rgba(255,255,255,.4);
++  --toolbarbutton-active-boxshadow: 0 0 0 1px rgba(255,255,255,.25) inset;
++  --toolbarbutton-checkedhover-backgroundcolor: rgba(255,255,255,.2);
++}
++
++:root[data-theme="dark"] #PopupAutoComplete,
++:root[data-theme="dark"] #PopupAutoCompleteRichResult,
++:root[data-theme="dark"] #PopupSearchAutoComplete,
++#main-window[lwtheme-brighttext] #PopupAutoComplete,
++#main-window[lwtheme-brighttext] #PopupAutoCompleteRichResult,
++#main-window[lwtheme-brighttext] #PopupSearchAutoComplete,
++toolbar[brighttext] #PopupAutoComplete,
++toolbar[brighttext] #PopupAutoCompleteRichResult,
++toolbar[brighttext] #PopupSearchAutoComplete {
++  background-color: #2b2b2b !important;
++  color: #f3f3f3 !important;
++  border-color: #5a5a5a !important;
++}
++
++:root[data-theme="dark"] #PopupAutoComplete .autocomplete-richlistbox,
++:root[data-theme="dark"] #PopupAutoCompleteRichResult .autocomplete-richlistbox,
++:root[data-theme="dark"] #PopupSearchAutoComplete .autocomplete-richlistbox,
++#main-window[lwtheme-brighttext] #PopupAutoComplete .autocomplete-richlistbox,
++#main-window[lwtheme-brighttext] #PopupAutoCompleteRichResult .autocomplete-richlistbox,
++#main-window[lwtheme-brighttext] #PopupSearchAutoComplete .autocomplete-richlistbox,
++toolbar[brighttext] #PopupAutoComplete .autocomplete-richlistbox,
++toolbar[brighttext] #PopupAutoCompleteRichResult .autocomplete-richlistbox,
++toolbar[brighttext] #PopupSearchAutoComplete .autocomplete-richlistbox {
++  background-color: #2b2b2b !important;
++  color: #f3f3f3 !important;
++}
++
++:root[data-theme="dark"] #PopupAutoComplete .autocomplete-richlistitem,
++:root[data-theme="dark"] #PopupAutoCompleteRichResult .autocomplete-richlistitem,
++:root[data-theme="dark"] #PopupSearchAutoComplete .autocomplete-richlistitem,
++#main-window[lwtheme-brighttext] #PopupAutoComplete .autocomplete-richlistitem,
++#main-window[lwtheme-brighttext] #PopupAutoCompleteRichResult .autocomplete-richlistitem,
++#main-window[lwtheme-brighttext] #PopupSearchAutoComplete .autocomplete-richlistitem,
++toolbar[brighttext] #PopupAutoComplete .autocomplete-richlistitem,
++toolbar[brighttext] #PopupAutoCompleteRichResult .autocomplete-richlistitem,
++toolbar[brighttext] #PopupSearchAutoComplete .autocomplete-richlistitem {
++  background-color: #2b2b2b !important;
++  color: #f3f3f3 !important;
++}
++
++:root[data-theme="dark"] #PopupAutoComplete .ac-title,
++:root[data-theme="dark"] #PopupAutoCompleteRichResult .ac-title,
++:root[data-theme="dark"] #PopupSearchAutoComplete .ac-title,
++#main-window[lwtheme-brighttext] #PopupAutoComplete .ac-title,
++#main-window[lwtheme-brighttext] #PopupAutoCompleteRichResult .ac-title,
++#main-window[lwtheme-brighttext] #PopupSearchAutoComplete .ac-title,
++toolbar[brighttext] #PopupAutoComplete .ac-title,
++toolbar[brighttext] #PopupAutoCompleteRichResult .ac-title,
++toolbar[brighttext] #PopupSearchAutoComplete .ac-title {
++  color: #f3f3f3 !important;
++}
++
++:root[data-theme="dark"] #PopupAutoComplete .ac-separator,
++:root[data-theme="dark"] #PopupAutoComplete .ac-url,
++:root[data-theme="dark"] #PopupAutoComplete .ac-action,
++:root[data-theme="dark"] #PopupAutoCompleteRichResult .ac-separator,
++:root[data-theme="dark"] #PopupAutoCompleteRichResult .ac-url,
++:root[data-theme="dark"] #PopupAutoCompleteRichResult .ac-action,
++:root[data-theme="dark"] #PopupSearchAutoComplete .ac-separator,
++:root[data-theme="dark"] #PopupSearchAutoComplete .ac-url,
++:root[data-theme="dark"] #PopupSearchAutoComplete .ac-action,
++#main-window[lwtheme-brighttext] #PopupAutoComplete .ac-separator,
++#main-window[lwtheme-brighttext] #PopupAutoComplete .ac-url,
++#main-window[lwtheme-brighttext] #PopupAutoComplete .ac-action,
++#main-window[lwtheme-brighttext] #PopupAutoCompleteRichResult .ac-separator,
++#main-window[lwtheme-brighttext] #PopupAutoCompleteRichResult .ac-url,
++#main-window[lwtheme-brighttext] #PopupAutoCompleteRichResult .ac-action,
++#main-window[lwtheme-brighttext] #PopupSearchAutoComplete .ac-separator,
++#main-window[lwtheme-brighttext] #PopupSearchAutoComplete .ac-url,
++#main-window[lwtheme-brighttext] #PopupSearchAutoComplete .ac-action,
++toolbar[brighttext] #PopupAutoComplete .ac-separator,
++toolbar[brighttext] #PopupAutoComplete .ac-url,
++toolbar[brighttext] #PopupAutoComplete .ac-action,
++toolbar[brighttext] #PopupAutoCompleteRichResult .ac-separator,
++toolbar[brighttext] #PopupAutoCompleteRichResult .ac-url,
++toolbar[brighttext] #PopupAutoCompleteRichResult .ac-action,
++toolbar[brighttext] #PopupSearchAutoComplete .ac-separator,
++toolbar[brighttext] #PopupSearchAutoComplete .ac-url,
++toolbar[brighttext] #PopupSearchAutoComplete .ac-action {
++  color: #a9d0ff !important;
+ }
+ 
+-#ContentSelectDropdown > .isOpenedViaTouch > menucaption > .menu-iconic-text,
+-#ContentSelectDropdown > .isOpenedViaTouch > menuitem > .menu-iconic-text {
+-  /* Touch padding should follow the 11/12 ratio, where 12px is the default
+-     font-size with 11px being the preferred padding size. */
+-  padding-top: .9167em;
+-  padding-bottom: .9167em;
++:root[data-theme="dark"] .statuspanel-label,
++#main-window[lwtheme-brighttext] .statuspanel-label,
++toolbar[brighttext] .statuspanel-label {
++  background: #2b2b2b !important;
++  border-color: #5a5a5a !important;
++  color: #f3f3f3 !important;
++  text-shadow: none !important;
+ }
+ 
 -/* Minimal dark-mode tail overrides: URL bar readability + close-hover color only. */
--:root[data-theme="dark"] #urlbar,
--:root[data-theme="dark"] #urlbar:hover,
--:root[data-theme="dark"] #urlbar[focused],
--:root[data-theme="dark"] #urlbar:-moz-lwtheme,
--:root[data-theme="dark"] #urlbar:-moz-lwtheme:hover:not([readonly]),
--:root[data-theme="dark"] #urlbar:-moz-lwtheme[focused]:not([readonly]),
--#main-window[lwtheme-brighttext] #urlbar,
--#main-window[lwtheme-brighttext] #urlbar:hover,
--#main-window[lwtheme-brighttext] #urlbar[focused],
--#main-window[lwtheme-brighttext] #urlbar:-moz-lwtheme,
--#main-window[lwtheme-brighttext] #urlbar:-moz-lwtheme:hover:not([readonly]),
--#main-window[lwtheme-brighttext] #urlbar:-moz-lwtheme[focused]:not([readonly]),
--toolbar[brighttext] #urlbar,
--toolbar[brighttext] #urlbar:hover,
--toolbar[brighttext] #urlbar[focused],
--toolbar[brighttext] #urlbar:-moz-lwtheme,
--toolbar[brighttext] #urlbar:-moz-lwtheme:hover:not([readonly]),
--toolbar[brighttext] #urlbar:-moz-lwtheme[focused]:not([readonly]) {
--  -moz-appearance: none !important;
--  background-color: #2f2f2f !important;
--  color: #ffffff !important;
--  border-color: #5a5a5a !important;
--}
--
--:root[data-theme="dark"] #urlbar .autocomplete-textbox-container,
--:root[data-theme="dark"] #urlbar .textbox-input-box,
--:root[data-theme="dark"] #urlbar .textbox-input-box > html|*.textbox-input,
--:root[data-theme="dark"] #urlbar html|*.textbox-input,
--:root[data-theme="dark"] #urlbar html|*.urlbar-input,
--:root[data-theme="dark"] #urlbar .urlbar-input,
--:root[data-theme="dark"] #urlbar .urlbar-display,
--#main-window[lwtheme-brighttext] #urlbar .autocomplete-textbox-container,
--#main-window[lwtheme-brighttext] #urlbar .textbox-input-box,
--#main-window[lwtheme-brighttext] #urlbar .textbox-input-box > html|*.textbox-input,
--#main-window[lwtheme-brighttext] #urlbar html|*.textbox-input,
--#main-window[lwtheme-brighttext] #urlbar html|*.urlbar-input,
--#main-window[lwtheme-brighttext] #urlbar .urlbar-input,
--#main-window[lwtheme-brighttext] #urlbar .urlbar-display,
--toolbar[brighttext] #urlbar .autocomplete-textbox-container,
--toolbar[brighttext] #urlbar .textbox-input-box,
--toolbar[brighttext] #urlbar .textbox-input-box > html|*.textbox-input,
--toolbar[brighttext] #urlbar html|*.textbox-input,
--toolbar[brighttext] #urlbar html|*.urlbar-input,
--toolbar[brighttext] #urlbar .urlbar-input,
--toolbar[brighttext] #urlbar .urlbar-display {
--  -moz-appearance: none !important;
--  background-color: #2f2f2f !important;
--  color: #ffffff !important;
--}
--
--:root[data-theme="dark"] #TabsToolbar .tabbrowser-tab .close-icon,
--:root[data-theme="dark"] #TabsToolbar .tab-close-button,
--#main-window[lwtheme-brighttext] #TabsToolbar .tabbrowser-tab .close-icon,
--#main-window[lwtheme-brighttext] #TabsToolbar .tab-close-button,
--toolbar[brighttext] #TabsToolbar .tabbrowser-tab .close-icon,
--toolbar[brighttext] #TabsToolbar .tab-close-button {
--  list-style-image: url("chrome://global/skin/icons/close-inverted.png") !important;
--  -moz-image-region: rect(0, 20px, 20px, 0px) !important;
--}
--
--@media (min-resolution: 1.1dppx) {
--  :root[data-theme="dark"] #TabsToolbar .tabbrowser-tab .close-icon,
--  :root[data-theme="dark"] #TabsToolbar .tab-close-button,
--  #main-window[lwtheme-brighttext] #TabsToolbar .tabbrowser-tab .close-icon,
--  #main-window[lwtheme-brighttext] #TabsToolbar .tab-close-button,
--  toolbar[brighttext] #TabsToolbar .tabbrowser-tab .close-icon,
--  toolbar[brighttext] #TabsToolbar .tab-close-button {
--    list-style-image: url("chrome://global/skin/icons/close-inverted@2x.png") !important;
--  }
--}
--
--:root[data-theme="dark"] #TabsToolbar .tabbrowser-tab .close-icon:hover,
--:root[data-theme="dark"] #TabsToolbar .tab-close-button:hover,
--#main-window[lwtheme-brighttext] #TabsToolbar .tabbrowser-tab .close-icon:hover,
--#main-window[lwtheme-brighttext] #TabsToolbar .tab-close-button:hover,
--toolbar[brighttext] #TabsToolbar .tabbrowser-tab .close-icon:hover,
--toolbar[brighttext] #TabsToolbar .tab-close-button:hover {
--  -moz-image-region: rect(0, 40px, 20px, 20px) !important;
--}
--
--:root[data-theme="dark"] #TabsToolbar .tabbrowser-tab .close-icon:hover:active,
--:root[data-theme="dark"] #TabsToolbar .tab-close-button:hover:active,
--#main-window[lwtheme-brighttext] #TabsToolbar .tabbrowser-tab .close-icon:hover:active,
--#main-window[lwtheme-brighttext] #TabsToolbar .tab-close-button:hover:active,
--toolbar[brighttext] #TabsToolbar .tabbrowser-tab .close-icon:hover:active,
--toolbar[brighttext] #TabsToolbar .tab-close-button:hover:active {
--  -moz-image-region: rect(0, 60px, 20px, 40px) !important;
--}
--
+ :root[data-theme="dark"] #urlbar,
+ :root[data-theme="dark"] #urlbar:hover,
+ :root[data-theme="dark"] #urlbar[focused],
+@@ -5176,14 +2879,30 @@ toolbar[brighttext] #urlbar .urlbar-display {
+   color: #ffffff !important;
+ }
+ 
++:root[data-theme="dark"] .urlbar-textbox-container,
++:root[data-theme="dark"] .urlbar-input-box,
++:root[data-theme="dark"] #urlbar-display-box,
++#main-window[lwtheme-brighttext] .urlbar-textbox-container,
++#main-window[lwtheme-brighttext] .urlbar-input-box,
++#main-window[lwtheme-brighttext] #urlbar-display-box,
++toolbar[brighttext] .urlbar-textbox-container,
++toolbar[brighttext] .urlbar-input-box,
++toolbar[brighttext] #urlbar-display-box {
++  background-color: #2f2f2f !important;
++  border-left-color: #5a5a5a !important;
++}
++
+ :root[data-theme="dark"] #TabsToolbar .tabbrowser-tab .close-icon,
+ :root[data-theme="dark"] #TabsToolbar .tab-close-button,
+ #main-window[lwtheme-brighttext] #TabsToolbar .tabbrowser-tab .close-icon,
+ #main-window[lwtheme-brighttext] #TabsToolbar .tab-close-button,
+ toolbar[brighttext] #TabsToolbar .tabbrowser-tab .close-icon,
+ toolbar[brighttext] #TabsToolbar .tab-close-button {
++  -moz-appearance: none !important;
+   list-style-image: url("chrome://global/skin/icons/close-inverted.png") !important;
+   -moz-image-region: rect(0, 20px, 20px, 0px) !important;
++  border: none !important;
++  padding: 0 !important;
+ }
+ 
+ @media (min-resolution: 1.1dppx) {
+@@ -5215,29 +2934,6 @@ toolbar[brighttext] #TabsToolbar .tab-close-button:hover:active {
+   -moz-image-region: rect(0, 60px, 20px, 40px) !important;
+ }
+ 
 -#titlebar-close:hover,
 -#close-button:hover {
 -  background: #c42b1c !important;
@@ -3197,163 +3572,175 @@ index e632cc2974..978c3b790e 100644
 -  border-left-color: #5a5a5a !important;
 -}
 -
--:root[data-theme="dark"] #titlebar-close:hover,
--:root[data-theme="dark"] #close-button:hover,
--#main-window[lwtheme-brighttext] #titlebar-close:hover,
--#main-window[lwtheme-brighttext] #close-button:hover,
--toolbar[brighttext] #titlebar-close:hover,
--toolbar[brighttext] #close-button:hover {
--  -moz-appearance: none !important;
--  background-color: #c42b1c !important;
--  background-image: none !important;
--  list-style-image: url(chrome://browser/skin/caption-buttons.svg#close-white) !important;
--}
--
--:root[data-theme="dark"] #titlebar-close:hover:active,
--:root[data-theme="dark"] #close-button:hover:active,
--#main-window[lwtheme-brighttext] #titlebar-close:hover:active,
--#main-window[lwtheme-brighttext] #close-button:hover:active,
--toolbar[brighttext] #titlebar-close:hover:active,
--toolbar[brighttext] #close-button:hover:active {
--  -moz-appearance: none !important;
--  background-color: #a62518 !important;
--}
--
--:root[data-theme="dark"] #PanelUI-popup toolbarbutton[cui-areatype="menu-panel"] > .toolbarbutton-icon,
--:root[data-theme="dark"] #PanelUI-popup toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-icon,
+ :root[data-theme="dark"] #titlebar-close:hover,
+ :root[data-theme="dark"] #close-button:hover,
+ #main-window[lwtheme-brighttext] #titlebar-close:hover,
+@@ -5262,30 +2958,18 @@ toolbar[brighttext] #close-button:hover:active {
+ 
+ :root[data-theme="dark"] #PanelUI-popup toolbarbutton[cui-areatype="menu-panel"] > .toolbarbutton-icon,
+ :root[data-theme="dark"] #PanelUI-popup toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-icon,
 -:root[data-theme="dark"] #PanelUI-popup #zoom-controls > toolbarbutton > .toolbarbutton-icon,
 -:root[data-theme="dark"] #widget-overflow toolbarbutton[cui-areatype="menu-panel"] > .toolbarbutton-icon,
 -:root[data-theme="dark"] #widget-overflow toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-icon,
 -:root[data-theme="dark"] #widget-overflow #zoom-controls > toolbarbutton > .toolbarbutton-icon,
--:root[data-theme="dark"] #PanelUI-popup #PanelUI-fxa-icon > .toolbarbutton-icon,
--:root[data-theme="dark"] #PanelUI-popup #PanelUI-customize > .toolbarbutton-icon,
--:root[data-theme="dark"] #PanelUI-popup #PanelUI-help > .toolbarbutton-icon,
--:root[data-theme="dark"] #PanelUI-popup #PanelUI-quit > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #PanelUI-popup toolbarbutton[cui-areatype="menu-panel"] > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #PanelUI-popup toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-icon,
+ :root[data-theme="dark"] #PanelUI-popup #PanelUI-fxa-icon > .toolbarbutton-icon,
+ :root[data-theme="dark"] #PanelUI-popup #PanelUI-customize > .toolbarbutton-icon,
+ :root[data-theme="dark"] #PanelUI-popup #PanelUI-help > .toolbarbutton-icon,
+ :root[data-theme="dark"] #PanelUI-popup #PanelUI-quit > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #PanelUI-popup toolbarbutton[cui-areatype="menu-panel"] > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #PanelUI-popup toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-icon,
 -#main-window[lwtheme-brighttext] #PanelUI-popup #zoom-controls > toolbarbutton > .toolbarbutton-icon,
 -#main-window[lwtheme-brighttext] #widget-overflow toolbarbutton[cui-areatype="menu-panel"] > .toolbarbutton-icon,
 -#main-window[lwtheme-brighttext] #widget-overflow toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-icon,
 -#main-window[lwtheme-brighttext] #widget-overflow #zoom-controls > toolbarbutton > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #PanelUI-popup #PanelUI-fxa-icon > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #PanelUI-popup #PanelUI-customize > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #PanelUI-popup #PanelUI-help > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #PanelUI-popup #PanelUI-quit > .toolbarbutton-icon,
--toolbar[brighttext] #PanelUI-popup toolbarbutton[cui-areatype="menu-panel"] > .toolbarbutton-icon,
--toolbar[brighttext] #PanelUI-popup toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #PanelUI-popup #PanelUI-fxa-icon > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #PanelUI-popup #PanelUI-customize > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #PanelUI-popup #PanelUI-help > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #PanelUI-popup #PanelUI-quit > .toolbarbutton-icon,
+ toolbar[brighttext] #PanelUI-popup toolbarbutton[cui-areatype="menu-panel"] > .toolbarbutton-icon,
+ toolbar[brighttext] #PanelUI-popup toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-icon,
 -toolbar[brighttext] #PanelUI-popup #zoom-controls > toolbarbutton > .toolbarbutton-icon,
 -toolbar[brighttext] #widget-overflow toolbarbutton[cui-areatype="menu-panel"] > .toolbarbutton-icon,
 -toolbar[brighttext] #widget-overflow toolbarbutton[panel-multiview-anchor="true"] > .toolbarbutton-icon,
 -toolbar[brighttext] #widget-overflow #zoom-controls > toolbarbutton > .toolbarbutton-icon,
--toolbar[brighttext] #PanelUI-popup #PanelUI-fxa-icon > .toolbarbutton-icon,
--toolbar[brighttext] #PanelUI-popup #PanelUI-customize > .toolbarbutton-icon,
--toolbar[brighttext] #PanelUI-popup #PanelUI-help > .toolbarbutton-icon,
--toolbar[brighttext] #PanelUI-popup #PanelUI-quit > .toolbarbutton-icon {
--  filter: invert(100%) brightness(1.12) !important;
--}
--
--:root[data-theme="dark"] #tab-view-deck,
+ toolbar[brighttext] #PanelUI-popup #PanelUI-fxa-icon > .toolbarbutton-icon,
+ toolbar[brighttext] #PanelUI-popup #PanelUI-customize > .toolbarbutton-icon,
+ toolbar[brighttext] #PanelUI-popup #PanelUI-help > .toolbarbutton-icon,
+@@ -5294,41 +2978,26 @@ toolbar[brighttext] #PanelUI-popup #PanelUI-quit > .toolbarbutton-icon {
+ }
+ 
+ :root[data-theme="dark"] #tab-view-deck,
 -:root[data-theme="dark"] #browser-panel,
 -:root[data-theme="dark"] #browser-bottombox,
 -:root[data-theme="dark"] #browser,
--:root[data-theme="dark"] browser,
--:root[data-theme="dark"] .browserContainer,
+ :root[data-theme="dark"] browser,
+ :root[data-theme="dark"] .browserContainer,
 -:root[data-theme="dark"] #appcontent,
--:root[data-theme="dark"] #content,
--:root[data-theme="dark"] .browserStack,
--:root[data-theme="dark"] #high-priority-global-notificationbox,
--:root[data-theme="dark"] #global-notificationbox,
+ :root[data-theme="dark"] #content,
+ :root[data-theme="dark"] .browserStack,
+ :root[data-theme="dark"] #high-priority-global-notificationbox,
+ :root[data-theme="dark"] #global-notificationbox,
 -:root[data-theme="dark"] #main-window,
--#main-window[lwtheme-brighttext] #tab-view-deck,
+ #main-window[lwtheme-brighttext] #tab-view-deck,
 -#main-window[lwtheme-brighttext] #browser-panel,
 -#main-window[lwtheme-brighttext] #browser-bottombox,
 -#main-window[lwtheme-brighttext] #browser,
--#main-window[lwtheme-brighttext] browser,
--#main-window[lwtheme-brighttext] .browserContainer,
+ #main-window[lwtheme-brighttext] browser,
+ #main-window[lwtheme-brighttext] .browserContainer,
 -#main-window[lwtheme-brighttext] #appcontent,
--#main-window[lwtheme-brighttext] #content,
--#main-window[lwtheme-brighttext] .browserStack,
--#main-window[lwtheme-brighttext] #high-priority-global-notificationbox,
--#main-window[lwtheme-brighttext] #global-notificationbox,
+ #main-window[lwtheme-brighttext] #content,
+ #main-window[lwtheme-brighttext] .browserStack,
+ #main-window[lwtheme-brighttext] #high-priority-global-notificationbox,
+ #main-window[lwtheme-brighttext] #global-notificationbox,
 -#main-window[lwtheme-brighttext],
--toolbar[brighttext] #tab-view-deck,
+ toolbar[brighttext] #tab-view-deck,
 -toolbar[brighttext] #browser-panel,
 -toolbar[brighttext] #browser-bottombox,
 -toolbar[brighttext] #browser,
--toolbar[brighttext] browser,
--toolbar[brighttext] .browserContainer,
+ toolbar[brighttext] browser,
+ toolbar[brighttext] .browserContainer,
 -toolbar[brighttext] #appcontent,
--toolbar[brighttext] #content,
--toolbar[brighttext] .browserStack,
--toolbar[brighttext] #high-priority-global-notificationbox,
+ toolbar[brighttext] #content,
+ toolbar[brighttext] .browserStack,
+ toolbar[brighttext] #high-priority-global-notificationbox,
 -toolbar[brighttext] #global-notificationbox,
 -#main-window.firefox toolbar[brighttext] {
--  background: #2b2b2b !important;
--  background-color: #2b2b2b !important;
--  background-image: none !important;
--  border: none !important;
--  border-color: #2b2b2b !important;
--  box-shadow: none !important;
--}
--
++toolbar[brighttext] #global-notificationbox {
+   background: #2b2b2b !important;
+   background-color: #2b2b2b !important;
+   background-image: none !important;
+@@ -5337,23 +3006,54 @@ toolbar[brighttext] #global-notificationbox,
+   box-shadow: none !important;
+ }
+ 
 -/* Restore icon legibility in dark chrome without touching the rest of the theme. */
--:root[data-theme="dark"] #nav-bar .toolbarbutton-icon,
--:root[data-theme="dark"] #nav-bar .toolbarbutton-menubutton-button > .toolbarbutton-icon,
--:root[data-theme="dark"] #nav-bar .toolbarbutton-badge-stack > .toolbarbutton-icon,
++@media not all and (-moz-windows-glass) {
++  @media not all and (-moz-os-version: windows-vista) {
++    @media not all and (-moz-os-version: windows-win7) {
++      @media not all and (-moz-os-version: windows-win8) {
++        :root[data-theme="dark"] #main-window,
++        :root[data-theme="dark"] #browser-panel,
++        :root[data-theme="dark"] #browser-bottombox,
++        :root[data-theme="dark"] #browser,
++        :root[data-theme="dark"] #appcontent,
++        #main-window[lwtheme-brighttext],
++        #main-window[lwtheme-brighttext] #browser-panel,
++        #main-window[lwtheme-brighttext] #browser-bottombox,
++        #main-window[lwtheme-brighttext] #browser,
++        #main-window[lwtheme-brighttext] #appcontent,
++        toolbar[brighttext] #browser,
++        toolbar[brighttext] #appcontent,
++        #main-window.firefox toolbar[brighttext] {
++          background: #2b2b2b !important;
++          background-color: #2b2b2b !important;
++          background-image: none !important;
++          border: none !important;
++          border-color: #2b2b2b !important;
++          box-shadow: none !important;
++        }
++      }
++    }
++  }
++}
++
++@media (-moz-windows-glass) {
++  :root[data-theme="dark"] #browser-bottombox,
++  #main-window[lwtheme-brighttext] #browser-bottombox {
++    background: #2b2b2b !important;
++    background-color: #2b2b2b !important;
++    background-image: none !important;
++    box-shadow: none !important;
++  }
++}
++
+ :root[data-theme="dark"] #nav-bar .toolbarbutton-icon,
+ :root[data-theme="dark"] #nav-bar .toolbarbutton-menubutton-button > .toolbarbutton-icon,
+ :root[data-theme="dark"] #nav-bar .toolbarbutton-badge-stack > .toolbarbutton-icon,
 -:root[data-theme="dark"] #downloads-button > #downloads-indicator-anchor > #downloads-indicator-icon,
 -:root[data-theme="dark"] #downloads-button > #downloads-indicator-anchor > #downloads-indicator-progress-area > #downloads-indicator-counter,
--:root[data-theme="dark"] #back-button > .toolbarbutton-icon,
--:root[data-theme="dark"] #forward-button > .toolbarbutton-icon,
--:root[data-theme="dark"] #urlbar-reload-button > .toolbarbutton-icon,
--:root[data-theme="dark"] #urlbar-stop-button > .toolbarbutton-icon,
--:root[data-theme="dark"] #PanelUI-menu-button > .toolbarbutton-icon,
--:root[data-theme="dark"] #nav-bar-overflow-button > .toolbarbutton-icon,
+ :root[data-theme="dark"] #back-button > .toolbarbutton-icon,
+ :root[data-theme="dark"] #forward-button > .toolbarbutton-icon,
+ :root[data-theme="dark"] #urlbar-reload-button > .toolbarbutton-icon,
+ :root[data-theme="dark"] #urlbar-stop-button > .toolbarbutton-icon,
+ :root[data-theme="dark"] #PanelUI-menu-button > .toolbarbutton-icon,
+ :root[data-theme="dark"] #nav-bar-overflow-button > .toolbarbutton-icon,
 -:root[data-theme="dark"] #identity-icon,
 -:root[data-theme="dark"] #tracking-protection-icon,
 -:root[data-theme="dark"] #connection-icon,
 -:root[data-theme="dark"] #default-notification-icon,
 -:root[data-theme="dark"] #notification-popup-box .notification-anchor-icon,
--:root[data-theme="dark"] .tabs-newtab-button > .toolbarbutton-icon,
--:root[data-theme="dark"] #new-tab-button > .toolbarbutton-icon,
--:root[data-theme="dark"] #titlebar-min,
--:root[data-theme="dark"] #titlebar-max,
--:root[data-theme="dark"] #titlebar-restore,
--:root[data-theme="dark"] #titlebar-close,
--:root[data-theme="dark"] #minimize-button,
--:root[data-theme="dark"] #restore-button,
--:root[data-theme="dark"] #close-button {
--  filter: invert(100%) brightness(1.12) !important;
--}
--
--#main-window[lwtheme-brighttext] #nav-bar .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #nav-bar .toolbarbutton-menubutton-button > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #nav-bar .toolbarbutton-badge-stack > .toolbarbutton-icon,
+ :root[data-theme="dark"] .tabs-newtab-button > .toolbarbutton-icon,
+ :root[data-theme="dark"] #new-tab-button > .toolbarbutton-icon,
+ :root[data-theme="dark"] #titlebar-min,
+@@ -5369,19 +3069,12 @@ toolbar[brighttext] #global-notificationbox,
+ #main-window[lwtheme-brighttext] #nav-bar .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #nav-bar .toolbarbutton-menubutton-button > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #nav-bar .toolbarbutton-badge-stack > .toolbarbutton-icon,
 -#main-window[lwtheme-brighttext] #downloads-button > #downloads-indicator-anchor > #downloads-indicator-icon,
 -#main-window[lwtheme-brighttext] #downloads-button > #downloads-indicator-anchor > #downloads-indicator-progress-area > #downloads-indicator-counter,
--#main-window[lwtheme-brighttext] #back-button > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #forward-button > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #urlbar-reload-button > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #urlbar-stop-button > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #PanelUI-menu-button > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #nav-bar-overflow-button > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #back-button > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #forward-button > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #urlbar-reload-button > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #urlbar-stop-button > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #PanelUI-menu-button > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #nav-bar-overflow-button > .toolbarbutton-icon,
 -#main-window[lwtheme-brighttext] #identity-icon,
 -#main-window[lwtheme-brighttext] #tracking-protection-icon,
 -#main-window[lwtheme-brighttext] #connection-icon,
 -#main-window[lwtheme-brighttext] #default-notification-icon,
 -#main-window[lwtheme-brighttext] #notification-popup-box .notification-anchor-icon,
--#main-window[lwtheme-brighttext] .tabs-newtab-button > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #new-tab-button > .toolbarbutton-icon,
--#main-window[lwtheme-brighttext] #titlebar-min,
--#main-window[lwtheme-brighttext] #titlebar-max,
--#main-window[lwtheme-brighttext] #titlebar-restore,
--#main-window[lwtheme-brighttext] #titlebar-close,
--#main-window[lwtheme-brighttext] #minimize-button,
--#main-window[lwtheme-brighttext] #restore-button,
--#main-window[lwtheme-brighttext] #close-button {
--  filter: invert(100%) brightness(1.12) !important;
--}
--
--toolbar[brighttext] #identity-icon,
+ #main-window[lwtheme-brighttext] .tabs-newtab-button > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #new-tab-button > .toolbarbutton-icon,
+ #main-window[lwtheme-brighttext] #titlebar-min,
+@@ -5394,37 +3087,48 @@ toolbar[brighttext] #global-notificationbox,
+   filter: invert(100%) brightness(1.12) !important;
+ }
+ 
++:root[data-theme="dark"] #identity-icon,
++:root[data-theme="dark"] #identity-box > image:first-child,
++#main-window[lwtheme-brighttext] #identity-icon,
++#main-window[lwtheme-brighttext] #identity-box > image:first-child,
+ toolbar[brighttext] #identity-icon,
 -toolbar[brighttext] #tracking-protection-icon,
 -toolbar[brighttext] #connection-icon,
 -toolbar[brighttext] #default-notification-icon,
@@ -3361,8 +3748,10 @@ index e632cc2974..978c3b790e 100644
 -toolbar[brighttext] #downloads-button > #downloads-indicator-anchor > #downloads-indicator-icon,
 -toolbar[brighttext] #downloads-button > #downloads-indicator-anchor > #downloads-indicator-progress-area > #downloads-indicator-counter {
 -  filter: invert(100%) brightness(1.12) !important;
--}
--
++toolbar[brighttext] #identity-box > image:first-child {
++  filter: invert(100%) hue-rotate(180deg) !important;
+ }
+ 
 -/* Remove content perimeter lines around webpages/internal pages. */
 -#main-window #browser-border-start,
 -#main-window #browser-border-end {
@@ -3371,61 +3760,51 @@ index e632cc2974..978c3b790e 100644
 -  min-width: 0 !important;
 -  background: transparent !important;
 -  border: none !important;
--}
--
++@media not all and (-moz-windows-glass) {
++  @media not all and (-moz-os-version: windows-vista) {
++    @media not all and (-moz-os-version: windows-win7) {
++      @media not all and (-moz-os-version: windows-win8) {
++        :root[data-theme="dark"] #main-window #browser-border-start,
++        :root[data-theme="dark"] #main-window #browser-border-end,
++        #main-window[lwtheme-brighttext] #browser-border-start,
++        #main-window[lwtheme-brighttext] #browser-border-end {
++          display: none !important;
++          width: 0 !important;
++          min-width: 0 !important;
++          background: transparent !important;
++          border: none !important;
++        }
++      }
++    }
++  }
+ }
+ 
 -#main-window .tabbrowser-tabpanels,
 -#main-window #content tabpanels,
 -#main-window #appcontent browser,
 -#main-window #content browser {
--  -moz-appearance: none !important;
--  border: none !important;
--  border-color: transparent !important;
--  box-shadow: none !important;
--}
--
++:root[data-theme="dark"] #main-window .tabbrowser-tabpanels,
++:root[data-theme="dark"] #main-window #content tabpanels,
++:root[data-theme="dark"] #main-window #appcontent browser,
++:root[data-theme="dark"] #main-window #content browser,
++#main-window[lwtheme-brighttext] .tabbrowser-tabpanels,
++#main-window[lwtheme-brighttext] #content tabpanels,
++#main-window[lwtheme-brighttext] #appcontent browser,
++#main-window[lwtheme-brighttext] #content browser {
+   -moz-appearance: none !important;
+   border: none !important;
+   border-color: transparent !important;
+   box-shadow: none !important;
+ }
+ 
 -/* Keep native scrollbar metrics, only hint dark colors. */
--:root[data-theme="dark"],
--#main-window[lwtheme-brighttext],
--toolbar[brighttext] {
--  scrollbar-color: #5a5a5a #2b2b2b;
--}
--
--:root[data-theme="dark"] scrollbar,
--:root[data-theme="dark"] slider,
--:root[data-theme="dark"] scrollcorner,
--#main-window[lwtheme-brighttext] scrollbar,
--#main-window[lwtheme-brighttext] slider,
--#main-window[lwtheme-brighttext] scrollcorner,
--toolbar[brighttext] scrollbar,
--toolbar[brighttext] slider,
--toolbar[brighttext] scrollcorner {
--  background-image: none !important;
--  background-color: #2b2b2b !important;
--}
--
--:root[data-theme="dark"] thumb,
--:root[data-theme="dark"] scrollbarbutton,
--#main-window[lwtheme-brighttext] thumb,
--#main-window[lwtheme-brighttext] scrollbarbutton,
--toolbar[brighttext] thumb,
--toolbar[brighttext] scrollbarbutton {
--  background-color: #5a5a5a !important;
--  border-color: #3f454c !important;
--  -moz-border-top-colors: #4a5058 #3f454c !important;
--  -moz-border-right-colors: #2f343a #262b30 !important;
--  -moz-border-bottom-colors: #2f343a #262b30 !important;
--  -moz-border-left-colors: #4a5058 #3f454c !important;
--}
--
--:root[data-theme="dark"] thumb:hover,
--:root[data-theme="dark"] scrollbarbutton:hover,
--#main-window[lwtheme-brighttext] thumb:hover,
--#main-window[lwtheme-brighttext] scrollbarbutton:hover,
--toolbar[brighttext] thumb:hover,
--toolbar[brighttext] scrollbarbutton:hover {
--  background-color: #6a6a6a !important;
--}
--
+ :root[data-theme="dark"],
+ #main-window[lwtheme-brighttext],
+ toolbar[brighttext] {
+@@ -5467,248 +3171,488 @@ toolbar[brighttext] scrollbarbutton:hover {
+   background-color: #6a6a6a !important;
+ }
+ 
 -%ifdef XP_MACOSX
 -/* Final macOS pass for Windows CSS port:
 - * keep native-style top chrome geometry stable and controls visible. */
@@ -3433,14 +3812,45 @@ index e632cc2974..978c3b790e 100644
 -#main-window[tabsintitlebar] > #titlebar {
 -  min-height: 30px !important;
 -  height: 30px !important;
--}
--
++@media (prefers-color-scheme: dark) {
++  #navigator-toolbox > toolbar:not(#toolbar-menubar):not(#TabsToolbar):not(:-moz-lwtheme) {
++    background-color: #2b2b2b !important;
++    background-image: none !important;
++  }
++
++  #nav-bar {
++    border-top-color: #1a1a1a !important;
++    box-shadow: none !important;
++  }
++
++  #navigator-toolbox::after {
++    border-bottom-color: #1a1a1a !important;
++  }
++
++  .browserContainer > findbar {
++    background-color: #2b2b2b !important;
++    color: #e0e0e0 !important;
++  }
++
++  #browser-bottombox:not(:-moz-lwtheme) {
++    background-color: #2b2b2b !important;
++  }
++}
++
++:root[data-theme="dark"] #navigator-toolbox > toolbar:not(#toolbar-menubar):not(#TabsToolbar):not(:-moz-lwtheme) {
++  background-color: #2b2b2b !important;
++  background-image: none !important;
+ }
+ 
 -#main-window > #titlebar > #titlebar-content,
 -#main-window[tabsintitlebar] > #titlebar > #titlebar-content {
 -  min-height: 30px !important;
 -  height: 30px !important;
--}
--
++:root[data-theme="dark"] #nav-bar {
++  border-top-color: #1a1a1a !important;
++  box-shadow: none !important;
+ }
+ 
 -#titlebar-buttonbox-container,
 -#titlebar-buttonbox,
 -#titlebar-min,
@@ -3451,27 +3861,39 @@ index e632cc2974..978c3b790e 100644
 -#close-button {
 -  display: -moz-box !important;
 -  visibility: visible !important;
--}
--
++:root[data-theme="dark"] #navigator-toolbox::after {
++  border-bottom-color: #1a1a1a !important;
+ }
+ 
 -#titlebar-buttonbox-container,
 -#titlebar-buttonbox {
 -  margin: 0 !important;
 -  padding: 0 !important;
--}
--
++:root[data-theme="dark"] .browserContainer > findbar {
++  background-color: #2b2b2b !important;
++  color: #e0e0e0 !important;
+ }
+ 
 -/* Keep custom titlebar, but render macOS traffic-light controls inside it. */
 -#titlebar-buttonbox-container {
 -  -moz-box-ordinal-group: 0 !important;
 -  margin-left: 8px !important;
 -  margin-right: 0 !important;
 -  z-index: 20 !important;
--}
--
++:root[data-theme="dark"] #browser-bottombox:not(:-moz-lwtheme) {
++  background-color: #2b2b2b !important;
+ }
+ 
 -#titlebar-buttonbox {
 -  -moz-box-align: center !important;
 -  min-height: 30px !important;
--}
--
++@media (prefers-color-scheme: dark) {
++  :-moz-any(#back-button, #forward-button):not(:hover):not(:active):not([open=true]) > .toolbarbutton-icon,
++  :-moz-any(#back-button, #forward-button)[disabled=true] > .toolbarbutton-icon {
++    background-color: rgba(255,255,255,.08) !important;
++  }
+ }
+ 
 -.titlebar-button,
 -#titlebar-min,
 -#titlebar-max,
@@ -3489,39 +3911,85 @@ index e632cc2974..978c3b790e 100644
 -  padding: 0 !important;
 -  border: none !important;
 -  border-radius: 50% !important;
--  background-image: none !important;
++:root[data-theme="dark"] :-moz-any(#back-button, #forward-button):not(:hover):not(:active):not([open=true]) > .toolbarbutton-icon,
++:root[data-theme="dark"] :-moz-any(#back-button, #forward-button)[disabled=true] > .toolbarbutton-icon {
++  background-color: rgba(255,255,255,.08) !important;
++}
++
++@media not all and (-moz-windows-glass) {
++  @media not all and (-moz-os-version: windows-vista) {
++    @media not all and (-moz-os-version: windows-win7) {
++      @media not all and (-moz-os-version: windows-win8) {
++        :root[data-theme="dark"] #TabsToolbar,
++        :root[data-theme="dark"] #tabbrowser-tabs,
++        #main-window[lwtheme-brighttext] #TabsToolbar,
++        #main-window[lwtheme-brighttext] #tabbrowser-tabs,
++        toolbar[brighttext] #TabsToolbar {
++          background-color: var(--toolbar-bgcolor) !important;
++          background-image: none !important;
++        }
++      }
++    }
++  }
++}
++
++:root[data-theme="dark"] #tabbrowser-tabs,
++#main-window[lwtheme-brighttext] #tabbrowser-tabs,
++toolbar[brighttext] #tabbrowser-tabs {
+   background-image: none !important;
 -  list-style-image: none !important;
 -  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15) !important;
--}
--
+ }
+ 
 -/* Order buttons as macOS traffic lights: close, minimize, zoom. */
 -#titlebar-close,
 -#close-button {
 -  -moz-box-ordinal-group: 1 !important;
--}
--
++:root[data-theme="dark"] .tabbrowser-tab .tab-background-middle,
++#main-window[lwtheme-brighttext] .tabbrowser-tab .tab-background-middle,
++toolbar[brighttext] .tabbrowser-tab .tab-background-middle {
++  background-color: var(--tab-bgcolor) !important;
++  background-image: none !important;
+ }
+ 
 -#titlebar-min,
 -#minimize-button {
 -  -moz-box-ordinal-group: 2 !important;
--}
--
++:root[data-theme="dark"] .tabbrowser-tab .tab-background-middle:hover,
++#main-window[lwtheme-brighttext] .tabbrowser-tab .tab-background-middle:hover,
++toolbar[brighttext] .tabbrowser-tab .tab-background-middle:hover {
++  background-color: var(--tab-hover-bgcolor) !important;
+ }
+ 
 -#titlebar-max,
 -#restore-button {
 -  -moz-box-ordinal-group: 3 !important;
--}
--
++:root[data-theme="dark"] .tabbrowser-tab .tab-background-middle[selected="true"],
++#main-window[lwtheme-brighttext] .tabbrowser-tab .tab-background-middle[selected="true"],
++toolbar[brighttext] .tabbrowser-tab .tab-background-middle[selected="true"] {
++  background-color: var(--tab-selected-bgcolor) !important;
+ }
+ 
 -#titlebar-min,
 -#minimize-button {
 -  -moz-appearance: none !important;
 -  background-color: #febc2e !important;
--}
--
++:root[data-theme="dark"] .tabbrowser-tab .tab-text,
++#main-window[lwtheme-brighttext] .tabbrowser-tab .tab-text,
++toolbar[brighttext] .tabbrowser-tab .tab-text {
++  color: var(--inactive-font-color) !important;
+ }
+ 
 -#titlebar-max,
 -#restore-button {
 -  -moz-appearance: none !important;
 -  background-color: #28c840 !important;
--}
--
++:root[data-theme="dark"] .tabbrowser-tab[selected="true"] .tab-text,
++#main-window[lwtheme-brighttext] .tabbrowser-tab[selected="true"] .tab-text,
++toolbar[brighttext] .tabbrowser-tab[selected="true"] .tab-text {
++  color: var(--tab-text-color) !important;
+ }
+ 
 -/* In maximized mode, Windows-specific selectors have higher specificity.
 - * Re-assert fixed traffic-light sizing to prevent stretched green button. */
 -#main-window[sizemode="maximized"] #titlebar-max,
@@ -3531,43 +3999,171 @@ index e632cc2974..978c3b790e 100644
 -  min-height: 12px !important;
 -  border-radius: 50% !important;
 -  background-color: #28c840 !important;
--}
--
++:root[data-theme="dark"] #PanelUI-popup,
++:root[data-theme="dark"] #PanelUI-popup .panel-arrowcontent,
++:root[data-theme="dark"] #PanelUI-popup .panel-subview-body,
++:root[data-theme="dark"] panelview,
++#main-window[lwtheme-brighttext] #PanelUI-popup,
++#main-window[lwtheme-brighttext] #PanelUI-popup .panel-arrowcontent,
++#main-window[lwtheme-brighttext] #PanelUI-popup .panel-subview-body,
++#main-window[lwtheme-brighttext] panelview,
++toolbar[brighttext] #PanelUI-popup,
++toolbar[brighttext] #PanelUI-popup .panel-arrowcontent {
++  background-color: var(--context-menu-bg-color) !important;
++  color: var(--main-font-color) !important;
++  border-color: var(--context-menu-border-color) !important;
+ }
+ 
 -#titlebar-close,
 -#close-button {
--  -moz-appearance: none !important;
++:root[data-theme="dark"] #PanelUI-popup toolbarbutton,
++:root[data-theme="dark"] #PanelUI-popup .subviewbutton,
++:root[data-theme="dark"] #PanelUI-popup .toolbarbutton-text,
++:root[data-theme="dark"] #PanelUI-popup .subviewbutton-iconic,
++#main-window[lwtheme-brighttext] #PanelUI-popup toolbarbutton,
++#main-window[lwtheme-brighttext] #PanelUI-popup .subviewbutton,
++#main-window[lwtheme-brighttext] #PanelUI-popup .toolbarbutton-text,
++toolbar[brighttext] #PanelUI-popup toolbarbutton,
++toolbar[brighttext] #PanelUI-popup .subviewbutton {
++  color: var(--main-font-color) !important;
++}
++
++:root[data-theme="dark"] #PanelUI-popup toolbarbutton:not([disabled="true"]):hover,
++:root[data-theme="dark"] #PanelUI-popup .subviewbutton:not([disabled="true"]):hover,
++#main-window[lwtheme-brighttext] #PanelUI-popup toolbarbutton:not([disabled="true"]):hover,
++#main-window[lwtheme-brighttext] #PanelUI-popup .subviewbutton:not([disabled="true"]):hover,
++toolbar[brighttext] #PanelUI-popup toolbarbutton:not([disabled="true"]):hover,
++toolbar[brighttext] #PanelUI-popup .subviewbutton:not([disabled="true"]):hover {
++  background-color: var(--context-menu-bg-hover-color) !important;
++}
++
++:root[data-theme="dark"] #PanelUI-popup toolbarseparator,
++#main-window[lwtheme-brighttext] #PanelUI-popup toolbarseparator,
++toolbar[brighttext] #PanelUI-popup toolbarseparator {
++  border-color: var(--context-menu-separator-color) !important;
++}
++
++:root[data-theme="dark"] #PanelUI-popup .panel-arrow,
++#main-window[lwtheme-brighttext] #PanelUI-popup .panel-arrow,
++toolbar[brighttext] #PanelUI-popup .panel-arrow {
++  fill: var(--context-menu-bg-color) !important;
++  stroke: var(--context-menu-border-color) !important;
++}
++
++:root[data-theme="dark"] #PanelUI-footer-inner,
++#main-window[lwtheme-brighttext] #PanelUI-footer-inner,
++toolbar[brighttext] #PanelUI-footer-inner {
++  background-color: var(--context-menu-bg-hover-color) !important;
++  color: var(--main-font-color) !important;
++}
++
++:root[data-theme="dark"] tooltip,
++#main-window[lwtheme-brighttext] tooltip,
++toolbar[brighttext] tooltip {
++  background-color: var(--context-menu-bg-color) !important;
++  color: var(--main-font-color) !important;
++  border-color: var(--context-menu-border-color) !important;
++}
++
++:root[data-theme="dark"] .searchbar-textbox,
++#main-window[lwtheme-brighttext] .searchbar-textbox,
++toolbar[brighttext] .searchbar-textbox {
++  background-color: var(--searchbar-bg-color) !important;
++  color: var(--main-font-color) !important;
++  border-color: var(--toolbar-field-border-color) !important;
++}
++
++:root[data-theme="dark"] .searchbar-textbox:hover,
++#main-window[lwtheme-brighttext] .searchbar-textbox:hover,
++toolbar[brighttext] .searchbar-textbox:hover {
++  background-color: var(--searchbar-bg-hover-color) !important;
++}
++
++:root[data-theme="dark"] .searchbar-textbox[focused],
++#main-window[lwtheme-brighttext] .searchbar-textbox[focused],
++toolbar[brighttext] .searchbar-textbox[focused] {
++  background-color: var(--searchbar-bg-active-color) !important;
++  border-color: var(--toolbar-field-focus-border-color) !important;
++}
++
++:root[data-theme="dark"] .searchbar-textbox > .autocomplete-textbox-container > .textbox-input-box > html|input,
++#main-window[lwtheme-brighttext] .searchbar-textbox > .autocomplete-textbox-container > .textbox-input-box > html|input,
++toolbar[brighttext] .searchbar-textbox > .autocomplete-textbox-container > .textbox-input-box > html|input {
++  color: var(--main-font-color) !important;
++}
++
++:root[data-theme="dark"] menupopup,
++:root[data-theme="dark"] panel,
++#main-window[lwtheme-brighttext] menupopup,
++#main-window[lwtheme-brighttext] panel,
++toolbar[brighttext] menupopup,
++toolbar[brighttext] panel {
+   -moz-appearance: none !important;
 -  background-color: #ff5f57 !important;
--}
--
++  background-color: var(--context-menu-bg-color) !important;
++  color: var(--main-font-color) !important;
++  border: 1px solid var(--context-menu-border-color) !important;
+ }
+ 
 -/* Dark mode traffic light colors */
 -#main-window[lwtheme-brighttext] #titlebar-min,
 -#main-window[lwtheme-brighttext] #minimize-button,
 -:root[data-theme="dark"] #titlebar-min,
 -:root[data-theme="dark"] #minimize-button {
 -  background-color: #ffbd44 !important;
--}
--
++:root[data-theme="dark"] menu,
++:root[data-theme="dark"] menuitem,
++:root[data-theme="dark"] menucaption,
++#main-window[lwtheme-brighttext] menu,
++#main-window[lwtheme-brighttext] menuitem,
++#main-window[lwtheme-brighttext] menucaption,
++toolbar[brighttext] menu,
++toolbar[brighttext] menuitem,
++toolbar[brighttext] menucaption {
++  color: var(--main-font-color) !important;
++  background-color: transparent !important;
+ }
+ 
 -#main-window[lwtheme-brighttext] #titlebar-max,
 -#main-window[lwtheme-brighttext] #restore-button,
 -:root[data-theme="dark"] #titlebar-max,
 -:root[data-theme="dark"] #restore-button {
 -  background-color: #00ca4e !important;
--}
--
++:root[data-theme="dark"] menucaption,
++#main-window[lwtheme-brighttext] menucaption,
++toolbar[brighttext] menucaption {
++  color: var(--gray-text-color) !important;
+ }
+ 
 -#main-window[sizemode="maximized"][lwtheme-brighttext] #titlebar-max,
 -#main-window[sizemode="maximized"][lwtheme-brighttext] #restore-button,
 -#main-window[sizemode="maximized"]:root[data-theme="dark"] #titlebar-max,
 -#main-window[sizemode="maximized"]:root[data-theme="dark"] #restore-button {
 -  background-color: #00ca4e !important;
--}
--
++:root[data-theme="dark"] menu[disabled="true"],
++:root[data-theme="dark"] menuitem[disabled="true"],
++#main-window[lwtheme-brighttext] menu[disabled="true"],
++#main-window[lwtheme-brighttext] menuitem[disabled="true"],
++toolbar[brighttext] menu[disabled="true"],
++toolbar[brighttext] menuitem[disabled="true"] {
++  color: var(--gray-text-color) !important;
+ }
+ 
 -#main-window[lwtheme-brighttext] #titlebar-close,
 -#main-window[lwtheme-brighttext] #close-button,
 -:root[data-theme="dark"] #titlebar-close,
 -:root[data-theme="dark"] #close-button {
 -  background-color: #ff605c !important;
--}
--
++:root[data-theme="dark"] menu[_moz-menuactive="true"],
++:root[data-theme="dark"] menuitem[_moz-menuactive="true"]:not([disabled="true"]),
++#main-window[lwtheme-brighttext] menu[_moz-menuactive="true"],
++#main-window[lwtheme-brighttext] menuitem[_moz-menuactive="true"]:not([disabled="true"]),
++toolbar[brighttext] menu[_moz-menuactive="true"],
++toolbar[brighttext] menuitem[_moz-menuactive="true"]:not([disabled="true"]) {
++  background-color: var(--context-menu-bg-hover-color) !important;
++  color: var(--main-font-color) !important;
+ }
+ 
 -#main-window[sizemode="normal"] #TabsToolbar,
 -#main-window[sizemode="maximized"] #TabsToolbar,
 -#main-window[tabsintitlebar] #toolbar-menubar ~ #TabsToolbar,
@@ -3577,25 +4173,56 @@ index e632cc2974..978c3b790e 100644
 -  margin-bottom: 0 !important;
 -  padding-top: 0 !important;
 -  padding-inline-start: 76px !important;
--}
--
++:root[data-theme="dark"] menuseparator,
++#main-window[lwtheme-brighttext] menuseparator,
++toolbar[brighttext] menuseparator {
++  border-color: var(--context-menu-separator-color) !important;
+ }
+ 
 -/* Neutralize Windows tabs-in-titlebar top offsets on macOS. */
 -#toolbar-menubar:not([autohide=true]) ~ #TabsToolbar:not([inFullscreen]),
 -#toolbar-menubar[autohide=true]:not([inactive]) ~ #TabsToolbar:not([inFullscreen]),
 -#main-window[tabsintitlebar][sizemode="normal"]:not([inFullscreen])[chromehidden~="menubar"] #toolbar-menubar ~ #TabsToolbar,
 -#main-window[tabsintitlebar][sizemode="normal"]:not([inFullscreen]) #toolbar-menubar[autohide="true"][inactive] ~ #TabsToolbar {
 -  margin-top: 0 !important;
--}
--
++@media (-moz-os-version: windows-win10) and (-moz-windows-compositor) {
++  :root[data-theme="dark"] #main-window:not(:-moz-window-inactive),
++  #main-window[lwtheme-brighttext]:not(:-moz-window-inactive) {
++    background-color: -moz-win-accentcolor !important;
++  }
++
++  :root[data-theme="dark"] #main-window:-moz-window-inactive,
++  #main-window[lwtheme-brighttext]:-moz-window-inactive {
++    background-color: #3c3c3c !important;
++  }
+ }
+ 
 -:root {
 -  --space-above-tabbar: 0px !important;
 -  --tab-toolbar-navbar-overlap: 0px !important;
--}
--
++:root[data-theme="dark"] .tabbrowser-tab .tab-background-start,
++:root[data-theme="dark"] .tabbrowser-tab .tab-background-end,
++#main-window[lwtheme-brighttext] .tabbrowser-tab .tab-background-start,
++#main-window[lwtheme-brighttext] .tabbrowser-tab .tab-background-end,
++toolbar[brighttext] .tabbrowser-tab .tab-background-start,
++toolbar[brighttext] .tabbrowser-tab .tab-background-end {
++  filter: brightness(0.178) saturate(1.1) !important;
+ }
+ 
 -#main-window[tabsintitlebar] #TabsToolbar {
 -  min-height: 30px !important;
--}
--
++:root[data-theme="dark"] .tab-background-start[selected="true"]::after,
++:root[data-theme="dark"] .tab-background-end[selected="true"]::after,
++#main-window[lwtheme-brighttext] .tab-background-start[selected="true"]::after,
++#main-window[lwtheme-brighttext] .tab-background-end[selected="true"]::after,
++toolbar[brighttext] .tab-background-start[selected="true"]::after,
++toolbar[brighttext] .tab-background-end[selected="true"]::after {
++  content: "" !important;
++  display: -moz-box !important;
++  filter: none !important;
++  background-repeat: no-repeat !important;
+ }
+ 
 -/* Keep the macOS tabstrip anchored; remove Windows floating offsets. */
 -#main-window[tabsintitlebar] #tabbrowser-tabs,
 -#main-window[tabsintitlebar] .tabbrowser-tab,
@@ -3603,13 +4230,21 @@ index e632cc2974..978c3b790e 100644
 -  margin-top: 0 !important;
 -  margin-bottom: 0 !important;
 -  padding-top: 0 !important;
--}
--
++:root[data-theme="dark"] .tab-background-start[selected="true"]::after,
++#main-window[lwtheme-brighttext] .tab-background-start[selected="true"]::after,
++toolbar[brighttext] .tab-background-start[selected="true"]::after {
++  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAfCAYAAADwbH0HAAAAmklEQVR42u2XQQoCMQxFfyJeslNwoeis/mF6iLmjiOKmuOhKLUkonawCXTxePykpMFuJNYBkqu0BwBGAAlAxBC4V8mzPSimbGBp+IHC41tyCPaBph3qNy0+lEdAw227jngoDh+U731XraPnmKOPXnrFHvqco44c7mORtyGfyL2OSlwjTNWKnOltA5ZscLZZyIXmt/b0dFctfwBtNvTlyyzkFiAAAAABJRU5ErkJggg==") !important;
+ }
+ 
 -#main-window[tabsintitlebar]:not([sizemode=fullscreen]) #tabbrowser-tabs {
 -  position: static !important;
 -  z-index: auto !important;
--}
--
++:root[data-theme="dark"] .tab-background-end[selected="true"]::after,
++#main-window[lwtheme-brighttext] .tab-background-end[selected="true"]::after,
++toolbar[brighttext] .tab-background-end[selected="true"]::after {
++  background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAfCAYAAADwbH0HAAAAw0lEQVR42u2XQQrCMBBFX1vEm7jSrXOXorgQ1NUcJnfQu8zKRY9TDG66KhWKJh1K/ZBVwvzM/0n4gaWhUNULELvRAi+AEMIjKzGAqtYDcxUQQwj3bMRD6G8mtwIfN6Gqx5Q1qzGLzKwRka2I7Mys8eq8drkG7uS/1ig9yV2IS5zgRuwm9/KknqfHnc8Hr47j3+MpfT55ddy6Sa2q11k8n2Vi8rNnLLolS5lj0aXRjYjszez5VaBP7Xf/Q1BMfOBWwBrgDc33RNyuaOm3AAAAAElFTkSuQmCC") !important;
+ }
+ 
 -@media (prefers-color-scheme: dark) {
 -  #main-window > #titlebar,
 -  #main-window[tabsintitlebar] > #titlebar,
@@ -3623,9 +4258,42 @@ index e632cc2974..978c3b790e 100644
 -    background-color: #2b2b2b !important;
 -    color: #e6e6e6 !important;
 -    border-color: #2b2b2b !important;
--  }
--}
--
++:root[data-theme="dark"] #TabsToolbar,
++#main-window[lwtheme-brighttext] #TabsToolbar,
++toolbar[brighttext] #TabsToolbar {
++  --tab-stroke-background-size: auto auto !important;
++}
++
++:root[data-theme="dark"] .tabbrowser-tab:not([selected="true"]) .tab-background-start,
++:root[data-theme="dark"] .tabbrowser-tab:not([selected="true"]) .tab-background-end,
++#main-window[lwtheme-brighttext] .tabbrowser-tab:not([selected="true"]) .tab-background-start,
++#main-window[lwtheme-brighttext] .tabbrowser-tab:not([selected="true"]) .tab-background-end,
++toolbar[brighttext] .tabbrowser-tab:not([selected="true"]) .tab-background-start,
++toolbar[brighttext] .tabbrowser-tab:not([selected="true"]) .tab-background-end {
++  background-image: none !important;
++  filter: none !important;
++  opacity: 0 !important;
++}
++
++:root[data-theme="dark"] .tabbrowser-tab:not([selected="true"]) .tab-background-middle,
++#main-window[lwtheme-brighttext] .tabbrowser-tab:not([selected="true"]) .tab-background-middle,
++toolbar[brighttext] .tabbrowser-tab:not([selected="true"]) .tab-background-middle {
++  background-image: none !important;
++}
++
++@media (min-resolution: 1.1dppx) {
++  :root[data-theme="dark"] .tab-background-start[selected="true"]::after,
++  #main-window[lwtheme-brighttext] .tab-background-start[selected="true"]::after,
++  toolbar[brighttext] .tab-background-start[selected="true"]::after {
++    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAA+CAYAAAB3NHh5AAABfklEQVR42u2aYUrDQBCFX2qLWHtCLYoitqC8w+QQXtCoNW2NP9ziGESIJnF2ZgZCCaTQj+/NdjcMEBUVlXMVlmBInonbI3EVACbZAwvAYwAzs4YT6PxgLVX103fKsnzIDpjkMoECwBbAaxvIhOFk9DT93qorZFbAJK9Sf1a/hcwCWFjdAqj7gFULnGAXfVmVNfEEq86whO0bVKvh+ZCwqoBJXgB4drGXlnvgIe1qMnwyBqyahap1yoF1wzN4qbHtajA8haca2+6/GiZ5HnadrNL2gSPOEekAzhc4+jciHcABnA0wyUtvC9bSW6TfoocD2AgwyevYYUWkjQCTvPHWw/voX6uGSd566+EXT1FeaYrzGIb3nuyutdkd2vAmeteiYZIrAI8utpYk1xhogk4dcDK7AdBonsYpegC9w+fEa6199Kj4A+h9Am20x1jWtCOkXHnr9FnlNFBWdDzlLMR/7C4Xq1+AO5xmGgBPh5tcxwTbka7x8e54993DFmYh3wHlS5mYYU/vxQAAAABJRU5ErkJggg==") !important;
++  }
++  :root[data-theme="dark"] .tab-background-end[selected="true"]::after,
++  #main-window[lwtheme-brighttext] .tab-background-end[selected="true"]::after,
++  toolbar[brighttext] .tab-background-end[selected="true"]::after {
++    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADwAAAA+CAYAAAB3NHh5AAAB00lEQVR42u2az0rDQBDGv02b+i+PURCRnvcd+ggqCiLqafosHfTsRXyXPXjqo1jrn9LGQxNYQmmiJm12dwYCSwi7/e33zewWBpCQkHA5FBHdZuMlgBTAwnoAAMz84iNwWcwBfLm+ASofENFZybeJNV4CmLkIrqp+WNiQPQBxNp4x87N3wBvgkyz3311QXP13Ags+ATBn5ievgQvQvczqrVVb1TlZQe1pG6E7dU5mjJlorQcAvgEkWutjY8zEW4XXqN06paOmJs4gpwAO26RwtIU1ZkR06b2l153ZbbB24wpbkAfeVemS6n2itR7sumpHW14vDkJhS+XTXasc7WDNLkKKCv+7vVMYRHQuKvuscHCWFluLpQXYD2DJY7G0AAuwc8BEdBVa4boIzdJLyWEB9gyYiK7lxiWW9gyYiG5CU3gheex7Dv+iSc6bovURnK2J6C60Y2kRosr3oV08PiWXA7havjUB3UpgqxFmWnc+d9oqr9XGmGqttTHmtY55lQv5jFWXbg9AzMyPXgMX7tlJ9ptjZn74G3C/7071Hg7zhlVg1ccJABiPx5U7/FSapk4dWaPRKFe7C2C/CF+2Ac4BrwEHgKOq6eks8AZ4O7rZ0dvLX/wAYYauv4L/hTwAAAAASUVORK5CYII=") !important;
+   }
+ }
+ 
 -/* Ensure webpage content uses the full client area on macOS. */
 -#main-window > #tab-view-deck,
 -#main-window > #tab-view-deck > #browser-panel,
@@ -3640,18 +4308,132 @@ index e632cc2974..978c3b790e 100644
 -  margin: 0 !important;
 -  padding: 0 !important;
 -  border: none !important;
--  box-shadow: none !important;
--  -moz-appearance: none !important;
--}
--
++
++:root[data-theme="dark"] .tabbrowser-tab:not([selected="true"]) .tab-background-middle,
++#main-window[lwtheme-brighttext] .tabbrowser-tab:not([selected="true"]) .tab-background-middle,
++toolbar[brighttext] .tabbrowser-tab:not([selected="true"]) .tab-background-middle {
++  background-color: transparent !important;
++  background-image: none !important;
++}
++
++:root[data-theme="dark"] .tabbrowser-tab:not([selected="true"]):hover .tab-background-middle,
++#main-window[lwtheme-brighttext] .tabbrowser-tab:not([selected="true"]):hover .tab-background-middle,
++toolbar[brighttext] .tabbrowser-tab:not([selected="true"]):hover .tab-background-middle {
++  background-color: rgba(255, 255, 255, 0.06) !important;
++}
++
++:root[data-theme="dark"] .tabbrowser-tab[selected="true"] .tab-background-middle,
++#main-window[lwtheme-brighttext] .tabbrowser-tab[selected="true"] .tab-background-middle,
++toolbar[brighttext] .tabbrowser-tab[selected="true"] .tab-background-middle {
++  background-color: #2b2b2b !important;
++  background-image: linear-gradient(rgba(110, 110, 110, 0.45), rgba(110, 110, 110, 0.45)) !important;
++  background-size: 100% 1px !important;
++  background-repeat: no-repeat !important;
++  background-position: center 1px !important;
+   box-shadow: none !important;
++}
++
++
++:root[data-theme="dark"] menupopup,
++:root[data-theme="dark"] panel[type="arrow"],
++#main-window[lwtheme-brighttext] menupopup,
++#main-window[lwtheme-brighttext] panel[type="arrow"],
++toolbar[brighttext] menupopup,
++toolbar[brighttext] panel[type="arrow"] {
++  -moz-appearance: none !important;
++  background-color: #2b2b2b !important;
++  color: #e0e0e0 !important;
++  border: 1px solid #5a5a5a !important;
++  border-radius: 2px !important;
++  padding: 2px 0 !important;
++}
++
++:root[data-theme="dark"] menupopup > menu,
++:root[data-theme="dark"] menupopup > menuitem,
++:root[data-theme="dark"] panel menuitem,
++:root[data-theme="dark"] panel menu,
++#main-window[lwtheme-brighttext] menupopup > menu,
++#main-window[lwtheme-brighttext] menupopup > menuitem,
++toolbar[brighttext] menupopup > menu,
++toolbar[brighttext] menupopup > menuitem {
++  -moz-appearance: none !important;
++  color: #e0e0e0 !important;
++  background-color: transparent !important;
++  padding: 4px 12px !important;
++}
++
++:root[data-theme="dark"] menupopup > menu:hover,
++:root[data-theme="dark"] menupopup > menuitem:hover,
++:root[data-theme="dark"] menupopup > menu[_moz-menuactive="true"],
++:root[data-theme="dark"] menupopup > menuitem[_moz-menuactive="true"],
++:root[data-theme="dark"] menupopup > menu[open="true"],
++#main-window[lwtheme-brighttext] menupopup > menu:hover,
++#main-window[lwtheme-brighttext] menupopup > menuitem:hover,
++#main-window[lwtheme-brighttext] menupopup > menu[_moz-menuactive="true"],
++#main-window[lwtheme-brighttext] menupopup > menuitem[_moz-menuactive="true"],
++toolbar[brighttext] menupopup > menu:hover,
++toolbar[brighttext] menupopup > menuitem:hover,
++toolbar[brighttext] menupopup > menu[_moz-menuactive="true"],
++toolbar[brighttext] menupopup > menuitem[_moz-menuactive="true"] {
++  background-color: #3c3c3c !important;
++  color: #ffffff !important;
++}
++
++:root[data-theme="dark"] menupopup > menuitem[disabled="true"],
++:root[data-theme="dark"] menupopup > menu[disabled="true"],
++#main-window[lwtheme-brighttext] menupopup > menuitem[disabled="true"],
++toolbar[brighttext] menupopup > menuitem[disabled="true"] {
++  color: #777777 !important;
++  background-color: transparent !important;
++}
++
++:root[data-theme="dark"] menuseparator,
++#main-window[lwtheme-brighttext] menuseparator,
++toolbar[brighttext] menuseparator {
++  -moz-appearance: none !important;
++  border-top: 1px solid #5a5a5a !important;
++  margin: 3px 6px !important;
++  padding: 0 !important;
++}
++
++:root[data-theme="dark"] .panel-arrowcontent,
++:root[data-theme="dark"] .panel-arrowbox,
++#main-window[lwtheme-brighttext] .panel-arrowcontent,
++toolbar[brighttext] .panel-arrowcontent {
++  background-color: #2b2b2b !important;
++  color: #e0e0e0 !important;
++  border-color: #5a5a5a !important;
++}
++
++:root[data-theme="dark"] .bookmark-item,
++#main-window[lwtheme-brighttext] .bookmark-item,
++toolbar[brighttext] .bookmark-item {
++  color: inherit !important;
++}
++
++:root[data-theme="dark"] #BMB_bookmarksPopup,
++:root[data-theme="dark"] #PlacesToolbar,
++:root[data-theme="dark"] #editBookmarkPanel,
++#main-window[lwtheme-brighttext] #BMB_bookmarksPopup,
++toolbar[brighttext] #BMB_bookmarksPopup {
+   -moz-appearance: none !important;
++  background-color: #2b2b2b !important;
++  color: #e0e0e0 !important;
++  border: 1px solid #5a5a5a !important;
+ }
+ 
 -#main-window > #tab-view-deck,
 -#main-window > #tab-view-deck > #browser-panel,
 -#main-window #appcontent,
 -#main-window .browserStack,
 -#main-window .tabbrowser-tabpanels {
 -  -moz-box-flex: 1 !important;
--}
--
++:root[data-theme="dark"] #context-navigation,
++#main-window[lwtheme-brighttext] #context-navigation,
++toolbar[brighttext] #context-navigation {
++  background-color: var(--context-menu-bg-color) !important;
+ }
+ 
 -/* SVG color adjustment for dark mode. */
 -#main-window[lwtheme-brighttext] #PanelUI-popup svg,
 -#main-window[lwtheme-brighttext] .panel-arrow svg,
@@ -3661,13 +4443,31 @@ index e632cc2974..978c3b790e 100644
 -:root[data-theme="dark"] panelview svg {
 -  fill: currentColor !important;
 -  filter: invert(100%) !important;
--}
--
++:root[data-theme="dark"] #context-navigation > toolbarbutton > .toolbarbutton-icon,
++#main-window[lwtheme-brighttext] #context-navigation > toolbarbutton > .toolbarbutton-icon,
++toolbar[brighttext] #context-navigation > toolbarbutton > .toolbarbutton-icon {
++  filter: invert(100%) brightness(1.12) !important;
+ }
+ 
 -/* Ensure panel backgrounds are appropriate for theme. */
 -#main-window[lwtheme-brighttext] .panel-white,
 -:root[data-theme="dark"] .panel-white {
 -  background-color: #2a2a2a !important;
--}
++:root[data-theme="dark"] #context-navigation > toolbarbutton[disabled="true"] > .toolbarbutton-icon,
++#main-window[lwtheme-brighttext] #context-navigation > toolbarbutton[disabled="true"] > .toolbarbutton-icon,
++toolbar[brighttext] #context-navigation > toolbarbutton[disabled="true"] > .toolbarbutton-icon {
++  opacity: 0.35 !important;
+ }
 -%endif
--
--}
+ 
++:root[data-theme="dark"] #PopupAutoComplete *,
++:root[data-theme="dark"] #PopupAutoCompleteRichResult *,
++:root[data-theme="dark"] #PopupSearchAutoComplete *,
++#main-window[lwtheme-brighttext] #PopupAutoComplete *,
++#main-window[lwtheme-brighttext] #PopupAutoCompleteRichResult *,
++#main-window[lwtheme-brighttext] #PopupSearchAutoComplete *,
++toolbar[brighttext] #PopupAutoComplete *,
++toolbar[brighttext] #PopupAutoCompleteRichResult *,
++toolbar[brighttext] #PopupSearchAutoComplete * {
++  color: inherit !important;
+ }
