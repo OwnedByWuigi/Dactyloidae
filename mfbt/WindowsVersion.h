@@ -180,13 +180,6 @@ IsWin11OrLater()
 }
 
 MOZ_ALWAYS_INLINE bool
-IsNotWin7PreRTM()
-{
-  return IsWin7SP1OrLater() || !IsWin7OrLater() ||
-         IsWindowsBuildOrLater(7600);
-}
-
-MOZ_ALWAYS_INLINE bool
 IsWin7AndPre2000Compatible() {
   /*
    * See Bug 1279171.
