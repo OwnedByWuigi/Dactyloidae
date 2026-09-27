@@ -42,6 +42,11 @@ typedef __m128i z_vec128i_t;
 #endif
 #endif
 
+#ifndef _MSC_VER
+#define _declspec(x) __attribute__((x))
+#define align(x) aligned(x)
+#endif
+
 /*
  * chunk copy type: the z_vec128i_t type size should be exactly 128-bits
  * and equal to CHUNKCOPY_CHUNK_SIZE.

@@ -180,6 +180,9 @@ if CONFIG['GNU_CXX']:
 if CONFIG['GNU_CC'] and CONFIG['CC_VERSION'] >= '10.0.0':
     CFLAGS += ['-fcommon']
 
+if CONFIG['OS_TARGET'] == 'Linux':
+    SOURCES['cabac.c'].flags += ['-fno-lto']
+
 USE_LIBS += [
      'mozavutil'
 ]
