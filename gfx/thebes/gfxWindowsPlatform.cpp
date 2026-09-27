@@ -531,9 +531,8 @@ gfxWindowsPlatform::CreatePlatformFontList()
 {
     gfxPlatformFontList *pfl;
 
-    // bug 630201 - older pre-RTM versions of Direct2D/DirectWrite cause odd
-    // crashers so blacklist them altogether
-    if (IsNotWin7PreRTM() && GetDWriteFactory()) {
+    // DirectWrite is Vista+
+    if (IsVistaOrLater() && GetDWriteFactory()) {
         pfl = new gfxDWriteFontList();
         if (NS_SUCCEEDED(pfl->InitFontList())) {
             return pfl;

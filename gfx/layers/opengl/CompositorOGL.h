@@ -22,6 +22,7 @@
 #include "mozilla/gfx/Rect.h"           // for Rect, IntRect
 #include "mozilla/gfx/Triangle.h"       // for Triangle
 #include "mozilla/gfx/Types.h"          // for Float, SurfaceFormat, etc
+#include "mozilla/gfx/webrender.h"      // for wr_frame
 #include "mozilla/layers/Compositor.h"  // for SurfaceInitMode, Compositor, etc
 #include "mozilla/layers/CompositorTypes.h"  // for MaskType::MaskType::NumMaskTypes, etc
 #include "mozilla/layers/LayersTypes.h"
@@ -32,6 +33,8 @@
 #include "nsThreadUtils.h"              // for nsRunnable
 #include "nsXULAppAPI.h"                // for XRE_GetProcessType
 #include "nscore.h"                     // for NS_IMETHOD
+
+#include <stddef.h>
 
 class nsIWidget;
 
@@ -168,6 +171,12 @@ protected:
 public:
   virtual CompositorOGL* AsCompositorOGL() override { return this; }
 
+  struct WebRenderImageSource {
+    RefPtr<TextureSource> mSource;
+    uint32_t mKey;
+    bool mPremultiplied;
+  };
+
   virtual already_AddRefed<DataTextureSource>
   CreateDataTextureSource(TextureFlags aFlags = TextureFlags::NO_FLAGS) override;
 
@@ -210,6 +219,32 @@ public:
                             gfx::Float aOpacity,
                             const gfx::Matrix4x4& aTransform,
                             const gfx::Rect& aVisibleRect) override;
+
+  // Consume solid retained-display-list quads through the existing GPU path.
+  bool DrawWebRenderContext(wr_context* aContext,
+                            const gfx::IntRect& aClipRect,
+                            TextureSource* aImageSource = nullptr,
+                            uint32_t aImageKey = 0,
+                            bool aImagePremultiplied = true);
+  bool DrawWebRenderRect(const gfx::Rect& aRect,
+                         const gfx::Color& aColor,
+                         gfx::Float aOpacity,
+                         const gfx::Matrix4x4& aTransform,
+                         const gfx::IntRect& aClipRect);
+  bool DrawWebRenderImage(TextureSource* aImageSource,
+                          const gfx::Rect& aRect,
+                          const gfx::Rect& aTexRect,
+                          gfx::Float aOpacity,
+                          const gfx::Matrix4x4& aTransform,
+                          const gfx::IntRect& aClipRect,
+                          bool aPremultiplied);
+  void DrawWebRenderFrame(const wr_frame& aFrame,
+                          const gfx::IntRect& aClipRect,
+                          const WebRenderImageSource* aImageSources,
+                          size_t aImageSourceCount);
+  void FlushWebRenderScene();
+  uint32_t RegisterWebRenderImage(TextureSource* aImageSource,
+                                  bool aPremultiplied);
 
   virtual void EndFrame() override;
   virtual void EndFrameForExternalComposition(const gfx::Matrix& aTransform) override;
@@ -327,6 +362,11 @@ private:
 
   /** Currently bound render target */
   RefPtr<CompositingRenderTargetOGL> mCurrentRenderTarget;
+  wr_context* mWebRenderContext;
+  gfx::IntRect mWebRenderViewport;
+  bool mWebRenderSceneHasCommands;
+  nsTArray<WebRenderImageSource> mWebRenderSceneImageSources;
+  uint32_t mNextWebRenderImageKey;
 #ifdef DEBUG
   CompositingRenderTargetOGL* mWindowRenderTarget;
 #endif

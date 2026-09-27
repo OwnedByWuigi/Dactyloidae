@@ -210,13 +210,25 @@ ifdef CPP_UNIT_TESTS
 NO_PROFILE_GUIDED_OPTIMIZE = 1
 endif
 
+# Reject stale Windows PGO configuration before compiling the first pass.
+ifdef MOZ_PGO
+ifdef CLANG_CL
+ifeq ($(strip $(LLVM_PROFDATA)),)
+$(error clang-cl PGO requires LLVM_PROFDATA; rerun ./mach configure)
+endif
+ifeq ($(filter -clang:-fprofile-instr-generate,$(PROFILE_GEN_CFLAGS)),)
+$(error clang-cl PGO requires LLVM instrumentation flags; rerun ./mach configure)
+endif
+endif
+endif
+
 # Enable profile-based feedback
 ifneq (1,$(NO_PROFILE_GUIDED_OPTIMIZE))
 ifdef MOZ_PROFILE_GENERATE
 OS_CFLAGS += $(if $(filter $(notdir $<),$(notdir $(NO_PROFILE_GUIDED_OPTIMIZE))),,$(PROFILE_GEN_CFLAGS))
 OS_CXXFLAGS += $(if $(filter $(notdir $<),$(notdir $(NO_PROFILE_GUIDED_OPTIMIZE))),,$(PROFILE_GEN_CFLAGS))
 OS_LDFLAGS += $(PROFILE_GEN_LDFLAGS)
-ifeq (WINNT,$(OS_ARCH))
+ifeq ($(OS_ARCH)_$(CLANG_CL),WINNT_)
 AR_FLAGS += -LTCG
 endif
 endif # MOZ_PROFILE_GENERATE
@@ -225,7 +237,7 @@ ifdef MOZ_PROFILE_USE
 OS_CFLAGS += $(if $(filter $(notdir $<),$(notdir $(NO_PROFILE_GUIDED_OPTIMIZE))),,$(PROFILE_USE_CFLAGS))
 OS_CXXFLAGS += $(if $(filter $(notdir $<),$(notdir $(NO_PROFILE_GUIDED_OPTIMIZE))),,$(PROFILE_USE_CFLAGS))
 OS_LDFLAGS += $(PROFILE_USE_LDFLAGS)
-ifeq (WINNT,$(OS_ARCH))
+ifeq ($(OS_ARCH)_$(CLANG_CL),WINNT_)
 AR_FLAGS += -LTCG
 endif
 endif # MOZ_PROFILE_USE

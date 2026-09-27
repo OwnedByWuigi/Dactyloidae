@@ -86,6 +86,10 @@ CompositorOGL::CompositorOGL(CompositorBridgeParent* aParent,
   : Compositor(aWidget, aParent)
   , mWidgetSize(-1, -1)
   , mSurfaceSize(aSurfaceWidth, aSurfaceHeight)
+  , mWebRenderContext(nullptr)
+  , mWebRenderViewport(0, 0, 0, 0)
+  , mWebRenderSceneHasCommands(false)
+  , mNextWebRenderImageKey(1)
   , mHasBGRA(0)
   , mUseExternalSurfaceSize(aUseExternalSurfaceSize)
   , mFrameInProgress(false)
@@ -165,6 +169,13 @@ CompositorOGL::Destroy()
 void
 CompositorOGL::CleanupResources()
 {
+  if (mWebRenderContext) {
+    wr_context_destroy(mWebRenderContext);
+    mWebRenderContext = nullptr;
+  }
+  mWebRenderSceneHasCommands = false;
+  mWebRenderSceneImageSources.Clear();
+
   if (!mGLContext)
     return;
 
@@ -645,6 +656,22 @@ CompositorOGL::BeginFrame(const nsIntRegion& aInvalidRegion,
 
   // We're about to actually draw a frame.
   mFrameInProgress = true;
+  mWebRenderViewport = rect;
+  mWebRenderSceneHasCommands = false;
+  mWebRenderSceneImageSources.Clear();
+  mNextWebRenderImageKey = 1;
+  if (gfxPrefs::WebRenderEnabled()) {
+    if (!mWebRenderContext) {
+      mWebRenderContext = wr_context_create(16);
+    }
+    if (mWebRenderContext) {
+      wr_context_clear(mWebRenderContext);
+      wr_context_clear_images(mWebRenderContext);
+      wr_context_set_viewport(mWebRenderContext,
+                              wr_rect{ Float(rect.x), Float(rect.y),
+                                       Float(rect.width), Float(rect.height) });
+    }
+  }
 
   // If the widget size changed, we have to force a MakeCurrent
   // to make sure that GL sees the updated widget size.
@@ -975,6 +1002,34 @@ CompositorOGL::DrawQuad(const Rect& aRect,
   PROFILER_LABEL("CompositorOGL", "DrawQuad",
     js::ProfileEntry::Category::GRAPHICS);
 
+  // Give the C WebRender scene first refusal for the primitive types it can
+  // represent.  Layer hosts use the same entry points directly, but this
+  // covers compositor callers that submit through the generic DrawQuad path.
+  if (gfxPrefs::WebRenderEnabled() && aEffectChain.mPrimaryEffect &&
+      aTransform.Is2D() &&
+      !aEffectChain.mSecondaryEffects[EffectTypes::MASK] &&
+      !aEffectChain.mSecondaryEffects[EffectTypes::BLEND_MODE] &&
+      !aEffectChain.mSecondaryEffects[EffectTypes::COLOR_MATRIX]) {
+    if (aEffectChain.mPrimaryEffect->mType == EffectTypes::SOLID_COLOR) {
+      EffectSolidColor* effect =
+        static_cast<EffectSolidColor*>(aEffectChain.mPrimaryEffect.get());
+      if (DrawWebRenderRect(aRect, effect->mColor, aOpacity, aTransform,
+                            aClipRect)) {
+        return;
+      }
+    } else if (aEffectChain.mPrimaryEffect->mType == EffectTypes::RGB ||
+               aEffectChain.mPrimaryEffect->mType == EffectTypes::RENDER_TARGET) {
+      TexturedEffect* effect =
+        static_cast<TexturedEffect*>(aEffectChain.mPrimaryEffect.get());
+      if (effect->mTexture &&
+          DrawWebRenderImage(effect->mTexture, aRect, effect->mTextureCoords,
+                             aOpacity, aTransform, aClipRect,
+                             effect->mPremultiplied)) {
+        return;
+      }
+    }
+  }
+
   DrawGeometry(aRect, aClipRect, aEffectChain,
                aOpacity, aTransform, aVisibleRect);
 }
@@ -994,6 +1049,351 @@ CompositorOGL::DrawTriangle(const gfx::TexturedTriangle& aTriangle,
                aOpacity, aTransform, aVisibleRect);
 }
 
+bool
+CompositorOGL::DrawWebRenderContext(wr_context* aContext,
+                                    const IntRect& aClipRect,
+                                    TextureSource* aImageSource,
+                                    uint32_t aImageKey,
+                                    bool aImagePremultiplied)
+{
+  if (!aContext) {
+    return false;
+  }
+
+  const wr_frame* frame = wr_context_build_frame(aContext);
+  if (frame) {
+    WebRenderImageSource imageSource;
+    imageSource.mSource = aImageSource;
+    imageSource.mKey = aImageKey;
+    imageSource.mPremultiplied = aImagePremultiplied;
+    DrawWebRenderFrame(*frame, aClipRect,
+                       aImageSource && aImageKey ? &imageSource : nullptr,
+                       aImageSource && aImageKey ? 1 : 0);
+    return true;
+  }
+  return false;
+}
+
+bool
+CompositorOGL::DrawWebRenderRect(const Rect& aRect,
+                                 const Color& aColor,
+                                 Float aOpacity,
+                                 const Matrix4x4& aTransform,
+                                 const IntRect& aClipRect)
+{
+  if (!gfxPrefs::WebRenderEnabled() || !mFrameInProgress ||
+      aClipRect.IsEmpty() || !aTransform.Is2D()) {
+    return false;
+  }
+  if (!mWebRenderContext) {
+    mWebRenderContext = wr_context_create(16);
+  }
+  if (!mWebRenderContext) {
+    return false;
+  }
+
+  wr_context_set_viewport(mWebRenderContext,
+                          wr_rect{ Float(mWebRenderViewport.x),
+                                   Float(mWebRenderViewport.y),
+                                   Float(mWebRenderViewport.width),
+                                   Float(mWebRenderViewport.height) });
+  Matrix transform = aTransform.As2D();
+  wr_context_set_transform(mWebRenderContext,
+                           wr_transform{ transform._11, transform._12,
+                                         transform._21, transform._22,
+                                         transform._31, transform._32 });
+  wr_context_set_opacity(mWebRenderContext, aOpacity);
+  if (!wr_context_begin_transaction(mWebRenderContext)) {
+    return false;
+  }
+  if (!wr_display_list_push_clip(
+        mWebRenderContext,
+        wr_rect{ Float(aClipRect.x), Float(aClipRect.y),
+                 Float(aClipRect.width), Float(aClipRect.height) })) {
+    wr_context_abort_transaction(mWebRenderContext);
+    return false;
+  }
+  if (!wr_display_list_push_rect(mWebRenderContext,
+                                 wr_rect{ aRect.x, aRect.y,
+                                          aRect.width, aRect.height },
+                                 wr_color{ aColor.r, aColor.g,
+                                           aColor.b, aColor.a })) {
+    wr_context_abort_transaction(mWebRenderContext);
+    return false;
+  }
+  wr_display_list_pop_clip(mWebRenderContext);
+  if (!wr_context_commit_transaction(mWebRenderContext)) {
+    wr_context_abort_transaction(mWebRenderContext);
+    return false;
+  }
+
+  mWebRenderSceneHasCommands = true;
+  return true;
+}
+
+uint32_t
+CompositorOGL::RegisterWebRenderImage(TextureSource* aImageSource,
+                                      bool aPremultiplied)
+{
+  IntSize imageSize;
+  uint32_t key;
+
+  for (const WebRenderImageSource& image : mWebRenderSceneImageSources) {
+    if (image.mSource == aImageSource &&
+        image.mPremultiplied == aPremultiplied) {
+      return image.mKey;
+    }
+  }
+
+  if (!aImageSource) {
+    return 0;
+  }
+  imageSize = aImageSource->GetSize();
+  if (imageSize.width <= 0 || imageSize.height <= 0) {
+    return 0;
+  }
+
+  key = mNextWebRenderImageKey++;
+  if (!key) {
+    key = mNextWebRenderImageKey++;
+  }
+  if (!wr_context_register_image(mWebRenderContext, key,
+                                 uint32_t(imageSize.width),
+                                 uint32_t(imageSize.height))) {
+    return 0;
+  }
+
+  WebRenderImageSource* image =
+    mWebRenderSceneImageSources.AppendElement();
+  image->mSource = aImageSource;
+  image->mKey = key;
+  image->mPremultiplied = aPremultiplied;
+  return key;
+}
+
+bool
+CompositorOGL::DrawWebRenderImage(TextureSource* aImageSource,
+                                  const Rect& aRect,
+                                  const Rect& aTexRect,
+                                  Float aOpacity,
+                                  const Matrix4x4& aTransform,
+                                  const IntRect& aClipRect,
+                                  bool aPremultiplied)
+{
+  if (!gfxPrefs::WebRenderEnabled() || !aImageSource ||
+      !mFrameInProgress || aClipRect.IsEmpty() ||
+      !aTransform.Is2D()) {
+    return false;
+  }
+  if (aImageSource->AsSourceOGL() == nullptr) {
+    return false;
+  }
+  if (!mWebRenderContext) {
+    mWebRenderContext = wr_context_create(16);
+  }
+  if (!mWebRenderContext) {
+    return false;
+  }
+
+  wr_context_set_viewport(mWebRenderContext,
+                          wr_rect{ Float(mWebRenderViewport.x),
+                                   Float(mWebRenderViewport.y),
+                                   Float(mWebRenderViewport.width),
+                                   Float(mWebRenderViewport.height) });
+  Matrix transform = aTransform.As2D();
+  wr_context_set_transform(mWebRenderContext,
+                           wr_transform{ transform._11, transform._12,
+                                         transform._21, transform._22,
+                                         transform._31, transform._32 });
+  wr_context_set_opacity(mWebRenderContext, aOpacity);
+  uint32_t imageKey = RegisterWebRenderImage(aImageSource, aPremultiplied);
+  if (!imageKey) {
+    return false;
+  }
+  if (!wr_context_begin_transaction(mWebRenderContext)) {
+    return false;
+  }
+  if (!wr_display_list_push_clip(
+        mWebRenderContext,
+        wr_rect{ Float(aClipRect.x), Float(aClipRect.y),
+                 Float(aClipRect.width), Float(aClipRect.height) })) {
+    wr_context_abort_transaction(mWebRenderContext);
+    return false;
+  }
+  if (!wr_display_list_push_image(
+        mWebRenderContext,
+        wr_rect{ aRect.x, aRect.y, aRect.width, aRect.height },
+        imageKey, wr_rect{ aTexRect.x, aTexRect.y,
+                    aTexRect.width, aTexRect.height },
+        wr_color{ 1, 1, 1, 1 })) {
+    wr_context_abort_transaction(mWebRenderContext);
+    return false;
+  }
+  wr_display_list_pop_clip(mWebRenderContext);
+  if (!wr_context_commit_transaction(mWebRenderContext)) {
+    wr_context_abort_transaction(mWebRenderContext);
+    return false;
+  }
+
+  mWebRenderSceneHasCommands = true;
+  return true;
+}
+
+void
+CompositorOGL::DrawWebRenderFrame(const wr_frame& aFrame,
+                                  const IntRect& aClipRect,
+                                  const WebRenderImageSource* aImageSources,
+                                  size_t aImageSourceCount)
+{
+  MOZ_ASSERT(mFrameInProgress, "frame not started");
+  MOZ_ASSERT(mCurrentRenderTarget, "No destination");
+
+  if (!aFrame.quads || !aFrame.batches ||
+      aFrame.quad_count == 0 || aFrame.batch_count == 0) {
+    return;
+  }
+
+  MakeCurrent();
+
+  IntPoint offset = mCurrentRenderTarget->GetOrigin();
+  EffectSolidColor solidEffect(Color(0, 0, 0, 0));
+  ShaderConfigOGL solidConfig = GetShaderConfigFor(&solidEffect);
+  ShaderProgramOGL* solidProgram = GetShaderProgramFor(solidConfig);
+
+  ScopedGLState scopedScissorTestState(mGLContext, LOCAL_GL_SCISSOR_TEST, true);
+  ScopedScissorRect autoScissorRect(mGLContext,
+                                    aClipRect.x,
+                                    FlipY(aClipRect.y + aClipRect.height),
+                                    aClipRect.width,
+                                    aClipRect.height);
+
+  for (size_t batchIndex = 0; batchIndex < aFrame.batch_count; ++batchIndex) {
+    const wr_gpu_batch& batch = aFrame.batches[batchIndex];
+    if (batch.first_quad > aFrame.quad_count ||
+        batch.quad_count > aFrame.quad_count - batch.first_quad) {
+      continue;
+    }
+
+    IntRect batchClip = aClipRect;
+    if (batch.has_clip) {
+      IntRect primitiveClip(int32_t(batch.clip_rect.x),
+                            int32_t(batch.clip_rect.y),
+                            int32_t(batch.clip_rect.width),
+                            int32_t(batch.clip_rect.height));
+      batchClip.IntersectRect(batchClip, primitiveClip);
+      if (batchClip.IsEmpty()) {
+        continue;
+      }
+    }
+    ScopedScissorRect batchScissor(
+      mGLContext, batchClip.x, FlipY(batchClip.y + batchClip.height),
+      batchClip.width, batchClip.height);
+
+    ShaderProgramOGL* program = solidProgram;
+    TextureSourceOGL* imageSource = nullptr;
+    bool imagePremultiplied = true;
+    gfx::Rect textureRects[4] = {};
+    if (batch.kind == WR_PRIMITIVE_IMAGE) {
+      TextureSource* source = nullptr;
+      for (size_t sourceIndex = 0; sourceIndex < aImageSourceCount;
+           ++sourceIndex) {
+        if (aImageSources[sourceIndex].mKey == batch.image_key) {
+          source = aImageSources[sourceIndex].mSource;
+          imagePremultiplied = aImageSources[sourceIndex].mPremultiplied;
+          break;
+        }
+      }
+      if (!source) {
+        continue;
+      }
+      imageSource = source->AsSourceOGL();
+      if (!imageSource) {
+        continue;
+      }
+      EffectRGB imageEffect(source, imagePremultiplied,
+                            SamplingFilter::LINEAR);
+      ShaderConfigOGL imageConfig = GetShaderConfigFor(&imageEffect);
+      imageConfig.SetTextureTint(true);
+      imageConfig.SetOpacity(batch.color.a != 1.0f);
+      program = GetShaderProgramFor(imageConfig);
+      if (!program) {
+        continue;
+      }
+      ActivateProgram(program);
+      imageSource->BindTexture(LOCAL_GL_TEXTURE0, SamplingFilter::LINEAR);
+      program->SetTextureUnit(0);
+      program->SetTextureTransform(imageSource->GetTextureTransform());
+      if (imageConfig.mFeatures & ENABLE_TEXTURE_RECT) {
+        program->SetTexCoordMultiplier(imageSource->GetSize().width,
+                                       imageSource->GetSize().height);
+      }
+      if (batch.color.a != 1.0f) {
+        program->SetLayerOpacity(batch.color.a);
+      }
+      program->SetTextureTint(Color(batch.color.r, batch.color.g,
+                                    batch.color.b, 1.0f));
+    } else {
+      if (!program) {
+        continue;
+      }
+      ActivateProgram(program);
+      SetBlendMode(gl(), CompositionOp::OP_OVER);
+      program->SetRenderColor(Color(batch.color.r, batch.color.g,
+                                    batch.color.b, batch.color.a));
+    }
+
+    program->SetProjectionMatrix(mProjMatrix);
+    program->SetLayerTransform(Matrix4x4::From2D(
+      Matrix(batch.transform.m11, batch.transform.m12,
+             batch.transform.m21, batch.transform.m22,
+             batch.transform.m31, batch.transform.m32)));
+    program->SetRenderOffset(offset.x, offset.y);
+    if (imageSource) {
+      SetBlendMode(gl(), CompositionOp::OP_OVER, imagePremultiplied);
+    }
+
+    uint32_t remaining = batch.quad_count;
+    uint32_t quadIndex = batch.first_quad;
+
+    while (remaining) {
+      Rect rects[4] = {};
+      int count = remaining > 4 ? 4 : int(remaining);
+      for (int i = 0; i < count; ++i) {
+        const wr_gpu_quad& quad = aFrame.quads[quadIndex + i];
+        rects[i] = Rect(quad.rect.x, quad.rect.y,
+                        quad.rect.width, quad.rect.height);
+        if (imageSource) {
+          textureRects[i] = Rect(quad.tex_rect.x, quad.tex_rect.y,
+                                 quad.tex_rect.width, quad.tex_rect.height);
+        }
+      }
+      BindAndDrawQuads(program, count, rects,
+                       imageSource ? textureRects : nullptr);
+      quadIndex += count;
+      remaining -= count;
+    }
+  }
+}
+
+void
+CompositorOGL::FlushWebRenderScene()
+{
+  if (!mWebRenderSceneHasCommands || !mWebRenderContext ||
+      !mFrameInProgress) {
+    return;
+  }
+
+  const wr_frame* frame = wr_context_build_frame(mWebRenderContext);
+  if (frame) {
+    DrawWebRenderFrame(*frame, mWebRenderViewport,
+                       mWebRenderSceneImageSources.Elements(),
+                       mWebRenderSceneImageSources.Length());
+  }
+  wr_context_clear(mWebRenderContext);
+  mWebRenderSceneHasCommands = false;
+  mWebRenderSceneImageSources.Clear();
+}
+
 template<typename Geometry>
 void
 CompositorOGL::DrawGeometry(const Geometry& aGeometry,
@@ -1005,6 +1405,8 @@ CompositorOGL::DrawGeometry(const Geometry& aGeometry,
 {
   MOZ_ASSERT(mFrameInProgress, "frame not started");
   MOZ_ASSERT(mCurrentRenderTarget, "No destination");
+
+  FlushWebRenderScene();
 
   MakeCurrent();
 
@@ -1574,6 +1976,8 @@ CompositorOGL::EndFrame()
 
   MOZ_ASSERT(mCurrentRenderTarget == mWindowRenderTarget, "Rendering target not properly restored");
 
+  FlushWebRenderScene();
+
 #ifdef MOZ_DUMP_PAINTING
   if (gfxEnv::DumpCompositorTextures()) {
     LayoutDeviceIntSize size;
@@ -1627,6 +2031,7 @@ void
 CompositorOGL::EndFrameForExternalComposition(const gfx::Matrix& aTransform)
 {
   MOZ_ASSERT(!mTarget);
+  FlushWebRenderScene();
   if (mTexturePool) {
     mTexturePool->EndFrame();
   }

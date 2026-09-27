@@ -85,15 +85,73 @@ COLD int dav1d_pthread_join(pthread_t *const thread, void **const res) {
 COLD int dav1d_pthread_once(pthread_once_t *const once_control,
                             void (*const init_routine)(void))
 {
-    BOOL pending = FALSE;
-
-    if (InitOnceBeginInitialize(once_control, 0, &pending, NULL) != TRUE)
-        return 1;
-
-    if (pending == TRUE)
+    if (InterlockedCompareExchange(once_control, 1, 0) == 0) {
         init_routine();
+        InterlockedExchange(once_control, 2);
+    } else {
+        while (InterlockedCompareExchange(once_control, 2, 2) != 2)
+            Sleep(1);
+    }
+    return 0;
+}
 
-    return !InitOnceComplete(once_control, 0, NULL);
+/* Each waiter owns an event. Queue operations and signalling share a lock,
+ * so a new waiter cannot consume an earlier waiter's notification. */
+struct dav1d_cond_waiter {
+    HANDLE event;
+    struct dav1d_cond_waiter *next;
+};
+
+int dav1d_pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex) {
+    struct dav1d_cond_waiter waiter, **link;
+    DWORD result;
+    waiter.event = CreateEventW(NULL, FALSE, FALSE, NULL);
+    if (!waiter.event) return 1;
+    EnterCriticalSection(&cond->cs);
+    waiter.next = NULL;
+    for (link = &cond->head; *link; link = &(*link)->next) {}
+    *link = &waiter;
+    pthread_mutex_unlock(mutex);
+    LeaveCriticalSection(&cond->cs);
+
+    result = WaitForSingleObject(waiter.event, INFINITE);
+    EnterCriticalSection(&cond->cs);
+    /* Also unlink on wait failure before the stack record goes away. */
+    for (link = &cond->head; *link; link = &(*link)->next) {
+        if (*link == &waiter) {
+            *link = waiter.next;
+            break;
+        }
+    }
+    CloseHandle(waiter.event);
+    LeaveCriticalSection(&cond->cs);
+    pthread_mutex_lock(mutex);
+    return result != WAIT_OBJECT_0;
+}
+
+int dav1d_pthread_cond_signal(pthread_cond_t *cond) {
+    int result = 0;
+    EnterCriticalSection(&cond->cs);
+    if (cond->head) {
+        if (SetEvent(cond->head->event)) cond->head = cond->head->next;
+        else result = 1;
+    }
+    LeaveCriticalSection(&cond->cs);
+    return result;
+}
+
+int dav1d_pthread_cond_broadcast(pthread_cond_t *cond) {
+    int result = 0;
+    EnterCriticalSection(&cond->cs);
+    while (cond->head) {
+        if (!SetEvent(cond->head->event)) {
+            result = 1;
+            break;
+        }
+        cond->head = cond->head->next;
+    }
+    LeaveCriticalSection(&cond->cs);
+    return result;
 }
 
 #endif

@@ -47,6 +47,9 @@ if CONFIG['CC_TYPE'] == 'gcc':
     OS_LIBS += ['gomp']
     if CONFIG['OS_ARCH'] == 'WINNT':
         OS_LIBS += ['dl']
+elif CONFIG['CLANG_CL']:
+    # clang-cl lowers OpenMP pragmas to the LLVM OpenMP runtime.
+    CXXFLAGS += ['-fopenmp']
 
 DEFINES['BUILDING_SOUNDTOUCH'] = 1
 

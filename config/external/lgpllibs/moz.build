@@ -11,3 +11,9 @@
 
 GeckoSharedLibrary('lgpllibs', linkage=None)
 SHARED_LIBRARY_NAME = 'lgpllibs'
+
+if CONFIG['CLANG_CL']:
+    # SoundTouch uses clang's OpenMP runtime. Link its import library into the
+    # containing LGPL DLL and place the runtime beside the browser binaries.
+    OS_LIBS += ['C:/clang/lib/libomp']
+    FINAL_TARGET_FILES += ['C:/clang/bin/libomp.dll']

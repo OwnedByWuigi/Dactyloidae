@@ -6,6 +6,7 @@
 //#define USEWEAKREFS // (haven't quite figured that out yet)
 
 #include "nsWindowWatcher.h"
+#include "nsHashPropertyBag.h"
 #include "nsAutoWindowStateHelper.h"
 
 #include "nsCRT.h"
@@ -1211,6 +1212,29 @@ nsWindowWatcher::OpenWindowInternal(mozIDOMWindowProxy* aParent,
   // Before loading the URI we want to be 100% sure that we use the correct
   // userContextId.
   MOZ_ASSERT(CheckUserContextCompatibility(newDocShell));
+
+  // If this tab or window has been opened by a window.open call, we have to provide
+  // all the data needed to send a webNavigation.onCreatedNavigationTarget event.
+  if (windowIsNew && parentDocShell && newDocShellItem) {
+    nsCOMPtr<nsIObserverService> obsSvc =
+      mozilla::services::GetObserverService();
+
+    if (obsSvc) {
+      RefPtr<nsHashPropertyBag> props = new nsHashPropertyBag();
+
+      if (uriToLoad) {
+        // The url notified in the webNavigation.onCreatedNavigationTarget event.
+        props->SetPropertyAsACString(NS_LITERAL_STRING("url"),
+                                     uriToLoad->GetSpecOrDefault());
+      }
+
+      props->SetPropertyAsInterface(NS_LITERAL_STRING("sourceTabDocShell"), parentDocShell);
+      props->SetPropertyAsInterface(NS_LITERAL_STRING("createdTabDocShell"), newDocShellItem);
+
+      obsSvc->NotifyObservers(static_cast<nsIPropertyBag2*>(props),
+                              "webNavigation-createdNavigationTarget-from-js", nullptr);
+    }
+  }
 
   if (uriToLoad && aNavigate) {
     newDocShell->LoadURI(

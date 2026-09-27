@@ -2,14 +2,12 @@
 
 ##Uncomment PGO for release build
 
-# 16 jobs for 16 cores
-mk_add_options MOZ_MAKE_FLAGS="-j6"
+# auto detect threads
+mk_add_options MOZ_MAKE_FLAGS="-j$NUMBER_OF_PROCESSORS"
 
 # x86 build
 ac_add_options --host=i686-pc-mingw32
 ac_add_options --target=i686-pc-mingw32
-WIN32_REDIST_DIR=$VCINSTALLDIR/Redist/MSVC/14.16.27012/x86
-WIN_UCRT_REDIST_DIR=$WINDOWSSDKDIR/Redist/10.0.19041.0/ucrt/DLLs/r86
 
 # Force compiler + linker + tools
 

@@ -220,14 +220,14 @@ ifneq ($(filter-out maybe_clobber_profiledbuild,$(MAKECMDGOALS)),)
 GARBAGE_DIRS += dist _tests
 endif
 
-# Windows PGO builds don't perform a clean before the 2nd pass. So, we want
+# MSVC PGO builds don't perform a clean before the 2nd pass. So, we want
 # to preserve content for the 2nd pass on Windows. Everywhere else, we always
 # process the install manifests as part of export.
 # For the binaries rule, not all the install manifests matter, so force only
 # the interesting ones to be done.
 ifdef MOZ_PROFILE_USE
 ifndef NO_PROFILE_GUIDED_OPTIMIZE
-ifneq ($(OS_ARCH)_$(GNU_CC), WINNT_)
+ifneq ($(OS_ARCH)_$(GNU_CC)_$(CLANG_CL), WINNT__)
 recurse_pre-export:: install-manifests
 binaries::
 	@$(MAKE) install-manifests install_manifests=dist/include
@@ -247,6 +247,10 @@ recurse_artifact:
 	$(topsrcdir)/mach --log-no-times artifact install
 
 ifndef JS_STANDALONE
+# PGO training is also needed in release builds configured without tests.
+pgo-profile-run:
+	$(PYTHON) $(topsrcdir)/build/pgo/profileserver.py $(EXTRA_TEST_ARGS)
+
 ifdef ENABLE_TESTS
 # Additional makefile targets to call automated test suites
 include $(topsrcdir)/testing/testsuite-targets.mk
@@ -356,7 +360,7 @@ pretty-installer:
 
 #XXX: this is a hack, since we don't want to clobber for MSVC
 # PGO support, but we can't do this test in client.mk
-ifneq ($(OS_ARCH)_$(GNU_CC), WINNT_)
+ifneq ($(OS_ARCH)_$(GNU_CC)_$(CLANG_CL), WINNT__)
 # No point in clobbering if PGO has been explicitly disabled.
 ifndef NO_PROFILE_GUIDED_OPTIMIZE
 maybe_clobber_profiledbuild: clean

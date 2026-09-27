@@ -5466,6 +5466,9 @@ function handleLinkClick(event, href, linkNode) {
   urlSecurityCheck(href, doc.nodePrincipal);
   let params = {
     charset: doc.characterSet,
+    currentBrowser: gBrowser.getBrowserForContentWindow(doc.defaultView.top),
+    frameOuterWindowID: doc.defaultView.QueryInterface(Ci.nsIInterfaceRequestor)
+                           .getInterface(Ci.nsIDOMWindowUtils).outerWindowID,
     allowMixedContent: persistAllowMixedContentInChildTab,
     referrerURI: referrerURI,
     referrerPolicy: referrerPolicy,

@@ -303,6 +303,17 @@ var snapshotFormatters = {
                      ? data.windowLayerManagerType
                      : "BasicLayers (" + strings.GetStringFromName("mainThreadNoOMTC") + ")";
     addRow("features", "compositing", compositor);
+
+    let webRenderEnabled = false;
+    try {
+      webRenderEnabled = Services.prefs.getBoolPref("gfx.webrender.enabled");
+    } catch (e) {
+      // Keep about:support usable if the preference is unavailable in a build.
+    }
+    addRow("features", "webRender",
+           strings.GetStringFromName(webRenderEnabled
+                                     ? "webRenderEnabled"
+                                     : "webRenderDisabled"));
     
     let acceleratedWindows = data.numAcceleratedWindows + "/" + data.numTotalWindows;
     if (data.windowLayerManagerType) {
@@ -336,6 +347,7 @@ var snapshotFormatters = {
     addRowFromKey("features", "webgl2DriverExtensions");
     addRowFromKey("features", "webgl2Extensions");
     addRowFromKey("features", "supportsHardwareH264", "hardwareH264");
+    addRowFromKey("features", "supportsHardwareVP9", "hardwareVP9");
     addRowFromKey("features", "currentAudioBackend", "audioBackend");
     addRowFromKey("features", "direct2DEnabled", "#Direct2D");
 

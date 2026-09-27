@@ -7,6 +7,7 @@
 
 #include "TextureD3D11.h"
 #include "CompositorD3D11Shaders.h"
+#include "GpuRasterD3D11.h"
 
 #include "gfxWindowsPlatform.h"
 #include "nsIWidget.h"
@@ -143,6 +144,7 @@ private:
 
 CompositorD3D11::CompositorD3D11(CompositorBridgeParent* aParent, widget::CompositorWidget* aWidget)
   : Compositor(aWidget, aParent)
+  , mGpuRasterViewport(false)
   , mAttachments(nullptr)
   , mHwnd(nullptr)
   , mDisableSequenceForNextFrame(false)
@@ -198,6 +200,16 @@ CompositorD3D11::Initialize(nsCString* const out_failureReason)
   }
 
   mFeatureLevel = mDevice->GetFeatureLevel();
+
+  D3D11_FEATURE_DATA_D3D11_OPTIONS options = {};
+  if (gfxPrefs::D3D11GpuRectangleFills() &&
+      mFeatureLevel >= D3D_FEATURE_LEVEL_10_0 &&
+      SUCCEEDED(mDevice->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS,
+                                            &options, sizeof(options))) &&
+      options.ClearView) {
+    mContext->QueryInterface(__uuidof(ID3D11DeviceContext1),
+                            getter_AddRefs(mGpuRasterContext));
+  }
 
   mHwnd = mWidget->AsWindows()->GetHwnd();
 
@@ -656,6 +668,20 @@ CompositorD3D11::GetPSForEffect(Effect* aEffect, MaskType aMaskType)
 void
 CompositorD3D11::ClearRect(const gfx::Rect& aRect)
 {
+  if (mGpuRasterContext && mGpuRasterViewport && mCurrentRT &&
+      !mCurrentRT->HasComplexProjection()) {
+    GpuRasterRect rect = { aRect.x, aRect.y, aRect.XMost(), aRect.YMost() };
+    IntSize size = mCurrentRT->GetSize();
+    D3D11_RECT clip = { 0, 0, size.width, size.height };
+    const float clear[4] = { 0, 0, 0, 0 };
+    if (GpuRasterD3D11FillRect(mGpuRasterContext, mCurrentRT->mRTView,
+                              size.width, size.height, &rect, &clip, clear)) {
+      // BeginFrame relies on ClearRect to establish premultiplied blending.
+      mContext->OMSetBlendState(mAttachments->mPremulBlendState, sBlendFactor, 0xFFFFFFFF);
+      return;
+    }
+  }
+
   mContext->OMSetBlendState(mAttachments->mDisabledBlendState, sBlendFactor, 0xFFFFFFFF);
 
   Matrix4x4 identity;
@@ -735,6 +761,39 @@ CompositorD3D11::DrawQuad(const gfx::Rect& aRect,
   }
 
   MOZ_ASSERT(mCurrentRT, "No render target");
+
+  // Opaque, integer-aligned translated rectangles can be filled directly by
+  // the GPU without shader binding or per-quad constant-buffer uploads.
+  if (mGpuRasterContext && mGpuRasterViewport && !mCurrentRT->HasComplexProjection() &&
+      aEffectChain.mPrimaryEffect->mType == EffectTypes::SOLID_COLOR &&
+      !aEffectChain.mSecondaryEffects[EffectTypes::MASK] &&
+      !aEffectChain.mSecondaryEffects[EffectTypes::BLEND_MODE] &&
+      aOpacity == 1.0f && aTransform.Is2D() && aTransform.As2D().IsTranslation()) {
+    const Color& color = static_cast<EffectSolidColor*>(aEffectChain.mPrimaryEffect.get())->mColor;
+    if (color.a == 1.0f) {
+      IntPoint origin = mCurrentRT->GetOrigin();
+      // Transform both edges in the shader's order before subtracting the
+      // target origin; moving x/y and then adding width/height can round
+      // differently for large coordinates.
+      float left = aRect.x + aTransform._41;
+      float right = aRect.XMost() + aTransform._41;
+      float top = aRect.y + aTransform._42;
+      float bottom = aRect.YMost() + aTransform._42;
+      GpuRasterRect rect = { left - origin.x, top - origin.y,
+                             right - origin.x, bottom - origin.y };
+      IntRect clipRect = aClipRect;
+      if (mCurrentRT == mDefaultRT) {
+        clipRect = clipRect.Intersect(mCurrentClip);
+      }
+      D3D11_RECT clip = { clipRect.x, clipRect.y, clipRect.XMost(), clipRect.YMost() };
+      IntSize size = mCurrentRT->GetSize();
+      const float fill[4] = { color.r, color.g, color.b, color.a };
+      if (GpuRasterD3D11FillRect(mGpuRasterContext, mCurrentRT->mRTView,
+                                size.width, size.height, &rect, &clip, fill)) {
+        return;
+      }
+    }
+  }
 
   memcpy(&mVSConstants.layerTransform, &aTransform._11, 64);
   IntPoint origin = mCurrentRT->GetOrigin();
@@ -1193,6 +1252,7 @@ CompositorD3D11::PrepareViewport(const gfx::IntSize& aSize)
   projection._33 = 0.0f;
 
   PrepareViewport(aSize, projection, 0.0f, 1.0f);
+  mGpuRasterViewport = true;
 }
 
 void
@@ -1213,6 +1273,7 @@ CompositorD3D11::PrepareViewport(const gfx::IntSize& aSize,
                                  const gfx::Matrix4x4& aProjection,
                                  float aZNear, float aZFar)
 {
+  mGpuRasterViewport = false;
   D3D11_VIEWPORT viewport;
   viewport.MaxDepth = aZFar;
   viewport.MinDepth = aZNear;

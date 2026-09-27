@@ -46,6 +46,28 @@ namespace {
 
 NS_DEFINE_IID(kIDBRequestIID, PRIVATE_IDBREQUEST_IID);
 
+bool
+IsExtensionDatabase(IDBTransaction* aTransaction)
+{
+  if (!aTransaction || !aTransaction->Database()) {
+    return false;
+  }
+
+  IDBFactory* factory = aTransaction->Database()->Factory();
+  if (!factory || !factory->GetPrincipalInfo()) {
+    return false;
+  }
+
+  const PrincipalInfo* principalInfo = factory->GetPrincipalInfo();
+  if (principalInfo->type() != PrincipalInfo::TContentPrincipalInfo) {
+    return false;
+  }
+
+  return StringBeginsWith(
+    principalInfo->get_ContentPrincipalInfo().originNoSuffix(),
+    NS_LITERAL_CSTRING("moz-extension://"));
+}
+
 } // namespace
 
 IDBRequest::IDBRequest(IDBDatabase* aDatabase)
@@ -388,6 +410,20 @@ IDBRequest::SetResultCallback(ResultCallback* aCallback)
     // In that case CreateAndWrapMutableFile() returns false which shows up
     // as NS_ERROR_DOM_DATA_CLONE_ERR here.
     MOZ_ASSERT(rv == NS_ERROR_DOM_DATA_CLONE_ERR);
+
+    // Legacy WebExtension caches may contain structured-clone values that
+    // this older IndexedDB implementation cannot materialize (uBO discards
+    // these records while migrating its disposable cache). Treat such a
+    // record as absent so the extension can use its storage.local fallback.
+    // Keep the standards-required failure behavior for regular web origins.
+    if (rv == NS_ERROR_DOM_DATA_CLONE_ERR &&
+        IsExtensionDatabase(mTransaction)) {
+      JS_ClearPendingException(cx);
+      mError = nullptr;
+      mResultVal.setUndefined();
+      mHaveResultOrErrorCode = true;
+      return;
+    }
 
     // We are not setting a result or an error object here since we want to
     // throw an exception when the 'result' property is being touched.

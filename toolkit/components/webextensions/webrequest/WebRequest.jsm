@@ -4,6 +4,8 @@
 
 "use strict";
 
+const {classes: Cc, interfaces: Ci, utils: Cu, results: Cr} = Components;
+
 const EXPORTED_SYMBOLS = ["WebRequest"];
 
 /* exported WebRequest */
@@ -12,29 +14,36 @@ const EXPORTED_SYMBOLS = ["WebRequest"];
 
 const { nsIHttpActivityObserver, nsISocketTransport } = Ci;
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
+const { Services } = Cu.import("resource://gre/modules/Services.jsm", {});
+const { XPCOMUtils } = Cu.import("resource://gre/modules/XPCOMUtils.jsm", {});
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
-  ExtensionUtils: "resource://gre/modules/ExtensionUtils.jsm",
-  WebRequestUpload: "resource://gre/modules/WebRequestUpload.jsm",
-  SecurityInfo: "resource://gre/modules/SecurityInfo.jsm",
-});
 
-// WebRequest.jsm's only consumer is ext-webRequest.js, so we can depend on
-// the apiManager.global being initialized.
-XPCOMUtils.defineLazyGetter(this, "tabTracker", () => {
-  return ExtensionParent.apiManager.global.tabTracker;
-});
-XPCOMUtils.defineLazyGetter(this, "getCookieStoreIdForOriginAttributes", () => {
-  return ExtensionParent.apiManager.global.getCookieStoreIdForOriginAttributes;
-});
+XPCOMUtils.defineLazyModuleGetter(this, "ExtensionParent", "resource://gre/modules/ExtensionParent.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "ExtensionUtils", "resource://gre/modules/ExtensionUtils.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "WebRequestUpload", "resource://gre/modules/WebRequestUpload.jsm");
+XPCOMUtils.defineLazyModuleGetter(this, "SecurityInfo", "resource://gre/modules/SecurityInfo.jsm");
+
+
+function getCookieStoreIdForOriginAttributes(attrs) {
+  if (attrs.privateBrowsingId) {
+    return "firefox-private";
+  }
+  return attrs.userContextId ? "firefox-container-" + attrs.userContextId : "firefox-default";
+}
+
+XPCOMUtils.defineLazyServiceGetter(this, "categoryManager",
+                                  "@mozilla.org/categorymanager;1", "nsICategoryManager");
+XPCOMUtils.defineLazyModuleGetter(this, "MatchPattern", "resource://gre/modules/MatchPattern.jsm");
+
+function matchesRequest(channel, opts, extraData) {
+  return !channel.isSystemLoad &&
+         (!opts.urlPattern || opts.urlPattern.matches(channel.finalURI)) &&
+         (!opts.policy || opts.policy.allowedOrigins.matches(channel.finalURI)) &&
+         channel.matches(opts.filter, opts.policy ? opts.policy.id : "", extraData);
+}
 
 function runLater(job) {
-  Services.tm.dispatchToMainThread(job);
+  Services.tm.mainThread.dispatch(job, Ci.nsIThread.DISPATCH_NORMAL);
 }
 
 function parseFilter(filter) {
@@ -165,7 +174,7 @@ class HeaderChanger {
 }
 
 const checkRestrictedHeaderValue = (value, opts = {}) => {
-  let uri = Services.io.newURI(`https://${value}/`);
+  let uri = Services.io.newURI(`https://${value}/`, null, null);
   let { policy } = opts;
 
   if (policy && !policy.allowedOrigins.matches(uri)) {
@@ -281,7 +290,7 @@ var ChannelEventSink = {
   _classID: Components.ID("115062f8-92f1-11e5-8b7f-080027b0f7ec"),
   _contractID: "@mozilla.org/webrequest/channel-event-sink;1",
 
-  QueryInterface: ChromeUtils.generateQI(["nsIChannelEventSink", "nsIFactory"]),
+  QueryInterface: XPCOMUtils.generateQI([Ci.nsIChannelEventSink, Ci.nsIFactory]),
 
   init() {
     Components.manager
@@ -295,7 +304,7 @@ var ChannelEventSink = {
   },
 
   register() {
-    Services.catMan.addCategoryEntry(
+    categoryManager.addCategoryEntry(
       "net-channel-event-sinks",
       this._contractID,
       this._contractID,
@@ -305,7 +314,7 @@ var ChannelEventSink = {
   },
 
   unregister() {
-    Services.catMan.deleteCategoryEntry(
+    categoryManager.deleteCategoryEntry(
       "net-channel-event-sinks",
       this._contractID,
       false
@@ -460,7 +469,7 @@ class AuthRequestor {
     this.httpObserver.runChannelListener(wrapper, "onAuthRequired", data);
 
     return {
-      QueryInterface: ChromeUtils.generateQI(["nsICancelable"]),
+      QueryInterface: XPCOMUtils.generateQI([Ci.nsICancelable]),
       cancel() {
         try {
           callback.onAuthCancelled(context, false);
@@ -474,10 +483,10 @@ class AuthRequestor {
   }
 }
 
-AuthRequestor.prototype.QueryInterface = ChromeUtils.generateQI([
-  "nsIInterfaceRequestor",
-  "nsIAuthPromptProvider",
-  "nsIAuthPrompt2",
+AuthRequestor.prototype.QueryInterface = XPCOMUtils.generateQI([
+  Ci.nsIInterfaceRequestor,
+  Ci.nsIAuthPromptProvider,
+  Ci.nsIAuthPrompt2,
 ]);
 
 // Most WebRequest events are implemented via the observer services, but
@@ -563,21 +572,21 @@ HttpObserverManager = {
       this.listeners.onSendHeaders.size;
     if (needOpening && !this.openingInitialized) {
       this.openingInitialized = true;
-      Services.obs.addObserver(this, "http-on-modify-request");
+      Services.obs.addObserver(this, "http-on-modify-request", false);
     } else if (!needOpening && this.openingInitialized) {
       this.openingInitialized = false;
       Services.obs.removeObserver(this, "http-on-modify-request");
     }
     if (needBeforeConnect && !this.beforeConnectInitialized) {
       this.beforeConnectInitialized = true;
-      Services.obs.addObserver(this, "http-on-before-connect");
+      Services.obs.addObserver(this, "http-on-before-connect", false);
     } else if (!needBeforeConnect && this.beforeConnectInitialized) {
       this.beforeConnectInitialized = false;
       Services.obs.removeObserver(this, "http-on-before-connect");
     }
 
     let haveBlocking = Object.values(this.listeners).some(listeners =>
-      Array.from(listeners.values()).some(listener => listener.blockingAllowed)
+      Array.from(listeners.values()).some(listener => listener.blocking)
     );
 
     this.needTracing =
@@ -593,9 +602,9 @@ HttpObserverManager = {
 
     if (needExamine && !this.examineInitialized) {
       this.examineInitialized = true;
-      Services.obs.addObserver(this, "http-on-examine-response");
-      Services.obs.addObserver(this, "http-on-examine-cached-response");
-      Services.obs.addObserver(this, "http-on-examine-merged-response");
+      Services.obs.addObserver(this, "http-on-examine-response", false);
+      Services.obs.addObserver(this, "http-on-examine-cached-response", false);
+      Services.obs.addObserver(this, "http-on-examine-merged-response", false);
     } else if (!needExamine && this.examineInitialized) {
       this.examineInitialized = false;
       Services.obs.removeObserver(this, "http-on-examine-response");
@@ -692,7 +701,7 @@ HttpObserverManager = {
       // Make a trip through the event loop to make sure errors have a
       // chance to be processed before we fall back to a generic error
       // string.
-      Services.tm.dispatchToMainThread(() => {
+      runLater(() => {
         channel.errorCheck();
         if (!channel.errorString) {
           this.runChannelListener(channel, "onErrorOccurred", {
@@ -712,7 +721,7 @@ HttpObserverManager = {
   },
 
   getRequestData(channel, extraData) {
-    let originAttributes = channel.loadInfo?.originAttributes;
+    let originAttributes = channel.channel.loadInfo?.originAttributes;
     let data = {
       requestId: String(channel.id),
       url: channel.finalURL,
@@ -725,6 +734,9 @@ HttpObserverManager = {
       documentUrl: channel.documentURL || undefined,
 
       tabId: this.getBrowserData(channel).tabId,
+      browser: channel.browserElement,
+      windowId: channel.windowId,
+      isSystemPrincipal: channel.isSystemLoad,
       frameId: channel.windowId,
       parentWindowId: channel.parentWindowId,
 
@@ -783,7 +795,8 @@ HttpObserverManager = {
     let browserData = wrapper._browserData;
     if (!browserData) {
       if (wrapper.browserElement) {
-        browserData = tabTracker.getBrowserData(wrapper.browserElement);
+        browserData = {};
+        ExtensionParent.apiManager.emit("fill-browser-data", wrapper.browserElement, browserData);
       } else {
         browserData = { tabId: -1, windowId: -1 };
       }
@@ -815,7 +828,7 @@ HttpObserverManager = {
             return;
           }
         }
-        if (!channel.matches(opts.filter, opts.policy ? opts.policy.id : "", extraData)) {
+        if (!matchesRequest(channel, opts, extraData)) {
           return;
         }
 
@@ -957,7 +970,7 @@ HttpObserverManager = {
         if (result.redirectUrl) {
           try {
             channel.suspended = false;
-            channel.redirectTo(Services.io.newURI(result.redirectUrl));
+            channel.redirectTo(Services.io.newURI(result.redirectUrl, null, null));
 
             // Web Extensions using the WebRequest API are allowed
             // to redirect a channel to a data: URI, hence we mark
@@ -967,7 +980,7 @@ HttpObserverManager = {
             // RedirectTo() implementation explicitly drops the flag
             // to avoid additional redirects not caused by the
             // Web Extension.
-            channel.loadInfo.allowInsecureRedirectToDataURI = true;
+            channel.channel.loadInfo.allowInsecureRedirectToDataURI = true;
 
             // To pass CORS checks, we pretend the current request's
             // response allows the triggering origin to access.
@@ -1047,7 +1060,7 @@ HttpObserverManager = {
     }
 
     for (let opts of listener.values()) {
-      if (channel.matches(opts.filter, opts.policy ? opts.policy.id : "", extraData)) {
+      if (matchesRequest(channel, opts, extraData)) {
         return true;
       }
     }
@@ -1096,6 +1109,7 @@ HttpEvent.prototype = {
   addListener(callback, filter = null, options = null, optionsObject = null) {
     let opts = parseExtra(options, this.options, optionsObject);
     opts.filter = parseFilter(filter);
+    opts.urlPattern = opts.filter.urls ? new MatchPattern(opts.filter.urls) : null;
     HttpObserverManager.addListener(this.internalEvent, callback, opts);
   },
 

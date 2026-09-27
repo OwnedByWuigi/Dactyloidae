@@ -102,6 +102,7 @@
 @BINPATH@/@MSVC_C_RUNTIME_DLL@
 @BINPATH@/@MSVC_CMP_RUNTIME_DLL@
 @BINPATH@/@MSVC_CXX_RUNTIME_DLL@
+@BINPATH@/concrt140.dll
 #endif
 #if MOZ_PACKAGE_WIN_UCRT_DLLS
 @BINPATH@/api-ms-win-*.dll
@@ -359,6 +360,8 @@
 @RESPATH@/browser/components/nsSetDefaultBrowser.js
 @RESPATH@/browser/components/internaluserscripts.js
 @RESPATH@/browser/components/internaluserscripts.manifest
+@RESPATH@/browser/components/protocol.manifest
+@RESPATH@/browser/components/protocol.js
 @RESPATH@/browser/components/devtools-startup.manifest
 @RESPATH@/browser/components/devtools-startup.js
 @RESPATH@/browser/components/webideCli.js
@@ -589,6 +592,8 @@
 @RESPATH@/browser/extensions/{972ce4c6-7e08-4474-a285-3208198ce6fd}/install.rdf
 @RESPATH@/browser/chrome/internaluserscripts.manifest
 @RESPATH@/browser/chrome/internaluserscripts/*
+@RESPATH@/browser/chrome/gopher.manifest
+@RESPATH@/browser/chrome/gopher@JAREXT@
 @RESPATH@/browser/internal-userscripts/*
 @RESPATH@/chrome/toolkit@JAREXT@
 @RESPATH@/chrome/toolkit.manifest
@@ -626,6 +631,8 @@
 ; All the pref files must be part of base to prevent migration bugs
 @RESPATH@/browser/@PREF_DIR@/basilisk.js
 @RESPATH@/browser/@PREF_DIR@/basilisk-branding.js
+@RESPATH@/browser/@PREF_DIR@/internaluserscripts.js
+@RESPATH@/browser/@PREF_DIR@/gopher.js
 @RESPATH@/goanna.js
 @RESPATH@/defaults/autoconfig/prefcalls.js
 @RESPATH@/browser/defaults/permissions

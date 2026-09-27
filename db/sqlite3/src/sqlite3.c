@@ -27219,6 +27219,11 @@ static malloc_zone_t* _sqliteZone_;
 #if HAVE_MALLOC_H && HAVE_MALLOC_USABLE_SIZE
 #  define SQLITE_USE_MALLOC_H 1
 #  define SQLITE_USE_MALLOC_USABLE_SIZE 1
+#  if defined(_WIN32)
+     /* Mozilla's jemalloc wrapper provides this symbol, but the Windows
+      * malloc.h does not declare it for clang-cl. */
+     extern size_t malloc_usable_size(void *);
+#  endif
 /*
 ** The MSVCRT has malloc_usable_size(), but it is called _msize().  The
 ** use of _msize() is automatic, but can be disabled by compiling with

@@ -9,6 +9,7 @@
 #include "composite/CompositableHost.h"  // for CompositableHost, etc
 #include "ipc/IPCMessageUtils.h"        // for null_t
 #include "mozilla/layers/Compositor.h"  // for Compositor
+#include "mozilla/layers/CompositorOGL.h"  // for CompositorOGL
 #include "mozilla/layers/Effects.h"     // for TexturedEffect, Effect, etc
 #include "mozilla/layers/ImageContainerParent.h"
 #include "mozilla/layers/LayerManagerComposite.h"     // for TexturedEffect, Effect, etc
@@ -16,6 +17,7 @@
 #include "nsDebug.h"                    // for NS_WARNING, NS_ASSERTION
 #include "nsPrintfCString.h"            // for nsPrintfCString
 #include "nsString.h"                   // for nsAutoCString
+#include "gfxPrefs.h"                   // for gfxPrefs::WebRenderEnabled
 
 #define BIAS_TIME_MS 1.0
 
@@ -381,6 +383,16 @@ ImageHost::Composite(LayerComposite* aLayer,
       mLastProducerID = img->mProducerID;
     }
     aEffectChain.mPrimaryEffect = effect;
+    CompositorOGL* compositorOGL = GetCompositor()->AsCompositorOGL();
+    auto drawWebRenderImage = [&](const gfx::Rect& rect) {
+      return gfxPrefs::WebRenderEnabled() && compositorOGL &&
+             effect->mType == EffectTypes::RGB && aTransform.Is2D() &&
+             !aEffectChain.mSecondaryEffects[EffectTypes::MASK] &&
+             !aEffectChain.mSecondaryEffects[EffectTypes::BLEND_MODE] &&
+             compositorOGL->DrawWebRenderImage(
+               effect->mTexture, rect, effect->mTextureCoords, aOpacity,
+               aTransform, aClipRect, effect->mPremultiplied);
+    };
     gfx::Rect pictureRect(0, 0, img->mPictureRect.width, img->mPictureRect.height);
     BigImageIterator* it = mCurrentTextureSource->AsBigImageIterator();
     if (it) {
@@ -414,8 +426,10 @@ ImageHost::Composite(LayerComposite* aLayer,
           effect->mTextureCoords.y = effect->mTextureCoords.YMost();
           effect->mTextureCoords.height = -effect->mTextureCoords.height;
         }
-        GetCompositor()->DrawQuad(rect, aClipRect, aEffectChain,
-                                  aOpacity, aTransform);
+        if (!drawWebRenderImage(rect)) {
+          GetCompositor()->DrawQuad(rect, aClipRect, aEffectChain,
+                                    aOpacity, aTransform);
+        }
         GetCompositor()->DrawDiagnostics(diagnosticFlags | DiagnosticFlags::BIGIMAGE,
                                          rect, aClipRect, aTransform, mFlashCounter);
       } while (it->NextTile());
@@ -435,8 +449,10 @@ ImageHost::Composite(LayerComposite* aLayer,
         effect->mTextureCoords.height = -effect->mTextureCoords.height;
       }
 
-      GetCompositor()->DrawQuad(pictureRect, aClipRect, aEffectChain,
-                                aOpacity, aTransform);
+      if (!drawWebRenderImage(pictureRect)) {
+        GetCompositor()->DrawQuad(pictureRect, aClipRect, aEffectChain,
+                                  aOpacity, aTransform);
+      }
       GetCompositor()->DrawDiagnostics(diagnosticFlags,
                                        pictureRect, aClipRect,
                                        aTransform, mFlashCounter);

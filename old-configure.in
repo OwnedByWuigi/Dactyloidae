@@ -876,7 +876,17 @@ case "$target" in
         if test "$AS_BIN"; then
             AS="$(basename "$AS_BIN")"
         fi
-        AR='lib'
+        if test -n "$CLANG_CL"; then
+            dnl Microsoft lib.exe cannot archive LLVM bitcode from ThinLTO.
+            AC_PATH_PROG(LLVM_LIB, llvm-lib.exe)
+            if test -z "$LLVM_LIB"; then
+                AC_MSG_ERROR([clang-cl requires llvm-lib.exe on PATH])
+            fi
+            dnl expandlibs invokes AR from native Windows Python.
+            AR="$(cd "$(dirname "$LLVM_LIB")" && pwd -W)/$(basename "$LLVM_LIB")"
+        else
+            AR='lib'
+        fi
         AR_FLAGS='-NOLOGO -OUT:$@'
         AR_EXTRACT=
         RANLIB='echo not_ranlib'
@@ -4547,6 +4557,9 @@ AC_SUBST(PROFILE_USE_LDFLAGS)
 
 fi # ! SKIP_COMPILER_CHECKS
 
+dnl Windows skips the GCC probes above, but still needs LLVM PGO setup.
+MOZ_CLANG_CL_PGO
+
 AC_DEFINE(CPP_THROW_NEW, [throw()])
 AC_LANG_C
 
@@ -4773,11 +4786,22 @@ if test "$MOZ_TREE_CAIRO"; then
 
         if test "$COMPILE_ENVIRONMENT"; then
 
-          MOZ_CHECK_HEADER(d3d9.h, MOZ_ENABLE_D3D9_LAYER=1)
+          dnl SDK include paths can change between build shells. Do not cache
+          dnl these checks, or a stale failure disables required D3D exports.
+          unset ac_cv_header_d3d9_h ac_cv_header_d3d10_h
+          AC_MSG_CHECKING([for d3d9.h])
+          AC_TRY_COMPILE([#include <d3d9.h>], ,
+            [MOZ_ENABLE_D3D9_LAYER=1
+             AC_MSG_RESULT(yes)],
+            [AC_MSG_RESULT(no)])
 
           dnl D3D10 Layers depend on D2D Surfaces.
           if test -n "$WIN32_D2D_SURFACE_FEATURE"; then
-            MOZ_CHECK_HEADER(d3d10.h, MOZ_ENABLE_D3D10_LAYER=1)
+            AC_MSG_CHECKING([for d3d10.h])
+            AC_TRY_COMPILE([#include <d3d10.h>], ,
+              [MOZ_ENABLE_D3D10_LAYER=1
+               AC_MSG_RESULT(yes)],
+              [AC_MSG_RESULT(no)])
           fi
         fi
         ;;

@@ -36,6 +36,20 @@ const CHILD_SCRIPT = "resource://gre/modules/addons/Content.js";
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
+function deserializeTriggeringPrincipal(principal) {
+  if (typeof principal != "string") {
+    return principal;
+  }
+  try {
+    return Cc["@mozilla.org/network/serialization-helper;1"]
+      .getService(Ci.nsISerializationHelper)
+      .deserializeObject(principal)
+      .QueryInterface(Ci.nsIPrincipal);
+  } catch (e) {
+    return null;
+  }
+}
+
 var gSingleton = null;
 
 function amManager() {
@@ -219,7 +233,7 @@ amManager.prototype = {
         }
 
         return this.installAddonsFromWebpage(payload.mimetype,
-          aMessage.target, payload.triggeringPrincipal, payload.uris,
+          aMessage.target, deserializeTriggeringPrincipal(payload.triggeringPrincipal), payload.uris,
           payload.hashes, payload.names, payload.icons, callback);
       }
 

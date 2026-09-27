@@ -121,9 +121,9 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 Name "${BrandFullName}"
 OutFile "helper.exe"
 !ifdef HAVE_64BIT_BUILD
-  InstallDir "$PROGRAMFILES64\${CompanyName}\${BrandShortName}\"
+  InstallDir "$PROGRAMFILES64\${BrandShortName}\"
 !else
-  InstallDir "$PROGRAMFILES32\${CompanyName}\${BrandShortName}\"
+  InstallDir "$PROGRAMFILES32\${BrandShortName}\"
 !endif
 ShowUnInstDetails nevershow
 
@@ -193,7 +193,7 @@ Section "Uninstall"
   ${EndIf}
 
   ; setup the application model id registration value
-  ${un.InitHashAppModelId} "$INSTDIR" "Software\${CompanyName}\${BrandShortName}\TaskBarIDs"
+  ${un.InitHashAppModelId} "$INSTDIR" "Software\${BrandShortName}\TaskBarIDs"
 
   SetShellVarContext current  ; Set SHCTX to HKCU
   ${un.RegCleanMain} "Software\${CompanyName}"
@@ -207,11 +207,11 @@ Section "Uninstall"
   ${EndIf}
 
   ; Remove the updates directory for Vista and above
-  ${un.CleanUpdateDirectories} "${CompanyName}\${BrandShortName}" "${CompanyName}\updates"
+  ${un.CleanUpdateDirectories} "${BrandShortName}" "${CompanyName}\updates"
 
   ; Remove any app model id's stored in the registry for this install path
-  DeleteRegValue HKCU "Software\${CompanyName}\${BrandShortName}\TaskBarIDs" "$INSTDIR"
-  DeleteRegValue HKLM "Software\${CompanyName}\${BrandShortName}\TaskBarIDs" "$INSTDIR"
+  DeleteRegValue HKCU "Software\${BrandShortName}\TaskBarIDs" "$INSTDIR"
+  DeleteRegValue HKLM "Software\${BrandShortName}\TaskBarIDs" "$INSTDIR"
 
   ClearErrors
   WriteRegStr HKLM "Software\${CompanyName}" "${BrandShortName}InstallerTest" "Write Test"
@@ -397,7 +397,7 @@ Section "Uninstall"
   ; subsequently deleted after checking. If the value is found during startup
   ; the browser will offer to Reset Basilisk. We use the UpdateChannel to match
   ; uninstalls of Basilisk-release with reinstalls of Basilisk-release, for example.
-  WriteRegStr HKCU "Software\${CompanyName}\${BrandShortName}" "Uninstalled-${UpdateChannel}" "True"
+  WriteRegStr HKCU "Software\${BrandShortName}" "Uninstalled-${UpdateChannel}" "True"
 
   ${un.IsFirewallSvcRunning}
   Pop $0

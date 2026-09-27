@@ -115,6 +115,20 @@ function WebNavigationEventManager(context, eventName) {
         parentFrameId: ExtensionManagement.getParentFrameId(data.parentWindowId, data.windowId),
       };
 
+      if (eventName == "onCreatedNavigationTarget") {
+        let source = {};
+        extensions.emit("fill-browser-data", data.sourceTabBrowser, source);
+        if (!(source.tabId >= 0)) {
+          return;
+        }
+        delete data2.frameId;
+        delete data2.parentFrameId;
+        data2.sourceTabId = source.tabId;
+        data2.sourceFrameId = ExtensionManagement.getFrameId(data.sourceWindowId);
+        // Firefox does not expose renderer process IDs through this API.
+        data2.sourceProcessId = -1;
+      }
+
       if (eventName == "onErrorOccurred") {
         data2.error = data.error;
       }
@@ -162,7 +176,7 @@ extensions.registerSchemaAPI("webNavigation", "addon_parent", context => {
       onErrorOccurred: new WebNavigationEventManager(context, "onErrorOccurred").api(),
       onReferenceFragmentUpdated: new WebNavigationEventManager(context, "onReferenceFragmentUpdated").api(),
       onHistoryStateUpdated: new WebNavigationEventManager(context, "onHistoryStateUpdated").api(),
-      onCreatedNavigationTarget: ignoreEvent(context, "webNavigation.onCreatedNavigationTarget"),
+      onCreatedNavigationTarget: new WebNavigationEventManager(context, "onCreatedNavigationTarget").api(),
       getAllFrames(details) {
         let tab = TabManager.getTab(details.tabId, context);
 

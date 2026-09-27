@@ -98,6 +98,8 @@ public:
     mCtxType = aCtxType;
     mIsAnimated = false;
     mIsBaseSet = false;
+    mBaseCalcOffset = 0;
+    mHasBaseCalc = false;
   }
 
   nsSVGLength2& operator=(const nsSVGLength2& aLength) {
@@ -106,6 +108,8 @@ public:
     mSpecifiedUnitType = aLength.mSpecifiedUnitType;
     mIsAnimated = aLength.mIsAnimated;
     mIsBaseSet = aLength.mIsBaseSet;
+    mBaseCalcOffset = aLength.mBaseCalcOffset;
+    mHasBaseCalc = aLength.mHasBaseCalc;
     return *this;
   }
 
@@ -116,16 +120,21 @@ public:
   void GetAnimValueString(nsAString& aValue) const;
 
   float GetBaseValue(nsSVGElement* aSVGElement) const
-    { return mBaseVal / GetUnitScaleFactor(aSVGElement, mSpecifiedUnitType); }
+    { return mBaseVal / GetUnitScaleFactor(aSVGElement, mSpecifiedUnitType) +
+             mBaseCalcOffset; }
 
   float GetAnimValue(nsSVGElement* aSVGElement) const
-    { return mAnimVal / GetUnitScaleFactor(aSVGElement, mSpecifiedUnitType); }
+    { return mAnimVal / GetUnitScaleFactor(aSVGElement, mSpecifiedUnitType) +
+             (mIsAnimated ? 0 : mBaseCalcOffset); }
   float GetAnimValue(nsIFrame* aFrame) const
-    { return mAnimVal / GetUnitScaleFactor(aFrame, mSpecifiedUnitType); }
+    { return mAnimVal / GetUnitScaleFactor(aFrame, mSpecifiedUnitType) +
+             (mIsAnimated ? 0 : mBaseCalcOffset); }
   float GetAnimValue(mozilla::dom::SVGSVGElement* aCtx) const
-    { return mAnimVal / GetUnitScaleFactor(aCtx, mSpecifiedUnitType); }
+    { return mAnimVal / GetUnitScaleFactor(aCtx, mSpecifiedUnitType) +
+             (mIsAnimated ? 0 : mBaseCalcOffset); }
   float GetAnimValue(const UserSpaceMetrics& aMetrics) const
-    { return mAnimVal / GetUnitScaleFactor(aMetrics, mSpecifiedUnitType); }
+    { return mAnimVal / GetUnitScaleFactor(aMetrics, mSpecifiedUnitType) +
+             (mIsAnimated ? 0 : mBaseCalcOffset); }
 
   uint8_t GetCtxType() const { return mCtxType; }
   uint8_t GetSpecifiedUnitType() const { return mSpecifiedUnitType; }
@@ -135,7 +144,8 @@ public:
   float GetBaseValInSpecifiedUnits() const { return mBaseVal; }
 
   float GetBaseValue(mozilla::dom::SVGSVGElement* aCtx) const
-    { return mBaseVal / GetUnitScaleFactor(aCtx, mSpecifiedUnitType); }
+    { return mBaseVal / GetUnitScaleFactor(aCtx, mSpecifiedUnitType) +
+             mBaseCalcOffset; }
 
   bool HasBaseVal() const {
     return mIsBaseSet;
@@ -158,11 +168,14 @@ private:
   
   float mAnimVal;
   float mBaseVal;
+  // The px term of a calc(<percentage> +/- <px>) base value.
+  float mBaseCalcOffset;
   uint8_t mSpecifiedUnitType;
   uint8_t mAttrEnum; // element specified tracking for attribute
   uint8_t mCtxType; // X, Y or Unspecified
   bool mIsAnimated:1;
   bool mIsBaseSet:1;
+  bool mHasBaseCalc:1;
 
   float GetUnitScaleFactor(nsIFrame *aFrame, uint8_t aUnitType) const;
   float GetUnitScaleFactor(const UserSpaceMetrics& aMetrics, uint8_t aUnitType) const;

@@ -24,6 +24,7 @@
 #include "nsIWritablePropertyBag2.h"
 #include "nsSubDocumentFrame.h"
 
+#include "nsILinkHandler.h"
 #include "nsIDOMDocument.h"
 #include "nsISelectionListener.h"
 #include "mozilla/dom/Selection.h"

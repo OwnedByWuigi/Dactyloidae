@@ -122,8 +122,11 @@ var validGradientAndElementValues = [
   "linear-gradient(10deg, red, blue)",
   "linear-gradient(1turn, red, blue)",
   "linear-gradient(.414rad, red, blue)",
+  "linear-gradient(calc(90deg / 2), red, blue)",
+  "linear-gradient(calc(calc(0.25turn) + 45deg), red, blue)",
   "linear-gradient(90deg in srgb, yellow, purple)",
   "linear-gradient(90deg in hsl, yellow, purple)",
+  "linear-gradient(90deg in lch, yellow, purple)",
   "linear-gradient(90deg in oklch, yellow, purple)",
   "linear-gradient(in oklab, yellow, purple)",
 
@@ -1004,7 +1007,8 @@ var gCSSProperties = {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["0s", "0ms"],
-    other_values: ["1s", "250ms", "-100ms", "-1s", "1s, 250ms, 2.3s"],
+    other_values: ["1s", "250ms", "-100ms", "-1s", "1s, 250ms, 2.3s",
+                   "calc(250ms - 0.5s)", "calc(calc(500ms) - 250ms)"],
     invalid_values: ["0", "0px"],
   },
   "animation-direction": {
@@ -1029,7 +1033,8 @@ var gCSSProperties = {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["0s", "0ms"],
-    other_values: ["1s", "250ms", "1s, 250ms, 2.3s"],
+    other_values: ["1s", "250ms", "1s, 250ms, 2.3s",
+                   "calc(calc(0.25s) + 250ms)"],
     invalid_values: ["0", "0px", "-1ms", "-2s"],
   },
   "animation-fill-mode": {
@@ -2861,6 +2866,9 @@ var gCSSProperties = {
       "translate(calc(5px - 10% * 3))",
       "translate(calc(5px - 3 * 10%), 50px)",
       "translate(-50px, calc(5px - 10% * 3))",
+      "rotate(calc(45deg + 45deg))",
+      "rotate(calc(calc(0.125turn) + 45deg))",
+      "scale(calc(1 + 0.5))",
       "translatez(1px)",
       "translatez(4em)",
       "translatez(-4px)",
@@ -4302,7 +4310,8 @@ var gCSSProperties = {
       "hsl(0rad, 0%, 0%)",
       "hsl(0turn, 0%, 0%)",
       "hsl(1turn, 0%, 0%)",
-      /* oklab() and oklch(). */
+      /* lch(), oklab(), and oklch(). */
+      "lch(0 0 0)",
       "oklab(0 0 0)",
       "oklch(0 0 0)",
     ],
@@ -4327,9 +4336,14 @@ var gCSSProperties = {
       "hsl(0.5grad 400% 500% / 9.0)",
       "hsl(33rad 100% 90% / 4)",
       "hsl(0.33turn, 40%, 40%, 10%)",
+      "lch(70% 50 180deg / 40%)",
       "oklab(100% 0 0)",
       "oklab(60% 0.1 -0.1 / 75%)",
       "oklch(70% 0.2 180deg / 40%)",
+      "color-mix(in oklab, red, blue)",
+      "color-mix(in oklch, red, blue)",
+      "color-mix(in oklab, oklab(0.1 0.2 0.3), oklab(0.5 0.6 0.7))",
+      "color-mix(in oklch, oklch(0.1 0.2 30), oklch(0.5 0.6 70))",
     ],
     invalid_values: [
       "#f",
@@ -4361,6 +4375,8 @@ var gCSSProperties = {
       "rgb(0, 0, 0 /)",
       "hsl(0 0% 0% /)",
       "hsl(0, 0%, 0% /)",
+      "lch(0, 0 0)",
+      "lch(0 0 / 1)",
       "oklab(0, 0 0)",
       "oklab(0 0 / 1)",
       "oklch(0, 0 0)",
@@ -5575,7 +5591,8 @@ var gCSSProperties = {
       "3e+0",
       "3e-0",
     ],
-    other_values: ["0", "0.4", "0.0000", "-3", "3e-1", "-100%", "50%"],
+    other_values: ["0", "0.4", "0.0000", "-3", "3e-1", "-100%", "50%",
+                   "calc(25% * 2)", "calc(calc(0.25) + 0.25)"],
     invalid_values: ["0px", "1px"],
   },
   "-moz-orient": {
@@ -6404,7 +6421,8 @@ var gCSSProperties = {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["0s", "0ms"],
-    other_values: ["1s", "250ms", "-100ms", "-1s", "1s, 250ms, 2.3s"],
+    other_values: ["1s", "250ms", "-100ms", "-1s", "1s, 250ms, 2.3s",
+                   "calc(250ms - 0.5s)", "calc(calc(500ms) - 250ms)"],
     invalid_values: ["0", "0px"],
   },
   "transition-duration": {
@@ -6412,7 +6430,8 @@ var gCSSProperties = {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["0s", "0ms"],
-    other_values: ["1s", "250ms", "1s, 250ms, 2.3s"],
+    other_values: ["1s", "250ms", "1s, 250ms, 2.3s",
+                   "calc(calc(0.25s) + 250ms)"],
     invalid_values: ["0", "0px", "-1ms", "-2s"],
   },
   "transition-property": {
@@ -6776,7 +6795,7 @@ var gCSSProperties = {
     type: CSS_TYPE_LONGHAND,
     /* XXX requires position */
     initial_values: ["auto"],
-    other_values: ["0", "3", "-7000", "12000"],
+    other_values: ["0", "3", "-7000", "12000", "calc(2.5)"],
     invalid_values: ["3.0", "17.5", "3e1"],
   },
   "clip-path": {
@@ -7636,7 +7655,8 @@ var gCSSProperties = {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["0"],
-    other_values: ["1", "99999", "-1", "-50"],
+    other_values: ["1", "99999", "-1", "-50", "calc(1.5)",
+                   "calc(calc(-2) + 1)"],
     invalid_values: ["0px", "1.0", "1.", "1%", "0.2", "3em", "stretch"],
   },
 
@@ -9296,6 +9316,8 @@ if (IsCSSPropertyPrefEnabled("layout.css.filters.enabled")) {
       "brightness(2)",
       "brightness(350%)",
       "brightness(4.567)",
+      "brightness(calc(25% * 2))",
+      "brightness(calc(calc(0.25) + 0.25))",
 
       "contrast(0)",
       "contrast(50%)",
@@ -9340,6 +9362,7 @@ if (IsCSSPropertyPrefEnabled("layout.css.filters.enabled")) {
       "hue-rotate(-1.6rad)",
       "hue-rotate(0.5turn)",
       "hue-rotate(-2turn)",
+      "hue-rotate(calc(90deg + 0.125turn))",
 
       "invert(0)",
       "invert(50%)",

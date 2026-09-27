@@ -3,10 +3,10 @@
 <assemblyIdentity
         version="1.0.0.0"
         processorArchitecture="*"
-        name="Eclipse Hydra"
+        name="Dactyloidae"
         type="win32"
 />
-<description>Eclipse Hydra</description>
+<description>Dactyloidae</description>
 <dependency>
         <dependentAssembly>
                 <assemblyIdentity

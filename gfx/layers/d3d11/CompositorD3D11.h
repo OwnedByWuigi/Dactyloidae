@@ -11,6 +11,7 @@
 #include "mozilla/layers/Compositor.h"
 #include "TextureD3D11.h"
 #include <d3d11.h>
+#include <d3d11_1.h>
 
 class nsWidget;
 
@@ -174,6 +175,8 @@ private:
                     RefPtr<ID3D11ShaderResourceView>* aOutView);
 
   RefPtr<ID3D11DeviceContext> mContext;
+  RefPtr<ID3D11DeviceContext1> mGpuRasterContext;
+  bool mGpuRasterViewport;
   RefPtr<ID3D11Device> mDevice;
   RefPtr<IDXGISwapChain> mSwapChain;
   RefPtr<CompositingRenderTargetD3D11> mDefaultRT;

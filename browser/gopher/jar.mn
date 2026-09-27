@@ -1,0 +1,33 @@
+# -*- Mode: makefile; tab-width: 8; indent-tabs-mode: t; -*-
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+gopher.jar:
+% content libgopher %content/
+% locale libgopher da-DK %locale/da-DK/
+% locale libgopher de-DE %locale/de-DE/
+% locale libgopher en-US %locale/en-US/
+% locale libgopher es-ES %locale/es-ES/
+% locale libgopher fr-FR %locale/fr-FR/
+% locale libgopher hu-HU %locale/hu-HU/
+% locale libgopher ja-JP %locale/ja-JP/
+% locale libgopher nb-NO %locale/nb-NO/
+% locale libgopher nl-NL %locale/nl-NL/
+% locale libgopher pl-PL %locale/pl-PL/
+% locale libgopher ru-RU %locale/ru-RU/
+% locale libgopher tr-TR %locale/tr-TR/
+
+  content/                 (content/*)
+  locale/da-DK/            (locale/da-DK/*)
+  locale/de-DE/            (locale/de-DE/*)
+  locale/en-US/            (locale/en-US/*)
+  locale/es-ES/            (locale/es-ES/*)
+  locale/fr-FR/            (locale/fr-FR/*)
+  locale/hu-HU/            (locale/hu-HU/*)
+  locale/ja-JP/            (locale/ja-JP/*)
+  locale/nb-NO/            (locale/nb-NO/*)
+  locale/nl-NL/            (locale/nl-NL/*)
+  locale/pl-PL/            (locale/pl-PL/*)
+  locale/ru-RU/            (locale/ru-RU/*)
+  locale/tr-TR/            (locale/tr-TR/*)

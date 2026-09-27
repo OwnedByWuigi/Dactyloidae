@@ -41,6 +41,27 @@ function storageApiFactory(context) {
         },
       },
 
+      managed: {
+        get: function(keys) {
+          keys = sanitize(keys);
+          return context.childManager.callParentAsyncFunction("storage.managed.get", [
+            keys,
+          ]);
+        },
+        set: function() {
+          throw new context.cloneScope.Error(
+            "storage.managed is read-only");
+        },
+        remove: function() {
+          throw new context.cloneScope.Error(
+            "storage.managed is read-only");
+        },
+        clear: function() {
+          throw new context.cloneScope.Error(
+            "storage.managed is read-only");
+        },
+      },
+
       sync: {
         get: function(keys) {
           keys = sanitize(keys);

@@ -310,11 +310,15 @@ nsMediaExpression::Matches(nsPresContext *aPresContext,
     case nsMediaFeature::eLength:
       {
         NS_ASSERTION(actual.IsLengthUnit(), "bad actual value");
-        NS_ASSERTION(required.IsLengthUnit(), "bad required value");
+        NS_ASSERTION(required.IsLengthUnit() || required.IsCalcUnit(),
+                     "bad required value");
         nscoord actualCoord = nsRuleNode::CalcLengthWithInitialFont(
                                 aPresContext, actual);
-        nscoord requiredCoord = nsRuleNode::CalcLengthWithInitialFont(
-                                  aPresContext, required);
+        nscoord requiredCoord;
+        if (!ComputeMediaQueryTypedCalcLength(aPresContext, required,
+                                              requiredCoord)) {
+          return false;
+        }
         cmp = DoCompare(actualCoord, requiredCoord);
       }
       break;
@@ -649,7 +653,8 @@ nsMediaQuery::AppendToString(nsAString& aString) const
       }
       switch (feature->mValueType) {
         case nsMediaFeature::eLength:
-          NS_ASSERTION(expr.mValue.IsLengthUnit(), "bad unit");
+          NS_ASSERTION(expr.mValue.IsLengthUnit() || expr.mValue.IsCalcUnit(),
+                       "bad unit");
           // Use 'width' as a property that takes length values
           // written in the normal way.
           expr.mValue.AppendToString(eCSSProperty_width, aString,

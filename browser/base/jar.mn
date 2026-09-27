@@ -2,6 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 browser.jar:
+        content/browser/pictureInPicture.xul          (content/pictureInPicture.xul)
+        content/browser/pictureInPicture.js           (content/pictureInPicture.js)
+        content/browser/pictureInPicture.css          (content/pictureInPicture.css)
+        content/browser/pictureInPictureContent.js    (content/pictureInPictureContent.js)
 %  content browser %content/browser/ contentaccessible=yes
 #ifdef XP_MACOSX
 %  overlay chrome://mozapps/content/downloads/downloads.xul chrome://browser/content/downloadManagerOverlay.xul

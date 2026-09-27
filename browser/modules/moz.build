@@ -22,6 +22,7 @@ EXTRA_JS_MODULES += [
     'NetworkPrioritizer.jsm',
     'offlineAppCache.jsm',
     'PermissionUI.jsm',
+    'PictureInPicture.jsm',
     'PluginContent.jsm',
     'ProcessHangMonitor.jsm',
     'ReaderParent.jsm',

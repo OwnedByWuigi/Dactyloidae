@@ -197,6 +197,19 @@ this.ExtensionStorage = {
     });
   },
 
+  getManaged(keys) {
+    // Managed storage is populated by enterprise policy, which this UXP
+    // branch does not implement. Return the requested defaults, matching the
+    // WebExtension storage contract for an empty managed area.
+    if (keys === null || keys === undefined) {
+      return Promise.resolve({});
+    }
+    if (typeof(keys) == "object" && !Array.isArray(keys)) {
+      return Promise.resolve(Object.assign({}, keys));
+    }
+    return Promise.resolve({});
+  },
+
   addOnChangedListener(extensionId, listener) {
     let listeners = this.listeners.get(extensionId) || new Set();
     listeners.add(listener);

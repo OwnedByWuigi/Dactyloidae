@@ -228,6 +228,9 @@ NS_IMETHODIMP nsXULWindow::SetZLevel(uint32_t aLevel)
   }
 
   // do it
+  if (mWindow) {
+    mWindow->SetAlwaysOnTop(aLevel >= nsIXULWindow::raisedZ);
+  }
   mediator->SetZLevel(this, aLevel);
   PersistentAttributesDirty(PAD_MISC);
   SavePersistentAttributes();

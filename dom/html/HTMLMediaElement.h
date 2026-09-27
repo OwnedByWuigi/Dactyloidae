@@ -211,6 +211,9 @@ public:
 
   virtual bool IsHidden() const final override;
 
+  bool MozPictureInPicture() const { return mPictureInPicture; }
+  void SetMozPictureInPicture(bool aEnabled);
+
   // Called by the media decoder and the video frame to get the
   // ImageContainer containing the video data.
   virtual VideoFrameContainer* GetVideoFrameContainer() final override;
@@ -1621,6 +1624,9 @@ protected:
 
   // Info about the played media.
   MediaInfo mMediaInfo;
+
+  // Set only by privileged Picture-in-Picture UI; cleared when it closes.
+  bool mPictureInPicture = false;
 
   // True if the media has encryption information.
   bool mIsEncrypted;

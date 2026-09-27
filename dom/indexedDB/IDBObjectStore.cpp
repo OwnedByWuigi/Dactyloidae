@@ -68,7 +68,9 @@ struct IDBObjectStore::StructuredCloneWriteInfo
   uint64_t mOffsetToKeyProp;
 
   explicit StructuredCloneWriteInfo(IDBDatabase* aDatabase)
-    : mCloneBuffer(JS::StructuredCloneScope::DifferentProcessForIndexedDB, nullptr,
+    // DifferentProcessForIndexedDB is a read-only compatibility mode. New
+    // records must use the durable, cross-process serialization format.
+    : mCloneBuffer(JS::StructuredCloneScope::DifferentProcess, nullptr,
                    nullptr)
     , mDatabase(aDatabase)
     , mOffsetToKeyProp(0)

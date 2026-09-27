@@ -10,6 +10,7 @@
 #include "mozilla/gfx/Matrix.h"         // for Matrix4x4
 #include "mozilla/gfx/Point.h"          // for IntSize
 #include "mozilla/layers/Compositor.h"  // for Compositor
+#include "mozilla/layers/CompositorOGL.h"  // for CompositorOGL
 //#include "mozilla/layers/CompositorBridgeParent.h"  // for CompositorBridgeParent
 #include "mozilla/layers/Effects.h"     // for TexturedEffect, Effect, etc
 #include "mozilla/layers/LayerMetricsWrapper.h" // for LayerMetricsWrapper
@@ -486,6 +487,15 @@ TiledContentHost::RenderTile(TileHost& aTile,
   float opacity = aTile.GetFadeInOpacity(aOpacity);
   aEffectChain.mPrimaryEffect = effect;
 
+  CompositorOGL* compositorOGL = mCompositor->AsCompositorOGL();
+  bool canUseWebRender =
+    gfxPrefs::WebRenderEnabled() && compositorOGL &&
+    effect->mType == EffectTypes::RGB && !aTile.mTextureHostOnWhite &&
+    aTransform.Is2D() &&
+    !aEffectChain.mSecondaryEffects[EffectTypes::MASK] &&
+    !aEffectChain.mSecondaryEffects[EffectTypes::BLEND_MODE] &&
+    aSamplingFilter == gfx::SamplingFilter::LINEAR;
+
   for (auto iter = aScreenRegion.RectIter(); !iter.Done(); iter.Next()) {
     const IntRect& rect = iter.Get();
     Rect graphicsRect(rect.x, rect.y, rect.width, rect.height);
@@ -496,7 +506,13 @@ TiledContentHost::RenderTile(TileHost& aTile,
                                   textureRect.y / aTextureBounds.height,
                                   textureRect.width / aTextureBounds.width,
                                   textureRect.height / aTextureBounds.height);
-    mCompositor->DrawQuad(graphicsRect, aClipRect, aEffectChain, opacity, aTransform, aVisibleRect);
+    if (!canUseWebRender ||
+        !compositorOGL->DrawWebRenderImage(
+          effect->mTexture, graphicsRect, effect->mTextureCoords, opacity,
+          aTransform, aClipRect, effect->mPremultiplied)) {
+      mCompositor->DrawQuad(graphicsRect, aClipRect, aEffectChain, opacity,
+                            aTransform, aVisibleRect);
+    }
   }
   DiagnosticFlags flags = DiagnosticFlags::CONTENT | DiagnosticFlags::TILE;
   if (aTile.mTextureHostOnWhite) {
@@ -562,6 +578,10 @@ TiledContentHost::RenderLayerBuffer(TiledLayerBufferComposite& aLayerBuffer,
     return;
   }
 
+  CompositorOGL* compositorOGL = mCompositor->AsCompositorOGL();
+  bool canUseWebRenderSolid =
+    gfxPrefs::WebRenderEnabled() && compositorOGL && aTransform.Is2D();
+
   if (aBackgroundColor) {
     nsIntRegion backgroundRegion = compositeRegion;
     backgroundRegion.ScaleRoundOut(resolution, resolution);
@@ -570,7 +590,12 @@ TiledContentHost::RenderLayerBuffer(TiledLayerBufferComposite& aLayerBuffer,
     for (auto iter = backgroundRegion.RectIter(); !iter.Done(); iter.Next()) {
       const IntRect& rect = iter.Get();
       Rect graphicsRect(rect.x, rect.y, rect.width, rect.height);
-      mCompositor->DrawQuad(graphicsRect, aClipRect, effect, 1.0, aTransform);
+      if (!canUseWebRenderSolid ||
+          !compositorOGL->DrawWebRenderRect(
+            graphicsRect, *aBackgroundColor, 1.0, aTransform, aClipRect)) {
+        mCompositor->DrawQuad(graphicsRect, aClipRect, effect, 1.0,
+                              aTransform);
+      }
     }
   }
 

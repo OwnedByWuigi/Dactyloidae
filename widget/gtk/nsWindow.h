@@ -128,6 +128,7 @@ public:
     virtual bool       IsEnabled() const override;
 
     void               SetZIndex(int32_t aZIndex) override;
+    void               SetAlwaysOnTop(bool aAlwaysOnTop) override;
     virtual void       SetSizeMode(nsSizeMode aMode) override;
     NS_IMETHOD         Enable(bool aState) override;
     NS_IMETHOD         SetFocus(bool aRaise = false) override;

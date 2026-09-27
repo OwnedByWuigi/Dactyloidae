@@ -85,10 +85,24 @@ COLD int dav1d_num_logical_processors(Dav1dContext *const c) {
 #ifdef _WIN32
 #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
     GROUP_AFFINITY affinity;
-    if (GetThreadGroupAffinity(GetCurrentThread(), &affinity)) {
-        int num_processors = 1;
-        while (affinity.Mask &= affinity.Mask - 1)
+    DWORD_PTR mask = 0, system_mask;
+    HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+    typedef BOOL (WINAPI *get_thread_group_affinity_fn)(HANDLE, PGROUP_AFFINITY);
+    get_thread_group_affinity_fn get_thread_group_affinity = kernel32 ?
+        (get_thread_group_affinity_fn)GetProcAddress(kernel32, "GetThreadGroupAffinity") : NULL;
+
+    /* Processor groups are only available on Windows 7 and later. */
+    if (get_thread_group_affinity &&
+        get_thread_group_affinity(GetCurrentThread(), &affinity))
+        mask = affinity.Mask;
+    else if (!GetProcessAffinityMask(GetCurrentProcess(), &mask, &system_mask))
+        mask = 0;
+
+    if (mask) {
+        int num_processors = 0;
+        do {
             num_processors++;
+        } while (mask &= mask - 1);
         return num_processors;
     }
 #else

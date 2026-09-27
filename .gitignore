@@ -131,3 +131,6 @@ lextab.py
 
 # tup database
 /.tup
+
+# build script stuff
+.redist-stage-*

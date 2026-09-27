@@ -15,7 +15,8 @@ global.openOptionsPage = (extension) => {
   }
 
   if (extension.manifest.options_ui.open_in_tab) {
-    window.switchToTabHavingURI(extension.manifest.options_ui.page, true);
+    let optionsURL = extension.baseURI.resolve(extension.manifest.options_ui.page);
+    window.switchToTabHavingURI(optionsURL, true);
     return Promise.resolve();
   }
 
@@ -23,4 +24,3 @@ global.openOptionsPage = (extension) => {
 
   return window.BrowserOpenAddonsMgr(viewId);
 };
-

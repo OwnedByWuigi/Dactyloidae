@@ -16,6 +16,7 @@ builtin(include, ../../build/autoconf/altoptions.m4)dnl
 builtin(include, ../../build/autoconf/mozprog.m4)dnl
 builtin(include, ../../build/autoconf/mozheader.m4)dnl
 builtin(include, ../../build/autoconf/lto.m4)dnl
+builtin(include, ../../build/autoconf/clang-cl-pgo.m4)dnl
 builtin(include, ../../build/autoconf/frameptr.m4)dnl
 builtin(include, ../../build/autoconf/compiler-opts.m4)dnl
 builtin(include, ../../build/autoconf/expandlibs.m4)dnl

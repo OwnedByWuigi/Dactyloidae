@@ -18,7 +18,11 @@ this.EXPORTED_SYMBOLS = ["MatchPattern", "MatchGlobs", "MatchURLFilters"];
 
 /* globals MatchPattern, MatchGlobs */
 
-const PERMITTED_SCHEMES = ["http", "https", "file", "ftp", "data"];
+// Keep explicit scheme support broad enough for WebExtensions, while the
+// match-pattern wildcard remains restricted to web content schemes below.
+const PERMITTED_SCHEMES = ["http", "https", "file", "ftp", "data",
+                           "ws", "wss", "moz-extension"];
+const ALL_URLS_SCHEMES = ["http", "https", "file", "ftp", "data", "ws", "wss"];
 const PERMITTED_SCHEMES_REGEXP = PERMITTED_SCHEMES.join("|");
 
 // This function converts a glob pattern (containing * and possibly ?
@@ -40,7 +44,7 @@ function globToRegexp(pat, allowQuestion) {
 // https://developer.chrome.com/extensions/match_patterns
 function SingleMatchPattern(pat) {
   if (pat == "<all_urls>") {
-    this.schemes = PERMITTED_SCHEMES;
+    this.schemes = ALL_URLS_SCHEMES;
     this.hostMatch = () => true;
     this.pathMatch = () => true;
   } else if (!pat) {
@@ -85,9 +89,22 @@ SingleMatchPattern.prototype = {
       let suffix = host.substr(2);
       let dotSuffix = "." + suffix;
 
-      return ({host}) => host === suffix || host.endsWith(dotSuffix);
+      return uri => {
+        try {
+          let host = uri.host;
+          return host === suffix || host.endsWith(dotSuffix);
+        } catch (e) {
+          return false;
+        }
+      };
     }
-    return uri => uri.host === host;
+    return uri => {
+      try {
+        return uri.host === host;
+      } catch (e) {
+        return false;
+      }
+    };
   },
 
   matches(uri, ignorePath = false) {

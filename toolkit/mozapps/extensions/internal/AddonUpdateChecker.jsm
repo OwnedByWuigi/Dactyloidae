@@ -25,6 +25,7 @@ const XMLURI_PARSE_ERROR              = "http://www.mozilla.org/newlayout/xml/pa
 
 const TOOLKIT_ID                      = "toolkit@mozilla.org";
 const FIREFOX_ID                      = "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}";
+const PALEMOON_ID                     = "{8de7fcbb-c55c-4fbe-bfc5-fc555c87dbc4}";
 const FIREFOX_APPCOMPATVERSION        = "56.9"
 
 const PREF_UPDATE_REQUIREBUILTINCERTS = "extensions.update.requireBuiltInCerts";
@@ -534,6 +535,16 @@ function parseJSONManifest(aId, aUpdateKey, aRequest, aManifestData) {
         maxVersion: getRequiredProperty(app, "max_version", "string"),
       }
     }
+    else if (PALEMOON_ID in applications) {
+      logger.debug("update.json: Pale Moon targetApplication");
+      app = getProperty(applications, PALEMOON_ID, "object");
+
+      appEntry = {
+        id: PALEMOON_ID,
+        minVersion: getRequiredProperty(app, "min_version", "string"),
+        maxVersion: getRequiredProperty(app, "max_version", "string"),
+      }
+    }
 #endif
     else if (TOOLKIT_ID in applications) {
       logger.debug("update.json: Toolkit targetApplication");
@@ -834,7 +845,7 @@ function matchesVersions(aUpdate, aAppVersion, aPlatformVersion,
              (aIgnoreMaxVersion || (Services.vc.compare(aAppVersion, app.maxVersion) <= 0));
     }
 #ifdef MOZ_PHOENIX_EXTENSIONS
-    if (app.id == FIREFOX_ID) {
+    if (app.id == FIREFOX_ID || app.id == PALEMOON_ID) {
       return (Services.vc.compare(aAppVersion, app.minVersion) >= 0) &&
              (aIgnoreMaxVersion || (Services.vc.compare(aAppVersion, app.maxVersion) <= 0));
     }
@@ -898,6 +909,7 @@ this.AddonUpdateChecker = {
             let id = targetApp.id;
 #ifdef MOZ_PHOENIX_EXTENSIONS
             if (id == Services.appinfo.ID || id == FIREFOX_ID ||
+                id == PALEMOON_ID ||
                 id == TOOLKIT_ID)
 #else
             if (id == Services.appinfo.ID || id == TOOLKIT_ID)

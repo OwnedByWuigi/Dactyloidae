@@ -137,6 +137,9 @@ const PREFIX_NS_EM                    = "http://www.mozilla.org/2004/em-rdf#";
 const TOOLKIT_ID                      = "toolkit@mozilla.org";
 #ifdef MOZ_PHOENIX_EXTENSIONS
 const FIREFOX_ID                      = "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}"
+// Pale Moon's legacy application ID.  Basilisk and Dactyloidae use the
+// Firefox ID above, but extensions may still target Pale Moon explicitly.
+const PALEMOON_ID                     = "{8de7fcbb-c55c-4fbe-bfc5-fc555c87dbc4}"
 const FIREFOX_APPCOMPATVERSION        = "56.9"
 #endif
 
@@ -6417,6 +6420,13 @@ AddonInternal.prototype = {
         return false;
 #endif
     }
+#ifdef MOZ_PHOENIX_EXTENSIONS
+    else if (app.id == PALEMOON_ID) {
+      // Pale Moon extensions use the application's version range.
+      version = aAppVersion;
+      this.native = true;
+    }
+#endif
     else if (app.id == TOOLKIT_ID) {
       // For WebExtensions against toolkit, report as Firefox 128.0
       if (this.type == "extension") {
@@ -6449,7 +6459,8 @@ AddonInternal.prototype = {
       // Extremely old extensions should not be compatible by default.
       let minCompatVersion;
 #ifdef MOZ_PHOENIX_EXTENSIONS
-      if (app.id == Services.appinfo.ID || app.id == FIREFOX_ID)
+       if (app.id == Services.appinfo.ID || app.id == FIREFOX_ID ||
+           app.id == PALEMOON_ID)
 #else
       if (app.id == Services.appinfo.ID)
 #endif
@@ -6483,6 +6494,8 @@ AddonInternal.prototype = {
     for (let targetApp of this.targetApplications) {
       if (targetApp.id == FIREFOX_ID) //Firefox GUID
         return targetApp;
+      if (targetApp.id == PALEMOON_ID)
+        app = targetApp;
     }
 #endif
     // Return toolkit ID if toolkit.

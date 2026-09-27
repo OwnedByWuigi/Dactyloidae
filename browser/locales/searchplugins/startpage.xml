@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<SearchPlugin xmlns="http://www.mozilla.org/2006/browser/search/">
+  <ShortName>Startpage</ShortName>
+  <Description>Startpage Search</Description>
+  <InputEncoding>UTF-8</InputEncoding>
+  <Image width="16" height="16">data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHJlY3Qgd2lkdGg9IjE2IiBoZWlnaHQ9IjE2IiByeD0iMyIgZmlsbD0iIzNiNGI5YiIvPjxwYXRoIGQ9Ik0xMi41IDQuM0MxMS43IDMuNSAxMC41IDMgOC44IDMgNi42IDMgNSA0LjIgNSA1LjljMCAxLjggMS41IDIuNCAzLjIgMi45IDEuNC40IDIuMS43IDIuMSAxLjQgMCAuNi0uNiAxLTEuNSAxLTEgMC0xLjgtLjQtMi41LTEuMUw1IDExLjVjLjkgMSAyLjEgMS41IDMuOCAxLjUgMi4zIDAgMy43LTEuMiAzLjctMyAwLTEuOS0xLjUtMi41LTMuMy0zLTEuMy0uNC0yLS43LTItMS4zIDAtLjUuNS0uOCAxLjQtLjguOSAwIDEuNi4zIDIuMy45eiIgZmlsbD0id2hpdGUiLz48L3N2Zz4=</Image>
+  <Url type="text/html" method="GET" template="https://www.startpage.com/sp/search">
+    <Param name="query" value="{searchTerms}"/>
+  </Url>
+</SearchPlugin>

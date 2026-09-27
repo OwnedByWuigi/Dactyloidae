@@ -79,6 +79,8 @@ var ContentClick = {
 
     let params = {
       charset: browser.characterSet,
+      currentBrowser: browser,
+      frameOuterWindowID: json.frameOuterWindowID,
       referrerURI: browser.documentURI,
       referrerPolicy: json.referrerPolicy,
       noReferrer: json.noReferrer,

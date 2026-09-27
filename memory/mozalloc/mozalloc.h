@@ -33,6 +33,12 @@
 
 #define MOZALLOC_HAVE_XMALLOC
 
+/* Workaround build problems with v142+ MSVC*/
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable: 5043)
+#endif
+
 /* Workaround build problem with Sun Studio 12 */
 #if defined(__SUNPRO_C) || defined(__SUNPRO_CC)
 #  undef MOZ_MUST_USE
